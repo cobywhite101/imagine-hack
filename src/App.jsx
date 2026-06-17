@@ -18,7 +18,7 @@ export default function App() {
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
           <span className="flex items-center gap-2 font-semibold">
-            <Gamepad2 className="size-5" /> Hackathon Starter
+            <Gamepad2 className="size-5" /> Ferdinand
           </span>
           <nav className="flex gap-1">
             {nav.map(({ to, label, icon: Icon, end }) => (
