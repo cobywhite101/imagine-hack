@@ -7,6 +7,7 @@ import {
   mockUsers,
   mockCurrentUser,
   mockBadges,
+  mockAdrianBadges,
   mockQuests,
   mockAgents,
   mockMcpServers,
@@ -47,6 +48,8 @@ export const api = {
     }),
 
   getBadges: () => fromTable("badges", mockBadges),
+
+  getAdrianBadges: () => fromTable("badges_adrian", mockAdrianBadges),
 
   getQuests: () => fromTable("quests", mockQuests),
 

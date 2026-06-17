@@ -7,6 +7,7 @@ export const mockUsers = [
   { id: "u3", name: "Grace Hopper", avatar: "GH", points: 980, level: 6, streak: 9 },
   { id: "u4", name: "Linus Torvalds", avatar: "LT", points: 720, level: 4, streak: 2 },
   { id: "u5", name: "Margaret Hamilton", avatar: "MH", points: 650, level: 4, streak: 7 },
+  { id: "u6", name: "Adrian", avatar: "AD", points: 590, level: 3, streak: 4 },
 ];
 
 // The signed-in user (mock auth). Swap for supabase.auth later.
@@ -19,6 +20,15 @@ export const mockBadges = [
   { id: "b4", name: "Connector", icon: "Plug", description: "Linked an MCP server", earned: false },
   { id: "b5", name: "Centurion", icon: "Trophy", description: "Earned 1000 points", earned: true },
   { id: "b6", name: "Night Owl", icon: "Moon", description: "Active after midnight", earned: false },
+];
+
+export const mockAdrianBadges = [
+  { id: "ab1", name: "Early Bird", icon: "Sunrise", description: "Logged in before 7 AM", earned: true },
+  { id: "ab2", name: "Quick Starter", icon: "Zap", description: "Completed first quest within an hour", earned: true },
+  { id: "ab3", name: "Curious Mind", icon: "Search", description: "Explored all 4 app sections", earned: true },
+  { id: "ab4", name: "Streak Starter", icon: "Flame", description: "3-day login streak", earned: true },
+  { id: "ab5", name: "Team Player", icon: "Users", description: "Competed in leaderboard top 10", earned: false },
+  { id: "ab6", name: "Power User", icon: "Star", description: "Reached level 5", earned: false },
 ];
 
 export const mockQuests = [

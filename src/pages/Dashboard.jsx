@@ -1,6 +1,7 @@
 import { LevelCard } from "@/features/gamification/LevelCard";
 import { Leaderboard } from "@/features/gamification/Leaderboard";
 import { Badges } from "@/features/gamification/Badges";
+import { AdrianBadges } from "@/features/gamification/AdrianBadges";
 import { Quests } from "@/features/gamification/Quests";
 
 export function Dashboard() {
@@ -17,6 +18,7 @@ export function Dashboard() {
         <Quests />
         <Leaderboard />
         <Badges />
+        <AdrianBadges />
       </div>
     </div>
   );
