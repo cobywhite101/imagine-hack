@@ -42,7 +42,7 @@ export function AgentsPanel() {
           <Card key={a.id}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
+                <span className="flex items-center gap-2 text-red-500">
                   <Bot className="size-4" /> {a.name}
                 </span>
                 <Badge variant={a.status === "running" ? "default" : "secondary"}>{a.status}</Badge>
