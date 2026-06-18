@@ -10,7 +10,7 @@ export function Badges() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-pink-500">
           <Icons.Award className="size-4" /> Badges
         </CardTitle>
       </CardHeader>
