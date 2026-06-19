@@ -3,11 +3,6 @@ import {
   Plus,
   User,
   CircleDot,
-  Layers,
-  Hash,
-  DollarSign,
-  Clock,
-  Mail,
   Search,
   ChevronUp,
   ChevronDown,
@@ -24,51 +19,35 @@ import {
 
 const BORDER = "rgb(238, 239, 241)";
 const INK = "rgb(16, 17, 18)";
-const LINK = "rgb(38, 109, 240)";
 
-// Fake customers — in-memory only.
+// Fake clients — in-memory only.
 const CUSTOMERS = [
-  { id: 1, name: "Greenleaf", avatar: "GL", accent: "#3bd4cb", contact: "Maya Chen", role: "VP Sales", status: "Negotiation", tier: "Enterprise", seats: 52, arr: 148000, lastTouch: "2d ago", email: "maya@greenleaf.io" },
-  { id: 2, name: "Northwind Labs", avatar: "NL", accent: "#317cff", contact: "Dev Okafor", role: "Head of RevOps", status: "Proposal", tier: "Mid-market", seats: 24, arr: 61000, lastTouch: "5d ago", email: "dev@northwind.dev" },
-  { id: 3, name: "Atlas Freight", avatar: "AF", accent: "#ec5d40", contact: "Priya Nair", role: "COO", status: "Qualified", tier: "Enterprise", seats: 80, arr: 210000, lastTouch: "1d ago", email: "priya@atlasfreight.com" },
-  { id: 4, name: "Sunrise Retail", avatar: "SR", accent: "#4991e5", contact: "Tom Becker", role: "Director", status: "Won", tier: "Mid-market", seats: 18, arr: 44000, lastTouch: "Today", email: "tom@sunriseretail.co" },
-  { id: 5, name: "Quanta Health", avatar: "QH", accent: "#9b69ff", contact: "Lena Fischer", role: "CTO", status: "Churn-risk", tier: "Enterprise", seats: 64, arr: 172000, lastTouch: "12d ago", email: "lena@quantahealth.com" },
-  { id: 6, name: "Beacon Studios", avatar: "BS", accent: "#f5a524", contact: "Ray Mwangi", role: "Founder", status: "Lead", tier: "Startup", seats: 9, arr: 12000, lastTouch: "3d ago", email: "ray@beacon.studio" },
-  { id: 7, name: "Corewave", avatar: "CW", accent: "#22b8cf", contact: "Iris Tanaka", role: "VP Ops", status: "Qualified", tier: "Mid-market", seats: 31, arr: 78000, lastTouch: "6d ago", email: "iris@corewave.ai" },
-  { id: 8, name: "Pinecrest Bank", avatar: "PB", accent: "#2f9e44", contact: "Marcus Hale", role: "Head of IT", status: "Negotiation", tier: "Enterprise", seats: 120, arr: 320000, lastTouch: "Today", email: "marcus@pinecrest.bank" },
-  { id: 9, name: "Lumen Media", avatar: "LM", accent: "#e64980", contact: "Sofia Ruiz", role: "CMO", status: "Proposal", tier: "Mid-market", seats: 27, arr: 66000, lastTouch: "4d ago", email: "sofia@lumen.media" },
-  { id: 10, name: "Vertex Robotics", avatar: "VR", accent: "#7048e8", contact: "Aiden Park", role: "VP Eng", status: "Won", tier: "Enterprise", seats: 95, arr: 245000, lastTouch: "1d ago", email: "aiden@vertexrobotics.com" },
-  { id: 11, name: "Maple & Co", avatar: "MC", accent: "#fd7e14", contact: "Grace Liu", role: "Owner", status: "Lead", tier: "Startup", seats: 6, arr: 9000, lastTouch: "8d ago", email: "grace@mapleandco.com" },
-  { id: 12, name: "Driftwood Travel", avatar: "DT", accent: "#15aabf", contact: "Noah Schmidt", role: "Head of Sales", status: "Churn-risk", tier: "Mid-market", seats: 22, arr: 53000, lastTouch: "15d ago", email: "noah@driftwood.travel" },
-  { id: 13, name: "Halcyon AI", avatar: "HA", accent: "#4263eb", contact: "Yuki Sato", role: "CEO", status: "Qualified", tier: "Startup", seats: 14, arr: 28000, lastTouch: "2d ago", email: "yuki@halcyon.ai" },
-  { id: 14, name: "Granite Legal", avatar: "GL", accent: "#868e96", contact: "Omar Haddad", role: "Partner", status: "Negotiation", tier: "Enterprise", seats: 48, arr: 134000, lastTouch: "Today", email: "omar@granitelegal.com" },
+  { id: 1, name: "Maya Chen", task: "Review 2026 beneficiary update and prep annual policy check-in notes", avatar: "MC", accent: "#3bd4cb", status: "Action needed", email: "maya.chen@example.com" },
+  { id: 2, name: "Devine Okafor", task: "Flag cash-flow sensitivity in trust distributions; generate follow-up script", avatar: "DO", accent: "#317cff", status: "Scheduled", email: "devine.okafor@example.com" },
+  { id: 3, name: "Priya Nair", task: "Prepare succession file checklist and risk memo before board review", avatar: "PN", accent: "#ec5d40", status: "Action needed", email: "priya.nair@example.com" },
+  { id: 4, name: "Tom Becker", task: "Confirm auto-pay authorizations and propose tax-optimization revision", avatar: "TB", accent: "#4991e5", status: "Monitoring", email: "tom.becker@example.com" },
+  { id: 5, name: "Lena Fischer", task: "Queue claim documentation follow-up and alert for policy expiry", avatar: "LF", accent: "#9b69ff", status: "Action needed", email: "lena.fischer@example.com" },
+  { id: 6, name: "Ray Mwangi", task: "Cross-check family trust liabilities and prepare 30-day outreach plan", avatar: "RM", accent: "#f5a524", status: "Monitoring", email: "ray.mwangi@example.com" },
+  { id: 7, name: "Iris Tanaka", task: "Draft re-engagement note for stalled investment review", avatar: "IT", accent: "#22b8cf", status: "Action needed", email: "iris.tanaka@example.com" },
+  { id: 8, name: "Marcus Hale", task: "Validate new beneficiary nominee and produce KYC completion checklist", avatar: "MH", accent: "#2f9e44", status: "Monitoring", email: "marcus.hale@example.com" },
+  { id: 9, name: "Sofia Ruiz", task: "Surface dormant policy changes and prepare advisor talking points", avatar: "SR", accent: "#e64980", status: "Action needed", email: "sofia.ruiz@example.com" },
+  { id: 10, name: "Aiden Park", task: "Compile renewal readiness summary and schedule review call", avatar: "AP", accent: "#7048e8", status: "Scheduled", email: "aiden.park@example.com" },
+  { id: 11, name: "Grace Liu", task: "Review inheritance timeline and confirm guardian contact details", avatar: "GL", accent: "#fd7e14", status: "Monitoring", email: "grace.liu@example.com" },
+  { id: 12, name: "Noah Schmidt", task: "Draft life-event check-in and capture updated emergency contact tree", avatar: "NS", accent: "#15aabf", status: "Action needed", email: "noah.schmidt@example.com" },
+  { id: 13, name: "Yuki Sato", task: "Run sensitivity scan before proposal and lock communication constraints", avatar: "YS", accent: "#4263eb", status: "Monitoring", email: "yuki.sato@example.com" },
+  { id: 14, name: "Omar Haddad", task: "Prepare quarterly retention review and next-meeting action list", avatar: "OH", accent: "#868e96", status: "Scheduled", email: "omar.haddad@example.com" },
 ];
 
 const STATUS_STYLE = {
-  Lead: { bg: "#eef0f2", fg: "#5b616b" },
-  Qualified: { bg: "rgba(38,109,240,0.1)", fg: "rgb(38,109,240)" },
-  Proposal: { bg: "#fff3e0", fg: "#b25e09" },
-  Negotiation: { bg: "rgba(155,105,255,0.12)", fg: "#7c4dff" },
-  Won: { bg: "#e7f6ec", fg: "#1a7f43" },
-  "Churn-risk": { bg: "#fdeaea", fg: "#d4351c" },
+  Monitoring: { bg: "#eef0f2", fg: "#5b616b" },
+  "Action needed": { bg: "#fdeaea", fg: "#d4351c" },
+  Scheduled: { bg: "rgba(38,109,240,0.1)", fg: "rgb(38,109,240)" },
 };
-
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-const nf = new Intl.NumberFormat("en-US");
 
 // Column model. `sortValue` returns the comparable value for a row.
 const COLS = [
-  { key: "contact", label: "Contact", icon: User, width: 220, sortValue: (c) => c.contact },
+  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 420, sortValue: (c) => c.task },
   { key: "status", label: "Status", icon: CircleDot, width: 160, sortValue: (c) => c.status },
-  { key: "tier", label: "Tier", icon: Layers, width: 150, sortValue: (c) => c.tier },
-  { key: "seats", label: "Seats", icon: Hash, width: 120, numeric: true, sortValue: (c) => c.seats },
-  { key: "arr", label: "ARR", icon: DollarSign, width: 140, numeric: true, sortValue: (c) => c.arr },
-  { key: "lastTouch", label: "Last touch", icon: Clock, width: 150, sortValue: (c) => c.id },
-  { key: "email", label: "Email", icon: Mail, width: 220, link: true, sortValue: (c) => c.email },
 ];
 
 const NAME_COL = { key: "name", sortValue: (c) => c.name };
@@ -114,7 +93,7 @@ export function CustomersGrid() {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? CUSTOMERS.filter((c) =>
-          [c.name, c.contact, c.role, c.status, c.tier, c.email]
+          [c.name, c.task, c.status]
             .join(" ")
             .toLowerCase()
             .includes(q)
@@ -168,7 +147,7 @@ export function CustomersGrid() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search customers, contacts, status…"
+            placeholder="Search name, task, status…"
             className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40"
           />
         </div>
@@ -180,8 +159,8 @@ export function CustomersGrid() {
       {/* Grid */}
       <div
         className="min-h-0 flex-1 overflow-auto rounded-lg border bg-white"
-        style={{ borderColor: BORDER, color: INK, fontSize: 14 }}
-      >
+            style={{ borderColor: BORDER, color: INK, fontSize: 14 }}
+          >
         <table className="border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-30">
             <tr>
@@ -197,7 +176,7 @@ export function CustomersGrid() {
                     onClick={() => toggleSort("name")}
                     className="flex items-center gap-1 font-medium hover:text-black"
                   >
-                    Customer
+                    Name
                     <SortIcon active={sort.key === "name"} dir={sort.dir} />
                   </button>
                   <button
@@ -270,22 +249,9 @@ export function CustomersGrid() {
                     >
                       {col.key === "status" ? (
                         <StatusPill status={c.status} />
-                      ) : col.key === "contact" ? (
-                        <span className="block truncate" style={{ color: INK }}>
-                          <span className="font-medium">{c.contact}</span>
-                          <span className="text-black/45"> · {c.role}</span>
-                        </span>
-                      ) : col.link ? (
-                        <a
-                          href={`mailto:${c.email}`}
-                          className="block truncate hover:underline"
-                          style={{ color: LINK }}
-                        >
-                          {c.email}
-                        </a>
-                      ) : col.numeric ? (
-                        <span className="block truncate font-medium" style={{ color: INK }}>
-                          {col.key === "arr" ? usd.format(c.arr) : nf.format(c[col.key])}
+                      ) : col.key === "task" ? (
+                        <span className="block truncate text-black/75" style={{ color: INK }}>
+                          {c.task}
                         </span>
                       ) : (
                         <span className="block truncate font-medium" style={{ color: INK }}>
