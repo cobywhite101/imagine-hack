@@ -40,8 +40,10 @@ export default function App() {
           <span className="ml-auto">
             <span
               className={cn(
-                "rounded-full px-2 py-0.5 text-xs font-medium",
-                dataMode === "supabase" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                "rounded-full px-2 py-0.5 font-mono text-xs font-medium",
+                dataMode === "supabase"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-secondary text-muted-foreground"
               )}
             >
               {dataMode === "supabase" ? "● live (supabase)" : "● mock data"}
