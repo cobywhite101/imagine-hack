@@ -211,10 +211,10 @@ stack (React 19 · Tailwind v4 · shadcn/ui "new-york"). Tokens live as CSS vari
 
 ## Components
 
-> **Component library: [coss ui](https://coss.com/ui) — the only component library for this project.**
-> Built on [Base UI](https://base-ui.com/) + Tailwind. Copy-paste/own model.
+> **Component library: [shadcn/ui](https://ui.shadcn.com) — the only component library for this project.**
+> Built on Radix UI + Tailwind. Copy-paste/own model.
 > Already installed in [src/components/ui/](src/components/ui/): Button, Badge, Card, Progress, Tabs, Avatar.
-> Need another? `npx shadcn@latest add https://coss.com/ui/r/<name>.json`. Full component index: [llms.txt](llms.txt).
+> Need another? `npx shadcn@latest add <name>`. Full component index: [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components).
 
 ### Button (default)
 - bg `#121111` · text `#fcfcfc`

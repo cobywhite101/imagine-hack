@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink } from "react-router-dom";
 import { Home } from "@/pages/Home";
 import { CustomerHub } from "@/pages/CustomerHub";
+import { CustomerWorkspace } from "@/pages/CustomerWorkspace";
 import { AgentHub } from "@/pages/AgentHub";
 import { dataMode } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/customers" element={<CustomerHub />} />
+          <Route path="/customers/:customerId" element={<CustomerWorkspace />} />
           <Route path="/agents" element={<AgentHub />} />
         </Routes>
       </main>

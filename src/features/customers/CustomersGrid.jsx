@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Plus,
   User,
@@ -6,7 +7,9 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  Trash2,
 } from "lucide-react";
+import { CUSTOMERS } from "@/data/customers";
 
 /**
  * Functional CRM grid styled as a faithful replica of Attio's spreadsheet view.
@@ -20,34 +23,18 @@ import {
 const BORDER = "rgb(238, 239, 241)";
 const INK = "rgb(16, 17, 18)";
 
-// Fake clients — in-memory only.
-const CUSTOMERS = [
-  { id: 1, name: "Maya Chen", task: "Review 2026 beneficiary update and prep annual policy check-in notes", avatar: "MC", accent: "#3bd4cb", status: "Action needed", email: "maya.chen@example.com" },
-  { id: 2, name: "Devine Okafor", task: "Flag cash-flow sensitivity in trust distributions; generate follow-up script", avatar: "DO", accent: "#317cff", status: "Scheduled", email: "devine.okafor@example.com" },
-  { id: 3, name: "Priya Nair", task: "Prepare succession file checklist and risk memo before board review", avatar: "PN", accent: "#ec5d40", status: "Action needed", email: "priya.nair@example.com" },
-  { id: 4, name: "Tom Becker", task: "Confirm auto-pay authorizations and propose tax-optimization revision", avatar: "TB", accent: "#4991e5", status: "Monitoring", email: "tom.becker@example.com" },
-  { id: 5, name: "Lena Fischer", task: "Queue claim documentation follow-up and alert for policy expiry", avatar: "LF", accent: "#9b69ff", status: "Action needed", email: "lena.fischer@example.com" },
-  { id: 6, name: "Ray Mwangi", task: "Cross-check family trust liabilities and prepare 30-day outreach plan", avatar: "RM", accent: "#f5a524", status: "Monitoring", email: "ray.mwangi@example.com" },
-  { id: 7, name: "Iris Tanaka", task: "Draft re-engagement note for stalled investment review", avatar: "IT", accent: "#22b8cf", status: "Action needed", email: "iris.tanaka@example.com" },
-  { id: 8, name: "Marcus Hale", task: "Validate new beneficiary nominee and produce KYC completion checklist", avatar: "MH", accent: "#2f9e44", status: "Monitoring", email: "marcus.hale@example.com" },
-  { id: 9, name: "Sofia Ruiz", task: "Surface dormant policy changes and prepare advisor talking points", avatar: "SR", accent: "#e64980", status: "Action needed", email: "sofia.ruiz@example.com" },
-  { id: 10, name: "Aiden Park", task: "Compile renewal readiness summary and schedule review call", avatar: "AP", accent: "#7048e8", status: "Scheduled", email: "aiden.park@example.com" },
-  { id: 11, name: "Grace Liu", task: "Review inheritance timeline and confirm guardian contact details", avatar: "GL", accent: "#fd7e14", status: "Monitoring", email: "grace.liu@example.com" },
-  { id: 12, name: "Noah Schmidt", task: "Draft life-event check-in and capture updated emergency contact tree", avatar: "NS", accent: "#15aabf", status: "Action needed", email: "noah.schmidt@example.com" },
-  { id: 13, name: "Yuki Sato", task: "Run sensitivity scan before proposal and lock communication constraints", avatar: "YS", accent: "#4263eb", status: "Monitoring", email: "yuki.sato@example.com" },
-  { id: 14, name: "Omar Haddad", task: "Prepare quarterly retention review and next-meeting action list", avatar: "OH", accent: "#868e96", status: "Scheduled", email: "omar.haddad@example.com" },
-];
-
 const STATUS_STYLE = {
   Monitoring: { bg: "#eef0f2", fg: "#5b616b" },
   "Action needed": { bg: "#fdeaea", fg: "#d4351c" },
   Scheduled: { bg: "rgba(38,109,240,0.1)", fg: "rgb(38,109,240)" },
 };
 
-// Column model. `sortValue` returns the comparable value for a row.
+const STATUSES = Object.keys(STATUS_STYLE);
+
+// Column model. `type` drives the inline editor; `sortValue` is the comparable.
 const COLS = [
-  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 420, sortValue: (c) => c.task },
-  { key: "status", label: "Status", icon: CircleDot, width: 160, sortValue: (c) => c.status },
+  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 420, type: "text", sortValue: (c) => c.task },
+  { key: "status", label: "Status", icon: CircleDot, width: 160, type: "select", options: STATUSES, sortValue: (c) => c.status },
 ];
 
 const NAME_COL = { key: "name", sortValue: (c) => c.name };
@@ -84,21 +71,46 @@ function SortIcon({ active, dir }) {
   return dir === "asc" ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />;
 }
 
+// Inline text editor. Commits on blur or Enter, cancels on Escape.
+function CellInput({ value, onCommit, onCancel }) {
+  const [v, setV] = useState(value ?? "");
+  return (
+    <input
+      autoFocus
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => onCommit(v)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onCommit(v);
+        else if (e.key === "Escape") onCancel();
+      }}
+      className="h-6 w-full rounded-[5px] border border-[rgb(38,109,240)] bg-white px-1.5 text-sm text-black outline-none"
+    />
+  );
+}
+
+const EDIT_CLASSES =
+  "cursor-text rounded-[5px] outline outline-1 outline-transparent hover:outline-black/15";
+
 export function CustomersGrid() {
+  const [data, setData] = useState(CUSTOMERS);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [selected, setSelected] = useState(() => new Set());
+  const [editing, setEditing] = useState(null); // { id, key }
+  const nextId = useRef(1000);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
-      ? CUSTOMERS.filter((c) =>
+      ? data.filter((c) =>
           [c.name, c.task, c.status]
             .join(" ")
             .toLowerCase()
             .includes(q)
         )
-      : CUSTOMERS;
+      : data;
 
     const col = sort.key === "name" ? NAME_COL : COLS.find((c) => c.key === sort.key);
     const sorted = [...filtered].sort((a, b) => {
@@ -108,10 +120,29 @@ export function CustomersGrid() {
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [query, sort]);
+  }, [data, query, sort]);
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  }
+
+  function commitEdit(id, key, value) {
+    setData((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+    setEditing(null);
+  }
+
+  function addClient() {
+    const id = nextId.current++;
+    setData((prev) => [
+      { id, name: "New client", task: "", avatar: "NC", accent: "#868e96", status: "Monitoring", email: "" },
+      ...prev,
+    ]);
+    setEditing({ id, key: "task" });
+  }
+
+  function deleteSelected() {
+    setData((prev) => prev.filter((r) => !selected.has(r.id)));
+    setSelected(new Set());
   }
 
   function toggleRow(id) {
@@ -152,8 +183,25 @@ export function CustomersGrid() {
           />
         </div>
         {selected.size > 0 && (
-          <span className="font-mono text-xs text-black/55">{selected.size} selected</span>
+          <>
+            <span className="font-mono text-xs text-black/55">{selected.size} selected</span>
+            <button
+              type="button"
+              onClick={deleteSelected}
+              className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium text-[#d4351c] transition-colors hover:bg-[#fdeaea]"
+              style={{ borderColor: BORDER }}
+            >
+              <Trash2 className="size-3.5" /> Delete
+            </button>
+          </>
         )}
+        <button
+          type="button"
+          onClick={addClient}
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-[rgb(38,109,240)] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)]"
+        >
+          <Plus className="size-3.5" /> New client
+        </button>
       </div>
 
       {/* Grid */}
@@ -181,7 +229,8 @@ export function CustomersGrid() {
                   </button>
                   <button
                     type="button"
-                    aria-label="New customer"
+                    aria-label="New client"
+                    onClick={addClient}
                     className="ml-auto flex size-7 items-center justify-center rounded-lg text-black/55 transition-colors hover:bg-black/5"
                   >
                     <Plus className="size-3.5" />
@@ -235,31 +284,68 @@ export function CustomersGrid() {
                       >
                         {c.avatar}
                       </span>
-                      <span className="truncate font-medium" style={{ color: INK }}>
+                      <Link
+                        to={`/customers/${c.id}`}
+                        state={{ customer: c }}
+                        className="block min-w-0 flex-1 truncate rounded-[5px] font-medium outline outline-1 outline-transparent transition-colors hover:underline focus-visible:outline-[rgb(38,109,240)]"
+                        style={{ color: INK }}
+                      >
                         {c.name}
-                      </span>
+                      </Link>
                     </div>
                   </td>
 
-                  {COLS.map((col) => (
-                    <td
-                      key={col.key}
-                      style={{ width: col.width, minWidth: col.width, borderColor: BORDER }}
-                      className={`h-9 border-b border-r px-3 align-middle ${col.numeric ? "text-right" : ""} ${rowBg}`}
-                    >
-                      {col.key === "status" ? (
-                        <StatusPill status={c.status} />
-                      ) : col.key === "task" ? (
-                        <span className="block truncate text-black/75" style={{ color: INK }}>
-                          {c.task}
-                        </span>
-                      ) : (
-                        <span className="block truncate font-medium" style={{ color: INK }}>
-                          {c[col.key]}
-                        </span>
-                      )}
-                    </td>
-                  ))}
+                  {COLS.map((col) => {
+                    const isEditing = editing && editing.id === c.id && editing.key === col.key;
+                    return (
+                      <td
+                        key={col.key}
+                        style={{ width: col.width, minWidth: col.width, borderColor: BORDER }}
+                        className={`h-9 border-b border-r px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg}`}
+                      >
+                        {col.type === "select" ? (
+                          isEditing ? (
+                            <select
+                              autoFocus
+                              defaultValue={c[col.key]}
+                              onChange={(e) => commitEdit(c.id, col.key, e.target.value)}
+                              onBlur={() => setEditing(null)}
+                              className="h-6 w-full rounded-[5px] border border-[rgb(38,109,240)] bg-white px-1 text-sm text-black outline-none"
+                            >
+                              {col.options.map((o) => (
+                                <option key={o} value={o}>
+                                  {o}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditing({ id: c.id, key: col.key })}
+                              className={`block text-left ${EDIT_CLASSES}`}
+                            >
+                              <StatusPill status={c.status} />
+                            </button>
+                          )
+                        ) : isEditing ? (
+                          <CellInput
+                            value={c[col.key]}
+                            onCommit={(v) => commitEdit(c.id, col.key, v)}
+                            onCancel={() => setEditing(null)}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEditing({ id: c.id, key: col.key })}
+                            className={`block w-full truncate text-left ${EDIT_CLASSES}`}
+                            style={{ color: INK }}
+                          >
+                            {c[col.key] || "—"}
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
