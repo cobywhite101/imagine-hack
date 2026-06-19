@@ -11,6 +11,11 @@ import {
   mockAgents,
   mockMcpServers,
   mockAgentLog,
+  mockCustomers,
+  mockChatSeed,
+  mockChatSuggestions,
+  mockAgentHub,
+  mockAssistantReply,
 } from "@/data/mock";
 
 // Simulate network latency so loading states are real during the demo.
@@ -55,6 +60,32 @@ export const api = {
   getMcpServers: () => fromTable("mcp_servers", mockMcpServers),
 
   getAgentLog: () => fromTable("agent_runs", mockAgentLog),
+
+  // --- Sales workspace ---------------------------------------------------
+
+  getCustomers: () => fromTable("customers", mockCustomers),
+
+  getAgentHub: () => fromTable("agent_hub", mockAgentHub),
+
+  // Home chat seed + suggested prompts.
+  getChatSeed: async () => {
+    await delay();
+    return { messages: mockChatSeed, suggestions: mockChatSuggestions };
+  },
+
+  // The assistant. Mock mode returns a context-aware canned reply; Supabase
+  // mode would call an Edge Function / model endpoint (deferred — swap here).
+  sendChatMessage: async ({ text }) => {
+    if (!isSupabaseConfigured) {
+      await delay(700);
+      return mockAssistantReply(text);
+    }
+    const { data, error } = await supabase.functions.invoke("chat", {
+      body: { text },
+    });
+    if (error) throw error;
+    return data;
+  },
 
   // Example write — mock mode just echoes; Supabase mode persists.
   awardPoints: async (userId, points) => {
