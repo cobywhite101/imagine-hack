@@ -1,19 +1,84 @@
-import * as React from "react";
-import * as ProgressPrimitive from "@radix-ui/react-progress";
+"use client";;
+import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
 import { cn } from "@/lib/utils";
 
-function Progress({ className, value, ...props }) {
+export function Progress(
+  {
+    className,
+    children,
+    ...props
+  }
+) {
   return (
     <ProgressPrimitive.Root
-      className={cn("bg-secondary relative h-2 w-full overflow-hidden rounded-full", className)}
-      {...props}
-    >
-      <ProgressPrimitive.Indicator
-        className="bg-primary h-full w-full flex-1 transition-all"
-        style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
-      />
+      className={cn("flex w-full flex-col gap-2", className)}
+      data-slot="progress"
+      {...props}>
+      {children ? (
+        children
+      ) : (
+        <ProgressTrack>
+          <ProgressIndicator />
+        </ProgressTrack>
+      )}
     </ProgressPrimitive.Root>
   );
 }
 
-export { Progress };
+export function ProgressLabel(
+  {
+    className,
+    ...props
+  }
+) {
+  return (
+    <ProgressPrimitive.Label
+      className={cn("font-medium text-sm", className)}
+      data-slot="progress-label"
+      {...props} />
+  );
+}
+
+export function ProgressTrack(
+  {
+    className,
+    ...props
+  }
+) {
+  return (
+    <ProgressPrimitive.Track
+      className={cn("block h-1.5 w-full overflow-hidden rounded-full bg-input", className)}
+      data-slot="progress-track"
+      {...props} />
+  );
+}
+
+export function ProgressIndicator(
+  {
+    className,
+    ...props
+  }
+) {
+  return (
+    <ProgressPrimitive.Indicator
+      className={cn("bg-primary transition-all duration-500", className)}
+      data-slot="progress-indicator"
+      {...props} />
+  );
+}
+
+export function ProgressValue(
+  {
+    className,
+    ...props
+  }
+) {
+  return (
+    <ProgressPrimitive.Value
+      className={cn("text-sm tabular-nums", className)}
+      data-slot="progress-value"
+      {...props} />
+  );
+}
+
+export { ProgressPrimitive };

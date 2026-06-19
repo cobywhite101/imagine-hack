@@ -1,6 +1,6 @@
 # Project: Hackathon Starter
 
-React 19 · Vite · Tailwind v4 · shadcn/ui ("new-york", base zinc) · Supabase · React Router 7.
+React 19 · Vite · Tailwind v4 · coss ui (Base UI) · Supabase · React Router 7.
 
 ## Design system — READ BEFORE BUILDING UI
 
@@ -15,7 +15,7 @@ Rules:
 - **Dark-first.** The brand surface is near-black; `:root` already carries the dark brand palette.
 - **Fonts:** Inter (`font-sans`, default) for UI/display, IBM Plex Mono (`font-mono`) for labels,
   captions, and metadata.
-- **Prefer existing shadcn primitives** in [src/components/ui/](src/components/ui/) over new ones.
+- **Use coss ui primitives** in [src/components/ui/](src/components/ui/) — Button, Badge, Card, Progress, Tabs, Avatar are installed. Add more with `npx shadcn@latest add https://coss.com/ui/r/<name>.json`. No Radix/shadcn imports.
 - If a design need isn't covered by a token, add the token to `index.css` + document it in
   `DESIGN.md` rather than one-off styling.
 

@@ -211,14 +211,10 @@ stack (React 19 · Tailwind v4 · shadcn/ui "new-york"). Tokens live as CSS vari
 
 ## Components
 
-> **Component reference: [coss ui](https://coss.com/ui).** A local index lives at
-> [llms.txt](llms.txt) — a full list of coss ui components (Accordion, Dialog, Combobox, Command,
-> Drawer, etc.) with doc links. coss ui is built on [Base UI](https://base-ui.com/) + Tailwind and is
-> copy-paste/own (same model as shadcn). Prefer our existing shadcn primitives in
-> [src/components/ui/](src/components/ui/) first; when you need a primitive we don't have, pull it from
-> coss ui via `llms.txt` and style it with our tokens. coss ui ships a
-> [Radix / shadcn migration guide](https://coss.com/ui/docs/radix-shadcn-migration.md) so the two
-> interoperate cleanly.
+> **Component library: [coss ui](https://coss.com/ui) — the only component library for this project.**
+> Built on [Base UI](https://base-ui.com/) + Tailwind. Copy-paste/own model.
+> Already installed in [src/components/ui/](src/components/ui/): Button, Badge, Card, Progress, Tabs, Avatar.
+> Need another? `npx shadcn@latest add https://coss.com/ui/r/<name>.json`. Full component index: [llms.txt](llms.txt).
 
 ### Button (default)
 - bg `#121111` · text `#fcfcfc`
