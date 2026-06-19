@@ -1,4 +1,127 @@
-# Design System
+# Design
+
+This doc has two parts:
+
+1. **[Product direction](#product-direction)** — what we're building this hackathon, how the UI
+   supports the three themes, and what works in mock mode now vs. what waits for Supabase.
+2. **[Design system](#design-system)** — the brand/visual reference (colors, type, components,
+   tokens). This is the source of truth for all visual work (see [CLAUDE.md](CLAUDE.md)).
+
+Read part 1 before deciding *what* to build; read part 2 before deciding *how* it should look.
+
+---
+
+# Product direction
+
+## What this is
+
+A single-page dashboard for an **AI-agent platform with gamification**. One person can run
+`npm install && npm run dev` and immediately see a working, populated app — no backend, no keys.
+The header shows a **`● mock data`** badge; everything renders from
+[`src/data/mock.js`](src/data/mock.js). When Supabase env vars are added later, the same screens
+flip to **`● live (supabase)`** with **no component changes**.
+
+Stack: **React 19 · Vite 6 · Tailwind v4 · shadcn/ui ("new-york") · React Router 7 · Supabase**.
+
+> **The hackathon goal is a convincing, demoable product on mock data.** Build features as UI +
+> mock data first. Treat the live backend as a later swap, not a prerequisite.
+
+## The non-negotiable rule: data goes through `api`
+
+Every screen reads and writes data **only** through the `api` object in
+[`src/services/dataClient.js`](src/services/dataClient.js), via the `useApi` hook:
+
+```js
+const { data: agents, loading } = useApi(() => api.getAgents());
+```
+
+- **Never** import `supabase` in a component.
+- **Never** import `mockAgents` / `mockUsers` / etc. directly in a component.
+- `dataClient` decides mock vs. live based on `isSupabaseConfigured`. Components stay identical in
+  both modes.
+
+This single rule is what makes "mock now, Supabase later" work. Designs that bypass it (a component
+that talks to Supabase directly, or reads a mock array directly) are wrong by construction.
+
+### Adding anything new (the pattern)
+
+1. Add the shape to [`src/data/mock.js`](src/data/mock.js) (append to the bottom; don't reorder).
+2. Expose it as a method on `api` in [`src/services/dataClient.js`](src/services/dataClient.js).
+3. Build the component in `src/features/<area>/` using `useApi(() => api.xxx())`.
+4. Drop it into a page in `src/pages/`.
+5. Mirror the shape in [`supabase/schema.sql`](supabase/schema.sql) so the live swap is seamless
+   (this step can be done later — it's not needed to demo).
+
+## The three themes
+
+The whole experience is organized around the three themes from the [README](README.md). Each maps to
+a route, a feature folder, and `api` methods that already return mock data.
+
+### 1. Gamification — `/` (Dashboard)
+
+Make progress feel rewarding and competitive. Surfaces in
+[`src/features/gamification/`](src/features/gamification/) and on the Dashboard:
+
+- **Level card** — current user's level, points, streak (`api.getCurrentUser`).
+- **Quests** — todo / in-progress / done with point values (`api.getQuests`).
+- **Leaderboard** — users ranked by points (`api.getLeaderboard`).
+- **Badges** — earned vs. locked, with icons (`api.getBadges`).
+- Points are awarded through `api.awardPoints` (mock mode echoes; Supabase mode persists).
+
+UX intent: bright, immediate, celebratory. Use the **primary blue** for progress/points and the
+**orange accent** sparingly for "earned/unlocked" moments. Lean on `Progress`, `Badge`, and `Card`.
+
+### 2. Agents — `/agents`
+
+Show autonomous agents and make a run feel alive. In
+[`src/features/agents/`](src/features/agents/):
+
+- Agent list with status (`idle` / `running`), model, and run count (`api.getAgents`).
+- A **live run trace** that streams steps as an agent executes (`api.getAgentLog`).
+
+UX intent: a "control room" feel. The run trace is the hero — stream steps with a clear running
+state. Use `font-mono` for step logs, timestamps, and model names.
+
+### 3. MCPs — `/mcp`
+
+Connecting tools is what gives agents power. In [`src/features/mcp/`](src/features/mcp/):
+
+- A grid of MCP servers with connect/disconnect and a tool count (`api.getMcpServers`).
+- Connected state is visually obvious (status badge), toggleable in mock mode.
+
+UX intent: an "integrations marketplace." Cards with a clear connected/not-connected state and a
+single primary action per card.
+
+## Works in mock mode *now* vs. *deferred*
+
+Design against this line so the team never blocks on backend work.
+
+| Area | Mock-mode now (build this) | Deferred until Supabase |
+|------|----------------------------|--------------------------|
+| Reads | All lists/cards from `api.get*()` | Same calls, real rows — no UI change |
+| Writes | Optimistic local state (e.g. toggle MCP, award points echo, stream run trace) | Real persistence (`awardPoints` RPC, inserts/updates) |
+| Auth | `mockCurrentUser` from `api.getCurrentUser` | `supabase.auth` real session |
+| Data badge | `● mock data` | `● live (supabase)` (automatic) |
+| Schema | Shapes live in `mock.js` | `supabase/schema.sql` mirrors them |
+
+Rules of thumb for the hackathon:
+- **If a feature needs a feature to *look* done, it can ship on mock data.** Build it.
+- **If it needs durable, multi-user, cross-session state, note it as deferred** and fake it locally
+  for the demo.
+- Don't design flows that *require* real auth, real persistence, or live external APIs to be
+  demoable. Those are the swap-later layer.
+
+## Collaboration constraints (don't design around them)
+
+From [COLLAB.md](COLLAB.md): keep **`main` always working/demoable**, favor **small frequent
+commits**, and split work along the folder structure (one person on gamification + Dashboard, the
+other on agents + MCP). Designs should be **modular per feature folder** so two people rarely edit
+the same file. Treat `src/data/mock.js`, `src/services/dataClient.js`, and `src/App.jsx` as shared —
+append/extend, don't reorganize.
+
+---
+
+# Design system
 
 Brand reference for this project. Extracted from [devin.ai](https://devin.ai/) and adapted to our
 stack (React 19 · Tailwind v4 · shadcn/ui "new-york"). Tokens live as CSS variables in
