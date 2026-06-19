@@ -35,6 +35,23 @@ async function fromTable(table, mockValue, orderBy) {
   return data;
 }
 
+// Like fromTable, but for brand-new features whose Supabase table may not
+// exist yet. Tries the table; on any error (or empty result) it falls back to
+// mock data so the demo never breaks. Drop the table in and it swaps over.
+async function fromTableOrMock(table, mockValue) {
+  if (!isSupabaseConfigured) {
+    await delay();
+    return mockValue;
+  }
+  try {
+    const { data, error } = await supabase.from(table).select("*");
+    if (error || !data?.length) return mockValue;
+    return data;
+  } catch {
+    return mockValue;
+  }
+}
+
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -63,28 +80,32 @@ export const api = {
 
   // --- Sales workspace ---------------------------------------------------
 
-  getCustomers: () => fromTable("customers", mockCustomers),
+  getCustomers: () => fromTableOrMock("customers", mockCustomers),
 
-  getAgentHub: () => fromTable("agent_hub", mockAgentHub),
+  getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
 
-  // Home chat seed + suggested prompts.
+  // Home chat seed + suggested prompts (presentational — always mock).
   getChatSeed: async () => {
     await delay();
     return { messages: mockChatSeed, suggestions: mockChatSuggestions };
   },
 
-  // The assistant. Mock mode returns a context-aware canned reply; Supabase
-  // mode would call an Edge Function / model endpoint (deferred — swap here).
+  // The assistant. The live home is a Supabase Edge Function (where the
+  // DeepSeek key lives server-side). Until it exists, fall back to a
+  // context-aware canned reply so the demo always responds.
   sendChatMessage: async ({ text }) => {
-    if (!isSupabaseConfigured) {
-      await delay(700);
-      return mockAssistantReply(text);
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.functions.invoke("chat", {
+          body: { text },
+        });
+        if (!error && data) return data;
+      } catch {
+        /* fall through to mock reply */
+      }
     }
-    const { data, error } = await supabase.functions.invoke("chat", {
-      body: { text },
-    });
-    if (error) throw error;
-    return data;
+    await delay(700);
+    return mockAssistantReply(text);
   },
 
   // Example write — mock mode just echoes; Supabase mode persists.

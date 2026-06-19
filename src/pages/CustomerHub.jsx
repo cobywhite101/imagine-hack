@@ -1,6 +1,6 @@
-import { CustomerTable } from "@/features/customers/CustomerTable";
+import { CustomersGrid } from "@/features/customers/CustomersGrid";
 import { Button } from "@/components/ui/button";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 
 export function CustomerHub() {
   return (
@@ -17,16 +17,8 @@ export function CustomerHub() {
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-6xl space-y-4">
-          {/* Search bar (visual) */}
-          <div className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground">
-            <Search className="size-4" />
-            <span className="font-mono text-xs">Search customers, tags, status…</span>
-          </div>
-
-          <CustomerTable />
-        </div>
+      <div className="min-h-0 flex-1 overflow-hidden p-6">
+        <CustomersGrid />
       </div>
     </div>
   );

@@ -3,26 +3,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Brand: devin.ai — dark-first. See DESIGN.md. */
+/* Brand: devin.ai — light. See DESIGN.md. */
 :root {
   --radius: 1rem;
-  --background: #000000;
-  --foreground: #fcfcfc;
-  --card: #121111;
-  --card-foreground: #fcfcfc;
-  --popover: #121111;
-  --popover-foreground: #fcfcfc;
+  --background: #fafafa;
+  --foreground: #121111;
+  --card: #ffffff;
+  --card-foreground: #121111;
+  --popover: #ffffff;
+  --popover-foreground: #121111;
   --primary: #317cff;
   --primary-foreground: #ffffff;
-  --secondary: #141414;
-  --secondary-foreground: #e7e7e7;
-  --muted: #141414;
-  --muted-foreground: #989898;
+  --secondary: #f1f1f3;
+  --secondary-foreground: #1f1f1f;
+  --muted: #f1f1f3;
+  --muted-foreground: #6b6b70;
   --accent: #ec5d40;
   --accent-foreground: #ffffff;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: #262626;
-  --input: #262626;
+  --border: #e6e6e9;
+  --input: #e6e6e9;
   --ring: #317cff;
   --destructive-foreground: var(--color-red-700);
   --info: var(--color-blue-500);

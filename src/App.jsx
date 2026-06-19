@@ -5,7 +5,7 @@ import { AgentHub } from "@/pages/AgentHub";
 import { dataMode } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Sparkles, House, Users, Bot } from "lucide-react";
+import { ChevronsUpDown, House, Users, Bot } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Home", icon: House, end: true },
@@ -16,16 +16,23 @@ const nav = [
 function Sidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-card">
-      {/* Brand */}
-      <div className="flex items-center gap-2.5 px-4 py-4">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Sparkles className="size-4" />
+      {/* Workspace switcher */}
+      <button
+        type="button"
+        className="flex h-12 w-full items-center gap-3 px-3 text-left transition-colors hover:bg-secondary/60"
+      >
+        <Avatar className="size-6 rounded-[7px]">
+          <AvatarFallback className="rounded-[7px] bg-amber-500 text-[14px] font-medium text-amber-100">
+            C
+          </AvatarFallback>
+        </Avatar>
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="truncate text-base font-semibold tracking-[-0.02em] text-foreground">
+            Clubhouse.so
+          </span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
         </span>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold">Clubhouse</div>
-          <div className="font-mono text-[11px] text-muted-foreground">sales companion</div>
-        </div>
-      </div>
+      </button>
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 px-2">
