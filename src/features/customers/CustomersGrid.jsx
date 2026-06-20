@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 
 /**
  * Functional CRM grid for client records.
@@ -432,17 +433,10 @@ export function CustomersGrid() {
           </thead>
 
           <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={COLS.length + 1}
-                  className="h-24 px-3 text-center text-sm text-black/45"
-                  style={{ borderColor: BORDER }}
-                >
-                  Loading customers...
-                </td>
-              </tr>
-            )}
+            {loading &&
+              Array.from({ length: 9 }).map((_, index) => (
+                <CustomerGridSkeletonRow key={index} index={index} />
+              ))}
 
             {!loading && error && (
               <tr>
@@ -544,32 +538,33 @@ export function CustomersGrid() {
               );
             })}
 
-            {/* Footer / count row */}
-            <tr style={{ color: "rgba(0,0,0,0.55)" }}>
-              <td
-                style={{ width: 260, minWidth: 260, borderColor: BORDER }}
-                className="sticky left-0 z-20 h-9 border-r bg-white px-3 text-right"
-              >
-                <span className="font-medium" style={{ color: INK }}>
-                  {rows.length}
-                </span>{" "}
-                count
-              </td>
-              {COLS.map((c, index) => {
-                const isLast = index === COLS.length - 1;
-                return (
-                  <td
-                    key={c.key}
-                    style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
-                    className={`group/calc h-9 bg-white px-3 ${isLast ? "" : "border-r"}`}
-                  >
-                    <span className="flex items-center gap-1.5 text-black/30 transition-colors group-hover/calc:text-black/55">
-                      <Plus className="size-3.5" /> Add calculation
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
+            {!loading && (
+              <tr style={{ color: "rgba(0,0,0,0.55)" }}>
+                <td
+                  style={{ width: 260, minWidth: 260, borderColor: BORDER }}
+                  className="sticky left-0 z-20 h-9 border-r bg-white px-3 text-right"
+                >
+                  <span className="font-medium" style={{ color: INK }}>
+                    {rows.length}
+                  </span>{" "}
+                  count
+                </td>
+                {COLS.map((c, index) => {
+                  const isLast = index === COLS.length - 1;
+                  return (
+                    <td
+                      key={c.key}
+                      style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
+                      className={`group/calc h-9 bg-white px-3 ${isLast ? "" : "border-r"}`}
+                    >
+                      <span className="flex items-center gap-1.5 text-black/30 transition-colors group-hover/calc:text-black/55">
+                        <Plus className="size-3.5" /> Add calculation
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

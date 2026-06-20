@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApi } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
@@ -160,15 +161,22 @@ export function McpPanel() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {loading && <p className="text-sm text-muted-foreground">Loading connectors...</p>}
-            {featured.map((connector) => (
-              <ConnectorCard key={connector.id} connector={connector} onToggle={toggle} />
-            ))}
+            {loading
+              ? Array.from({ length: 6 }).map((_, index) => (
+                  <ConnectorCardSkeleton key={index} />
+                ))
+              : featured.map((connector) => (
+                  <ConnectorCard key={connector.id} connector={connector} onToggle={toggle} />
+                ))}
           </div>
 
           <h2 className="mt-10 text-xl font-medium leading-7">Connectors</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {connected.length ? (
+            {loading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <ConnectorCardSkeleton key={index} />
+              ))
+            ) : connected.length ? (
               connected.map((connector) => (
                 <ConnectorCard key={`connected-${connector.id}`} connector={connector} onToggle={toggle} />
               ))
@@ -192,6 +200,21 @@ export function McpPanel() {
       >
         <HelpCircle className="size-4" />
       </button>
+    </div>
+  );
+}
+
+function ConnectorCardSkeleton() {
+  return (
+    <div className="flex h-20 min-w-0 items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
+      <SkeletonBlock width={28} height={28} />
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock height={16} width="54%" />
+        <div className="mt-2">
+          <SkeletonBlock height={14} width="86%" />
+        </div>
+      </div>
+      <SkeletonBlock width={24} height={24} />
     </div>
   );
 }

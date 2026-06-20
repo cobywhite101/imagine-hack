@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/useApi";
 import { api } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,13 @@ export function Badges() {
         </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
+        {loading &&
+          Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="flex flex-col items-center gap-2 rounded-lg border p-3">
+              <SkeletonBlock width={24} height={24} />
+              <SkeletonBlock width={64} height={14} />
+            </div>
+          ))}
         {badges?.map((b) => {
           const Icon = Icons[b.icon] ?? Icons.Star;
           return (

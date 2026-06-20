@@ -48,6 +48,7 @@ const ACTION_WORDS = [
 ];
 
 const THINKING_STEP_MS = 950;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const THINKING_STEPS_BY_INTENT = {
   memory_update: [
     "Updating customer memory...",
@@ -134,6 +135,133 @@ function formatMemoryDate(value) {
 
 function cleanText(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function parseDateOnly(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function getNextAnnualDate(value, today = new Date()) {
+  const sourceDate = parseDateOnly(value);
+  if (!sourceDate) return null;
+
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const month = sourceDate.getUTCMonth();
+  const day = sourceDate.getUTCDate();
+  let nextDate = new Date(Date.UTC(todayUtc.getUTCFullYear(), month, day));
+  if (nextDate < todayUtc) {
+    nextDate = new Date(Date.UTC(todayUtc.getUTCFullYear() + 1, month, day));
+  }
+
+  return {
+    date: nextDate,
+    daysUntil: Math.round((nextDate.getTime() - todayUtc.getTime()) / DAY_MS),
+  };
+}
+
+function getDaysUntilDate(value, today = new Date()) {
+  const date = parseDateOnly(value);
+  if (!date) return null;
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  return Math.round((date.getTime() - todayUtc.getTime()) / DAY_MS);
+}
+
+function formatMonthDay(date) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function getRelationshipLead(customer) {
+  const nextAction = customer.task || customer.nextAction;
+  if (nextAction) return `the next action: ${nextAction}`;
+  if (customer.nextRenewalPolicyType) return `the ${customer.nextRenewalPolicyType} review`;
+  return "the client conversation";
+}
+
+function extractRapportInsight(customer, memories = []) {
+  const text = [
+    customer.rapportNotes,
+    ...memories.flatMap((memory) => [memory.summary, memory.body]),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!text) return "";
+
+  const blockedPattern =
+    /\b(policy|premium|sum assured|net worth|income|risk tolerance|fact-find|last direct contact|prefers|client since|estate planning|kyc|renewal|will in place)\b/i;
+  const rapportPattern =
+    /\b(avid|baking|badminton|cycling|durian|enthusiast|fan|garden|guitar|hobby|karaoke|learning|likes|loves|picked up|plays|regular|training|vinyl)\b/i;
+
+  const candidates = text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => cleanText(sentence).replace(/^["']+|["']+$/g, ""))
+    .filter((sentence) => sentence.length >= 24 && sentence.length <= 180)
+    .filter((sentence) => rapportPattern.test(sentence) && !blockedPattern.test(sentence))
+    .map((sentence) => ({
+      sentence,
+      score:
+        (/\b(recently|training|learning|picked up|avid|enthusiast)\b/i.test(sentence) ? 3 : 0) +
+        (/\b(durian|birthday|festival|baking|cycling|badminton|guitar)\b/i.test(sentence) ? 2 : 0) +
+        (sentence.length < 120 ? 1 : 0),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return candidates[0]?.sentence ?? "";
+}
+
+function buildCustomerIcebreakerMessage(customer, memories = []) {
+  const lead = getRelationshipLead(customer);
+  const birthday = getNextAnnualDate(customer.dateOfBirth);
+  const nextLifeEventDays = getDaysUntilDate(customer.nextLifeEventDate);
+
+  if (birthday && birthday.daysUntil <= 45) {
+    return `Reminder: ${customer.name}'s birthday is ${formatMonthDay(birthday.date)}. Open with a quick birthday note, then move into ${lead}.`;
+  }
+
+  if (customer.nextLifeEvent && nextLifeEventDays !== null && nextLifeEventDays >= 0 && nextLifeEventDays <= 90) {
+    return `Useful opener: ${customer.nextLifeEvent} is coming up on ${formatMonthDay(parseDateOnly(customer.nextLifeEventDate))}. Acknowledge that first, then move into ${lead}.`;
+  }
+
+  const rapportInsight = extractRapportInsight(customer, memories);
+  if (rapportInsight) {
+    return `Useful opener: ${rapportInsight.replace(/[.!?]+$/, "")}. Use that to break the ice before moving into ${lead}.`;
+  }
+
+  if (customer.nextRenewal) {
+    const renewalDate = parseDateOnly(customer.nextRenewal);
+    if (renewalDate) {
+      return `Useful reminder: ${customer.nextRenewalPolicyType || "Policy"} renewal is coming up on ${formatMonthDay(renewalDate)}. Start with a warm check-in, then move into the review.`;
+    }
+  }
+
+  return `I have ${customer.name}'s account context ready. Start with a warm check-in, then ask for a recap, renewal plan, risk summary, or follow-up email.`;
+}
+
+function buildCustomerSeedMessage(customer, memories = []) {
+  const customerMemories = memories.filter((memory) => String(memory.customerId ?? "") === String(customer.id ?? ""));
+  return {
+    id: "seed-1",
+    role: "assistant",
+    text: buildCustomerIcebreakerMessage(customer, customerMemories),
+  };
 }
 
 function cleanCorrectionValue(value) {
@@ -501,7 +629,7 @@ const CUSTOMER_RECORD_FIELD_DEFINITIONS = [
   {
     field: "dateOfBirth",
     label: "Date of birth",
-    aliases: ["birth date", "birthdate", "date of birth", "dob", "born"],
+    aliases: ["birth date", "birthdate", "birth year", "birthyear", "date of birth", "dob", "born"],
     type: "dateOfBirth",
   },
   {
@@ -748,7 +876,8 @@ function normalizeCustomerRecordValue(rawValue, definition, customer) {
   }
 
   if (definition.options) {
-    return normalizeSelectValue(rawValue, definition.options);
+    const normalizedOption = normalizeSelectValue(rawValue, definition.options);
+    return definition.options.includes(normalizedOption) ? normalizedOption : null;
   }
 
   const cleaned = cleanCorrectionValue(rawValue);
@@ -792,12 +921,35 @@ function parseCustomerRecordUpdateRequest(text, customer, history = []) {
   };
 }
 
-function buildRecordUpdatedMessage({ correction, customer }) {
+function getRecordUpdateDisplayValue(correction) {
+  if (correction.field === "dateOfBirth") {
+    const displayValue = cleanText(correction.displayValue);
+    if (/^(?:19|20)\d{2}$/.test(displayValue)) {
+      return displayValue;
+    }
+  }
+
+  return correction.nextValue;
+}
+
+function getRecordUpdateLabel(correction) {
+  if (correction.field === "dateOfBirth") {
+    const displayValue = cleanText(correction.displayValue);
+    if (/^(?:19|20)\d{2}$/.test(displayValue)) {
+      return "Birth year";
+    }
+  }
+
+  return correction.fieldLabel;
+}
+
+function buildRecordUpdatedMessage({ correction }) {
+  const label = getRecordUpdateLabel(correction);
+  const value = getRecordUpdateDisplayValue(correction);
+
   return {
     type: "record-updated",
-    text: "Client record updated",
-    detail: `${correction.fieldLabel}: ${correction.oldValue || "Not recorded"} -> ${correction.nextValue}`,
-    source: customer?.name ? `Updated ${customer.name}'s CRM record` : "Updated CRM record",
+    text: `${label} updated to ${value}`,
   };
 }
 
@@ -1233,7 +1385,7 @@ function CustomerChatMessage({ message, onSuggestion }) {
       <div className="group flex flex-col gap-1 w-full items-start">
         {finalPreText && (
           <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112] w-full mb-2">
-            {renderMessageText(finalPreText, message.id !== "seed-1")}
+            {renderMessageText(finalPreText, true)}
           </div>
         )}
 
@@ -1263,8 +1415,13 @@ function CustomerChatMessage({ message, onSuggestion }) {
 
   return (
     <div className="group">
-      <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
-        {renderMessageText(message.text, message.id !== "seed-1")}
+      <div
+        className={cn(
+          "whitespace-pre-wrap font-normal text-[#101112]",
+          message.id === "seed-1" ? "text-[16px] leading-7" : "text-[14px] leading-6"
+        )}
+      >
+        {renderMessageText(message.text, true)}
       </div>
       <MessageSuggestions suggestions={message.suggestions} onSuggestion={onSuggestion} />
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
@@ -1336,14 +1493,24 @@ export function CustomerWorkspace() {
 
   useEffect(() => {
     if (!customer) return;
-    setMessages([
-      {
-        id: "seed-1",
-        role: "assistant",
-        text: `I have ${customer.name}'s account context ready. Ask for a recap, renewal plan, risk summary, or follow-up email.`,
-      },
-    ]);
+    setMessages([buildCustomerSeedMessage(customer, memories)]);
   }, [customer?.id]);
+
+  useEffect(() => {
+    if (!customer) return;
+    setMessages((prev) => {
+      if (prev.length !== 1 || prev[0]?.id !== "seed-1") return prev;
+      return [buildCustomerSeedMessage(customer, memories)];
+    });
+  }, [
+    customer?.dateOfBirth,
+    customer?.nextLifeEvent,
+    customer?.nextLifeEventDate,
+    customer?.nextRenewal,
+    customer?.nextRenewalPolicyType,
+    customer?.rapportNotes,
+    memories,
+  ]);
 
   useEffect(() => {
     if (fetchedMemories) setMemories(fetchedMemories);

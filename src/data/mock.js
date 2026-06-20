@@ -263,13 +263,13 @@ export const mockHomeTasks = [
   {
     id: "task-lim-hui-min-renewal",
     customerId: "CL-0099",
-    title: "Draft Lim Hui Min renewal talking points",
-    icon: "notepad",
+    title: "Meet Lim Hui Min for renewal review",
+    icon: "meeting",
     priority: "Medium",
-    category: "Renewal",
-    status: "In progress",
+    category: "Meeting",
+    status: "Meeting",
     dueDate: todayISO(),
-    notes: "Life renewal is due soon. Prepare a short agenda and risk update.",
+    notes: "Life renewal is due soon. Review the agenda and risk update during the meeting.",
     sortOrder: 40,
   },
   {

@@ -3,7 +3,7 @@ import { useApi } from "@/hooks/useApi";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 import { Bot, Play, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,17 +57,44 @@ export function AgentHubGrid() {
   const { data: agents, loading } = useApi(() => api.getAgentHub());
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-muted-foreground">
-        <Spinner className="size-5" />
-      </div>
-    );
+    return <AgentHubGridSkeleton />;
   }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {agents.map((a) => (
         <AgentCard key={a.id} agent={a} />
+      ))}
+    </div>
+  );
+}
+
+function AgentHubGridSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <Card key={index} className="gap-4 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <SkeletonBlock width={40} height={40} />
+            <SkeletonBlock width={74} height={24} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <SkeletonBlock width={132} height={18} />
+              <SkeletonBlock width={66} height={20} />
+            </div>
+            <SkeletonBlock height={16} width="96%" />
+            <SkeletonBlock height={16} width="72%" />
+          </div>
+          <div className="flex items-center justify-between">
+            <SkeletonBlock width={92} height={14} />
+            <SkeletonBlock width={72} height={14} />
+          </div>
+          <div className="flex gap-2">
+            <SkeletonBlock height={32} className="flex-1" containerClassName="flex-1" />
+            <SkeletonBlock width={32} height={32} />
+          </div>
+        </Card>
       ))}
     </div>
   );

@@ -1,4 +1,6 @@
-import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom";
 import { Home } from "@/pages/Home";
 import { Chat } from "@/pages/Chat";
 import { CustomerHub } from "@/pages/CustomerHub";
@@ -19,9 +21,11 @@ import {
   MessageCircle,
   PanelLeft,
   Plug,
+  Search,
   Sparkles,
   Users,
   Workflow,
+  X,
 } from "lucide-react";
 
 const primaryNav = [
@@ -56,6 +60,15 @@ const sections = [
   },
 ];
 
+const quickActions = [
+  { to: "/home", label: "Open home", description: "Review today and follow-ups", icon: House },
+  { to: "/customers", label: "Open customer hub", description: "Find and manage client records", icon: Users },
+  { to: "/chat", label: "Open advisor companion", description: "Draft notes and client outreach", icon: MessageCircle },
+  { to: "/agents", label: "Open agent hub", description: "Run agent presets", icon: Bot },
+  { to: "/workflows", label: "Open workflows", description: "Build follow-up automations", icon: Workflow },
+  { to: "/mcp", label: "Open connectors", description: "Manage knowledge sources", icon: Plug },
+];
+
 function SidebarLink({ to, label, icon: Icon, end, inset = false, showActive = true }) {
   return (
     <NavLink
@@ -73,6 +86,101 @@ function SidebarLink({ to, label, icon: Icon, end, inset = false, showActive = t
       <Icon className="size-3.5 shrink-0 text-[#5f6368]" strokeWidth={1.9} />
       <span className="min-w-0 truncate">{label}</span>
     </NavLink>
+  );
+}
+
+function QuickActionsDialog({ open, onOpenChange }) {
+  const navigate = useNavigate();
+  const inputRef = useRef(null);
+  const [query, setQuery] = useState("");
+
+  const filteredActions = useMemo(() => {
+    const term = query.trim().toLowerCase();
+
+    if (!term) {
+      return quickActions;
+    }
+
+    return quickActions.filter((action) =>
+      `${action.label} ${action.description}`.toLowerCase().includes(term)
+    );
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  function runAction(action) {
+    navigate(action.to);
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <Dialog.Content className="fixed left-1/2 top-[18vh] z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-[#e6e7ea] bg-white shadow-[0_18px_60px_rgba(28,40,64,0.22)]">
+          <Dialog.Title className="sr-only">Quick actions</Dialog.Title>
+          <div className="flex h-12 items-center gap-2 border-b border-[#ececef] px-3">
+            <Search className="size-4 shrink-0 text-black/45" strokeWidth={1.9} />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search actions"
+              className="h-full min-w-0 flex-1 bg-transparent text-[15px] font-medium text-[#101112] outline-none placeholder:text-black/35"
+            />
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-black/55 transition-colors hover:bg-black/[0.05]"
+                aria-label="Close quick actions"
+              >
+                <X className="size-4" strokeWidth={1.9} />
+              </button>
+            </Dialog.Close>
+          </div>
+          <div className="max-h-[360px] overflow-y-auto p-1.5">
+            {filteredActions.length ? (
+              filteredActions.map((action) => {
+                const Icon = action.icon;
+
+                return (
+                  <button
+                    key={action.to}
+                    type="button"
+                    onClick={() => runAction(action)}
+                    className="flex min-h-12 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-black/[0.04] focus-visible:bg-black/[0.04] focus-visible:outline-none"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-black/[0.035] text-black/60">
+                      <Icon className="size-4" strokeWidth={1.9} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-semibold leading-5 text-[#101112]">
+                        {action.label}
+                      </span>
+                      <span className="block truncate text-[12px] font-medium leading-4 text-black/45">
+                        {action.description}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="flex h-20 items-center justify-center px-4 text-[13px] font-medium text-black/45">
+                No actions found
+              </div>
+            )}
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -97,6 +205,20 @@ function SidebarSection({ label, items }) {
 }
 
 function Sidebar() {
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setQuickActionsOpen((open) => !open);
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
       <button
@@ -120,7 +242,10 @@ function Sidebar() {
       <div className="flex h-11 w-[247px] items-center px-2.5 pb-2.5 pt-2">
         <button
           type="button"
+          onClick={() => setQuickActionsOpen(true)}
           className="flex h-7 w-full items-center gap-1.5 rounded-[5px] bg-white px-1.5 text-left text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
+          aria-haspopup="dialog"
+          aria-expanded={quickActionsOpen}
         >
           <Keyboard className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
           <span className="min-w-0 flex-1 truncate">Quick actions</span>
@@ -129,6 +254,7 @@ function Sidebar() {
           </kbd>
         </button>
       </div>
+      <QuickActionsDialog open={quickActionsOpen} onOpenChange={setQuickActionsOpen} />
 
       <nav className="min-h-0 flex-1 overflow-y-auto pb-4">
         <div className="flex w-[247px] flex-col gap-px px-2">

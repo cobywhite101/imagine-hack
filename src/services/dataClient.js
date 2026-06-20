@@ -61,7 +61,7 @@ const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff",
 const FALLBACK_CUSTOMER_ACCENT = "#868e96";
 const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
 const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
-const HOME_TASK_STATUSES = ["To Do", "In progress", "Follow-up", "Done"];
+const HOME_TASK_STATUSES = ["To Do", "Meeting", "Follow-up", "Done"];
 const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
 const CUSTOMER_RECORD_COLUMN_MAP = {
   email: "email",
@@ -222,13 +222,14 @@ function writeStoredArray(key, value) {
 }
 
 function normalizeHomeTaskStatus(status) {
+  if (status === "In progress") return "Meeting";
   return HOME_TASK_STATUSES.includes(status) ? status : "To Do";
 }
 
 function getHomeTaskIcon(task) {
   const status = normalizeHomeTaskStatus(task?.status);
   if (status === "Done") return "check";
-  if (status === "In progress") return "notepad";
+  if (status === "Meeting") return "meeting";
   if (status === "Follow-up") return "mail";
   if (/brief|prep|note|draft/i.test(task?.title ?? "")) return "notepad";
   return "plus";
@@ -543,7 +544,9 @@ function getHomeBriefContext(tasks, meetings, customers = []) {
     .filter((meeting) => isSameLocalDate(meeting.start, today))
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
   const followUps = tasks.filter((task) => task.status === "Follow-up");
-  const dueTasks = tasks.filter((task) => task.status !== "Done" && (!task.dueDate || task.dueDate <= today));
+  const dueTasks = tasks.filter(
+    (task) => !["Done", "Meeting"].includes(task.status) && (!task.dueDate || task.dueDate <= today)
+  );
   const highPriorityTasks = dueTasks.filter((task) => String(task.priority).toLowerCase() === "high");
   const priority = todayMeetings[0];
   const priorityTime = formatMeetingTime(priority);
@@ -570,9 +573,9 @@ function getHomeBriefContext(tasks, meetings, customers = []) {
 function buildLocalHomeBrief(tasks, meetings, customers = []) {
   const context = getHomeBriefContext(tasks, meetings, customers);
   const priorityTask = context.highPriorityTasks[0] ?? context.followUps[0] ?? context.dueTasks[0];
-  const priorityText = priorityTask?.title
-    ? `${priorityTask.title}${context.priorityTime ? ` before ${context.priorityTime}` : ""}`
-    : context.priorityText;
+  const priorityText = context.priority
+    ? context.priorityText
+    : priorityTask?.title ?? context.priorityText;
   const workload = [
     context.meetingsText,
     context.followUpsText,
@@ -595,7 +598,9 @@ function buildLocalHomeBrief(tasks, meetings, customers = []) {
   return {
     advisorName: context.advisorName,
     headline: `Good morning, ${context.advisorName}.`,
-    body: `You have ${workload.join(", ")}. Start with ${priorityText}; it is the best next action from today's task board.`,
+    body: workload.length
+      ? `You have ${workload.join(", ")}. Start with ${priorityText}; it is the best next action for today.`
+      : `Start with ${priorityText}; it is the best next action for today.`,
     bodyHighlights,
     meetingsText: context.meetingsText,
     followUpsText: context.followUpsText,
@@ -660,7 +665,7 @@ async function buildHomeBrief(tasks, meetings, customers = []) {
 
   const systemPrompt = `You generate a short morning brief for a financial advisor CRM home page.
 Use only the supplied tasks and meetings. Do not invent clients, counts, times, or obligations.
-Choose the first priority from urgent due tasks, follow-ups, and today's earliest meeting.
+Choose today's earliest meeting first. If there are no meetings, choose urgent due tasks, then follow-ups.
 Return only valid JSON:
 {
   "headline": "short greeting",

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { MeetingsCalendar } from "../features/calendar/MeetingsCalendar";
 import { api } from "@/services/dataClient";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 
 export function Home() {
   const [dashboard, setDashboard] = useState(null);
@@ -14,7 +15,9 @@ export function Home() {
   const [homeError, setHomeError] = useState(null);
   const todoCards = dashboard?.tasks ?? [];
   const meetings = dashboard?.meetings ?? [];
-  const brief = dashboard?.brief ?? defaultBrief;
+  const brief = dashboard?.brief;
+  const initialLoading = dashboard === null && !homeError;
+  const briefHeadline = brief?.headline ?? defaultBrief.headline;
 
   const refreshHomeDashboard = useCallback(async () => {
     try {
@@ -89,14 +92,21 @@ export function Home() {
         <div className="w-[1179px] px-4 pt-4">
           <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
             <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
-              {brief.headline}
+              {initialLoading ? <SkeletonBlock width={260} height={28} /> : briefHeadline}
             </h2>
-            <p
-              key={brief.body}
-              className="max-w-[920px] animate-grok-fade text-[18px] font-medium leading-7 text-[#101112]"
-            >
-              <BriefBody body={brief.body} highlights={brief.bodyHighlights} />
-            </p>
+            {initialLoading ? (
+              <div className="max-w-[920px] space-y-2">
+                <SkeletonBlock height={24} width="96%" />
+                <SkeletonBlock height={24} width="78%" />
+              </div>
+            ) : brief?.body ? (
+              <p
+                key={brief.body}
+                className="max-w-[920px] animate-grok-fade text-[18px] font-medium leading-7 text-[#101112]"
+              >
+                <BriefBody body={brief.body} highlights={brief.bodyHighlights} />
+              </p>
+            ) : null}
             {homeError ? (
               <p className="mt-2 text-[12px] font-medium text-[#d4351c]">
                 Home data is using the latest available local state.
@@ -108,17 +118,22 @@ export function Home() {
         <div className="w-[1179px] px-4 pb-6 pt-4">
           <TodoList
             cards={todoCards}
+            loading={initialLoading}
             onOpenTask={setEditingTask}
             onNewTask={(status) => setEditingTask(createTodoDraft(status))}
           />
         </div>
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
-          <MeetingsCalendar
-            events={meetings}
-            onSaveEvent={saveMeeting}
-            onDeleteEvent={deleteMeeting}
-          />
+          {initialLoading ? (
+            <HomeCalendarSkeleton />
+          ) : (
+            <MeetingsCalendar
+              events={meetings}
+              onSaveEvent={saveMeeting}
+              onDeleteEvent={deleteMeeting}
+            />
+          )}
         </div>
       </div>
       {editingTask && (
@@ -134,13 +149,7 @@ export function Home() {
 }
 
 const defaultBrief = {
-  advisorName: "Daniel",
   headline: "Good morning, Daniel.",
-  body: "No generated brief is available yet. Your client task board is ready.",
-  bodyHighlights: [],
-  meetingsText: "0 meetings today",
-  followUpsText: "0 follow-ups due",
-  priorityText: "Your client task board",
 };
 
 const briefHighlightTones = {
@@ -210,7 +219,7 @@ const boardGroups = [
     addShadow: "shadow-[0_0_0_1px_rgba(42,28,0,0.07)]",
   },
   {
-    status: "In progress",
+    status: "Meeting",
     tone: "blue",
     background: "bg-[rgba(0,128,213,0.047)]",
     headerBg: "bg-[rgba(0,118,217,0.204)]",
@@ -241,7 +250,7 @@ const boardGroups = [
   },
 ];
 
-function TodoList({ cards, onOpenTask, onNewTask }) {
+function TodoList({ cards, loading, onOpenTask, onNewTask }) {
   return (
     <div
       data-testid="home-todo-list"
@@ -257,6 +266,7 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
                   key={group.status}
                   group={group}
                   count={groupCards.length}
+                  loading={loading}
                 />
               );
             })}
@@ -271,6 +281,7 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
                 key={group.status}
                 group={group}
                 cards={groupCards}
+                loading={loading}
                 onOpenTask={onOpenTask}
                 onNewTask={onNewTask}
               />
@@ -282,7 +293,7 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
   );
 }
 
-function BoardHeader({ group, count }) {
+function BoardHeader({ group, count, loading }) {
   return (
     <div className={`mr-3 flex h-10 w-[276px] shrink-0 items-center rounded-t-[10px] px-2 text-[13px] ${group.background}`}>
       <div className="flex items-center rounded-[6px] p-[3px]">
@@ -292,35 +303,108 @@ function BoardHeader({ group, count }) {
         </div>
       </div>
       <div className={`ml-0 flex min-h-5 min-w-5 items-center rounded px-1.5 font-normal ${group.text === "text-[#494846]" ? "text-[#5f5e59]" : group.text}`}>
-        {count}
+        {loading ? <SkeletonBlock width={16} height={14} /> : count}
       </div>
       <div className="flex-1" />
     </div>
   );
 }
 
-function BoardGroup({ group, cards, onOpenTask, onNewTask }) {
+function BoardGroup({ group, cards, loading, onOpenTask, onNewTask }) {
   return (
     <div className={`mr-3 box-content h-max w-[260px] shrink-0 rounded-b-[10px] px-2 pb-2 ${group.background}`}>
       <div className="h-[3px] w-[260px]" />
-      {cards.map((card) => (
-        <TodoCard key={card.id} card={card} onClick={() => onOpenTask(card)} />
-      ))}
-      <button
-        type="button"
-        onClick={() => onNewTask(group.status)}
-        className={[
-          "inline-flex h-10 w-[260px] items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[13px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
-          group.addColor,
-          group.addShadow,
-        ].join(" ")}
-      >
-        <span className="flex size-4 items-center justify-center text-[22px] font-light leading-none">
-          +
-        </span>
-        <span>New task</span>
-      </button>
+      {loading ? (
+        <>
+          <TodoCardSkeleton tall />
+          <TodoCardSkeleton />
+          <div className="h-10 w-[260px] rounded-[10px] bg-white px-3 py-2.5 shadow-[0_0_0_1px_rgba(42,28,0,0.07)]">
+            <SkeletonBlock width={86} height={16} />
+          </div>
+        </>
+      ) : (
+        <>
+          {cards.map((card) => (
+            <TodoCard key={card.id} card={card} onClick={() => onOpenTask(card)} />
+          ))}
+          <button
+            type="button"
+            onClick={() => onNewTask(group.status)}
+            className={[
+              "inline-flex h-10 w-[260px] items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[13px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
+              group.addColor,
+              group.addShadow,
+            ].join(" ")}
+          >
+            <span className="flex size-4 items-center justify-center text-[22px] font-light leading-none">
+              +
+            </span>
+            <span>New task</span>
+          </button>
+        </>
+      )}
     </div>
+  );
+}
+
+function TodoCardSkeleton({ tall = false }) {
+  return (
+    <div
+      className={[
+        "mb-2 flex w-[260px] rounded-[10px] bg-white px-4 shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)]",
+        tall ? "h-[102px] items-start py-2.5" : "h-10 items-center",
+      ].join(" ")}
+    >
+      <SkeletonBlock circle width={18} height={18} className="mr-2.5" />
+      <div className="min-w-0 flex-1">
+        <SkeletonBlock height={16} width={tall ? 180 : 150} />
+        {tall ? (
+          <div className="mt-3 space-y-1.5">
+            <SkeletonBlock height={18} width={72} />
+            <SkeletonBlock height={18} width={118} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function HomeCalendarSkeleton() {
+  return (
+    <section className="rounded-[8px] border border-[#eeeeee] bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <SkeletonBlock width={128} height={20} />
+        <div className="flex items-center gap-3">
+          <SkeletonBlock width={176} height={30} />
+          <SkeletonBlock width={84} height={16} />
+          <SkeletonBlock width={62} height={28} />
+        </div>
+      </div>
+      <div className="rounded-[6px] border border-[#eeeeee]">
+        <div className="grid grid-cols-7 border-b border-[#eeeeee] bg-[#fafafa]">
+          {Array.from({ length: 7 }).map((_, index) => (
+            <div key={index} className="px-3 py-2">
+              <SkeletonBlock height={14} width={44} />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {Array.from({ length: 35 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-[84px] border-b border-r border-[#eeeeee] p-2 last:border-r-0"
+            >
+              <SkeletonBlock width={18} height={14} />
+              {index % 5 === 1 ? (
+                <div className="mt-3">
+                  <SkeletonBlock height={18} width="82%" />
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -477,7 +561,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                   className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none focus:border-[#1a1a1a]"
                 >
                   <option>To Do</option>
-                  <option>In progress</option>
+                  <option>Meeting</option>
                   <option>Follow-up</option>
                   <option>Done</option>
                 </select>
@@ -549,7 +633,7 @@ function hasCardTags(card) {
 function getTaskIcon(task) {
   if (task.status === "Done") return "check";
   if (task.id === "publish-release-notes") return "notepad";
-  if (task.status === "In progress") return "notepad";
+  if (task.status === "Meeting") return "meeting";
   if (task.status === "Follow-up") return "mail";
   return "plus";
 }
@@ -603,6 +687,19 @@ function TodoIcon({ type, muted = false, compact = false }) {
         ].join(" ")}
       >
         <MailCheck className={compact ? "size-3.5" : "size-4"} strokeWidth={2} />
+      </span>
+    );
+  }
+
+  if (type === "meeting") {
+    return (
+      <span
+        className={[
+          "mr-3 flex shrink-0 items-center justify-center rounded-[6px] bg-[#eff6ff] text-[#2783de]",
+          compact ? "size-5" : "mt-0.5 size-7",
+        ].join(" ")}
+      >
+        <Clock3 className={compact ? "size-3.5" : "size-4"} strokeWidth={2} />
       </span>
     );
   }

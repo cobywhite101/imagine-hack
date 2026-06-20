@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/useApi";
 import { api } from "@/services/dataClient";
 import { CheckCircle2, Circle, Loader2, Target } from "lucide-react";
@@ -21,7 +22,14 @@ export function Quests() {
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
+        {loading &&
+          Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="flex items-center gap-3 rounded-lg p-2">
+              <SkeletonBlock circle width={16} height={16} />
+              <SkeletonBlock className="flex-1" containerClassName="flex-1" height={16} />
+              <SkeletonBlock width={46} height={22} />
+            </div>
+          ))}
         {quests?.map((q) => (
           <div key={q.id} className="flex items-center gap-3 rounded-lg p-2 hover:bg-accent">
             {statusIcon[q.status]}
