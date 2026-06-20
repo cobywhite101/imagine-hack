@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-react";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,33 @@ function Section({ label, defaultOpen = true, children }) {
       </div>
       {open && <div className="mt-3">{children}</div>}
     </section>
+  );
+}
+
+// Borderless auto-growing textarea — reads like plain text, edits like Notion.
+function EditableText({ value, onChange, placeholder, italic = false, ariaLabel }) {
+  const ref = useRef(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value ?? ""}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      onChange={(event) => onChange(event.target.value)}
+      className={cn(
+        "-mx-2 block w-[calc(100%+1rem)] resize-none rounded-md bg-transparent px-2 py-1 text-[15px] leading-[1.55] text-[#2a2a2e] outline-none transition-colors placeholder:text-[#b0b0b6] hover:bg-black/[0.025] focus:bg-black/[0.04]",
+        italic && "placeholder:italic"
+      )}
+    />
   );
 }
 
@@ -138,28 +165,43 @@ export function WorkflowHeader() {
   );
 }
 
-export function WorkflowDetails() {
-  const [knowledge, setKnowledge] = useState({ workday: true, drive: false, slack: true });
-  const [tools, setTools] = useState({ code: true });
+// Controlled: parent owns `config` and persists changes via `onChange`.
+export function WorkflowDetails({ config, onChange }) {
+  const knowledge = config.knowledge ?? {};
+  const tools = config.tools ?? {};
+
+  const setField = (field, value) => onChange({ ...config, [field]: value });
+  const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
+  const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
 
   return (
     <div className="text-[#2a2a2e]">
       <Section label="Instructions">
-        <div className="space-y-2.5 text-[15px] leading-[1.55]">
-          <p># Data Analysis</p>
-          <p>
-            Analyze and plot this data thoroughly and give me key figures like mean, median and standard
-            deviation.
-          </p>
-        </div>
+        <EditableText
+          ariaLabel="Instructions"
+          value={config.instructions}
+          onChange={(value) => setField("instructions", value)}
+          placeholder="Describe what this workflow should do…"
+        />
       </Section>
 
       <Section label="Guardrails">
-        <p className="text-[15px] leading-[1.55]">You only discuss topics related to tutoring.</p>
+        <EditableText
+          ariaLabel="Guardrails"
+          value={config.guardrails}
+          onChange={(value) => setField("guardrails", value)}
+          placeholder="Add rules the agent must always follow…"
+        />
       </Section>
 
       <Section label="Tone">
-        <p className="text-[15px] italic text-[#b0b0b6]">Type I.e. Casual, Detailed, Humorous, Objective, etc..</p>
+        <EditableText
+          ariaLabel="Tone"
+          italic
+          value={config.tone}
+          onChange={(value) => setField("tone", value)}
+          placeholder="Type I.e. Casual, Detailed, Humorous, Objective, etc.."
+        />
       </Section>
 
       <Section label="Knowledge">
@@ -169,11 +211,7 @@ export function WorkflowDetails() {
               <WorkdayLogo />
               <span className="text-[15px]">Workday</span>
             </div>
-            <Toggle
-              label="Workday"
-              checked={knowledge.workday}
-              onChange={(value) => setKnowledge((state) => ({ ...state, workday: value }))}
-            />
+            <Toggle label="Workday" checked={!!knowledge.workday} onChange={(value) => setKnowledge("workday", value)} />
           </div>
 
           <div className="flex items-center justify-between py-2">
@@ -185,7 +223,7 @@ export function WorkflowDetails() {
                   <span className="text-[#cfcfd4]">•</span>
                   <button
                     type="button"
-                    onClick={() => setKnowledge((state) => ({ ...state, drive: true }))}
+                    onClick={() => setKnowledge("drive", true)}
                     className="text-[14px] font-medium text-[#f0641e] hover:underline"
                   >
                     Connect Account
@@ -195,9 +233,9 @@ export function WorkflowDetails() {
             </div>
             <Toggle
               label="Google Drive"
-              checked={knowledge.drive}
+              checked={!!knowledge.drive}
               disabled={!knowledge.drive}
-              onChange={(value) => setKnowledge((state) => ({ ...state, drive: value }))}
+              onChange={(value) => setKnowledge("drive", value)}
             />
           </div>
 
@@ -206,11 +244,7 @@ export function WorkflowDetails() {
               <SlackLogo />
               <span className="text-[15px]">Slack</span>
             </div>
-            <Toggle
-              label="Slack"
-              checked={knowledge.slack}
-              onChange={(value) => setKnowledge((state) => ({ ...state, slack: value }))}
-            />
+            <Toggle label="Slack" checked={!!knowledge.slack} onChange={(value) => setKnowledge("slack", value)} />
           </div>
 
           <button
@@ -230,11 +264,7 @@ export function WorkflowDetails() {
               <Code className="size-[18px] text-[#3f3f46]" strokeWidth={1.9} />
               <span className="text-[15px]">Code Interpreter</span>
             </div>
-            <Toggle
-              label="Code Interpreter"
-              checked={tools.code}
-              onChange={(value) => setTools((state) => ({ ...state, code: value }))}
-            />
+            <Toggle label="Code Interpreter" checked={!!tools.code} onChange={(value) => setTools("code", value)} />
           </div>
         </div>
       </Section>

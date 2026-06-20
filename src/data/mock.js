@@ -222,6 +222,18 @@ export const mockAgentLog = [
 export const mockCustomers = [];
 export const mockCustomerMemories = [];
 
+// Default workflow / agent configuration for a customer workspace. These fields
+// compose the agent's behavior: instructions + guardrails + tone become the
+// system prompt; knowledge/tools become retrieval sources + tool definitions.
+export const mockWorkflowConfig = {
+  instructions:
+    "# Data Analysis\n\nAnalyze and plot this data thoroughly and give me key figures like mean, median and standard deviation.",
+  guardrails: "You only discuss topics related to tutoring.",
+  tone: "",
+  knowledge: { workday: true, drive: false, slack: true },
+  tools: { code: true },
+};
+
 // Seed conversation shown on Home. The first assistant message is "rich":
 // it carries a `deal` context card and `signals` (rendered specially). Live
 // replies from api.sendChatMessage are plain `text`.

@@ -18,6 +18,7 @@ import {
   mockChatSuggestions,
   mockAgentHub,
   mockWorkflows,
+  mockWorkflowConfig,
   mockAssistantReply,
 } from "@/data/mock";
 
@@ -26,6 +27,7 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const CUSTOMER_MEMORY_KEY = "client-companion-memory-v1";
+const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
 const useSupabaseCustomerMemory = isSupabaseConfigured;
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
@@ -100,6 +102,9 @@ function normalizeCustomerRecord(customer) {
     tags: customer.tags ?? mockCustomer?.tags ?? [],
     contactName: customer.contactName ?? customer.contact_name ?? mockCustomer?.contactName ?? name,
     occupation: customer.occupation ?? mockCustomer?.occupation ?? "",
+    dateOfBirth: customer.dateOfBirth ?? customer.date_of_birth ?? mockCustomer?.dateOfBirth ?? "",
+    maritalStatus: customer.maritalStatus ?? customer.marital_status ?? mockCustomer?.maritalStatus ?? "",
+    gender: customer.gender ?? mockCustomer?.gender ?? "",
     dependents: customer.dependents ?? customer.number_of_dependents ?? mockCustomer?.dependents,
     annualIncomeBracket:
       customer.annualIncomeBracket ?? customer.annual_income_bracket ?? mockCustomer?.annualIncomeBracket ?? "",
@@ -112,6 +117,7 @@ function normalizeCustomerRecord(customer) {
     liabilitiesSummary: customer.liabilitiesSummary ?? customer.liabilities_summary ?? mockCustomer?.liabilitiesSummary ?? "",
     policyCount: customer.policyCount ?? customer.policy_count ?? mockCustomer?.policyCount,
     policySummary: customer.policySummary ?? customer.policy_summary ?? mockCustomer?.policySummary ?? "",
+    policies: customer.policies ?? mockCustomer?.policies ?? [],
     nextRenewal: customer.nextRenewal ?? customer.next_renewal ?? mockCustomer?.nextRenewal ?? "",
     nextRenewalPolicyType:
       customer.nextRenewalPolicyType ?? customer.next_renewal_policy_type ?? mockCustomer?.nextRenewalPolicyType ?? "",
@@ -121,6 +127,7 @@ function normalizeCustomerRecord(customer) {
     businessOwnership:
       customer.businessOwnership ?? customer.business_ownership ?? mockCustomer?.businessOwnership,
     intendedHeirs: customer.intendedHeirs ?? customer.intended_heirs ?? mockCustomer?.intendedHeirs ?? "",
+    lifeEvents: customer.lifeEvents ?? customer.life_events ?? mockCustomer?.lifeEvents ?? [],
     nextLifeEvent: customer.nextLifeEvent ?? customer.next_life_event ?? mockCustomer?.nextLifeEvent ?? "",
     nextLifeEventDate:
       customer.nextLifeEventDate ?? customer.next_life_event_date ?? mockCustomer?.nextLifeEventDate ?? "",
@@ -130,6 +137,9 @@ function normalizeCustomerRecord(customer) {
       customer.preferred_communication_channel ??
       mockCustomer?.preferredCommunicationChannel ??
       "",
+    rapportNotes: customer.rapportNotes ?? customer.rapport_notes ?? mockCustomer?.rapportNotes ?? "",
+    referredBy: customer.referredBy ?? customer.referred_by ?? mockCustomer?.referredBy ?? null,
+    lastFactFindDate: customer.lastFactFindDate ?? customer.last_fact_find_date ?? mockCustomer?.lastFactFindDate ?? "",
     kycStatus: customer.kycStatus ?? customer.kyc_status ?? mockCustomer?.kycStatus ?? "",
     advisorId: customer.advisorId ?? customer.assigned_advisor_id ?? mockCustomer?.advisorId ?? "",
     clientSince: customer.clientSince ?? customer.client_since_date ?? mockCustomer?.clientSince ?? "",
@@ -154,6 +164,37 @@ function setStoredCustomerMemories(customerId, memories) {
     const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_MEMORY_KEY) ?? "{}");
     stored[String(customerId)] = memories;
     window.localStorage.setItem(CUSTOMER_MEMORY_KEY, JSON.stringify(stored));
+  } catch {
+    /* local persistence is best-effort for the demo */
+  }
+}
+
+function normalizeWorkflowConfig(config) {
+  return {
+    instructions: config?.instructions ?? mockWorkflowConfig.instructions,
+    guardrails: config?.guardrails ?? mockWorkflowConfig.guardrails,
+    tone: config?.tone ?? mockWorkflowConfig.tone,
+    knowledge: { ...mockWorkflowConfig.knowledge, ...(config?.knowledge ?? {}) },
+    tools: { ...mockWorkflowConfig.tools, ...(config?.tools ?? {}) },
+  };
+}
+
+function getStoredWorkflowConfig(customerId) {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(WORKFLOW_CONFIG_KEY) ?? "{}");
+    return stored[String(customerId)] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredWorkflowConfig(customerId, config) {
+  if (typeof window === "undefined") return;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(WORKFLOW_CONFIG_KEY) ?? "{}");
+    stored[String(customerId)] = config;
+    window.localStorage.setItem(WORKFLOW_CONFIG_KEY, JSON.stringify(stored));
   } catch {
     /* local persistence is best-effort for the demo */
   }
@@ -468,7 +509,48 @@ export const api = {
     return entry;
   },
 
-  sendCustomerMessage: async ({ customer, text, memories = [], history = [] }) => {
+  getWorkflowConfig: async (customerId) => {
+    if (!customerId) return normalizeWorkflowConfig(null);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("workflow_configs")
+          .select("config")
+          .eq("customer_id", customerId)
+          .maybeSingle();
+
+        if (!error && data?.config) return normalizeWorkflowConfig(data.config);
+      } catch {
+        /* fall through to local demo config */
+      }
+    }
+
+    await delay(120);
+    return normalizeWorkflowConfig(getStoredWorkflowConfig(customerId));
+  },
+
+  saveWorkflowConfig: async (customerId, config) => {
+    if (!customerId) return normalizeWorkflowConfig(config);
+    const next = normalizeWorkflowConfig(config);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from("workflow_configs")
+          .upsert({ customer_id: customerId, config: next, updated_at: new Date().toISOString() });
+        if (!error) return next;
+      } catch {
+        /* fall through to local demo config */
+      }
+    }
+
+    setStoredWorkflowConfig(customerId, next);
+    await delay(80);
+    return next;
+  },
+
+  sendCustomerMessage: async ({ customer, text, memories = [], history = [], workflowConfig = null }) => {
     if (!customer || !text?.trim()) return null;
 
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
@@ -477,8 +559,20 @@ export const api = {
         ? memories.map((m, idx) => `[${idx + 1}] (${m.kind || "note"}): ${m.title || "Note"} - ${m.summary || m.text}`).join("\n")
         : "No saved memories.";
 
+      const cfg = workflowConfig ? normalizeWorkflowConfig(workflowConfig) : null;
+      const enabledKnowledge = cfg
+        ? Object.entries(cfg.knowledge).filter(([, on]) => on).map(([name]) => name)
+        : [];
+      const enabledTools = cfg
+        ? Object.entries(cfg.tools).filter(([, on]) => on).map(([name]) => name)
+        : [];
+      const workflowBlock = cfg
+        ? `\n\nWorkflow configuration set by the Advisor (follow it):
+${cfg.instructions ? `\nInstructions:\n${cfg.instructions}` : ""}${cfg.guardrails ? `\n\nGuardrails (must follow):\n${cfg.guardrails}` : ""}${cfg.tone ? `\n\nTone: ${cfg.tone}` : ""}${enabledKnowledge.length ? `\n\nConnected knowledge sources: ${enabledKnowledge.join(", ")}.` : ""}${enabledTools.length ? `\nAvailable tools: ${enabledTools.join(", ")}.` : ""}`
+        : "";
+
       const customerSystem = `You are a helpful, precise, and professional Client CRM Companion (Client OS Advisor).
-You are assisting an Advisor with a client record.
+You are assisting an Advisor with a client record.${workflowBlock}
 
 Current Client Context:
 - Name: ${customer.name}
@@ -524,10 +618,10 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
     return buildLocalCustomerChatReply({ customer, text, memories });
   },
 
-  draftCustomerFollowUp: async ({ customer, memories = [] }) => {
+  draftCustomerFollowUp: async ({ customer, memories = [], workflowConfig = null }) => {
     if (!customer) return null;
     const text = `Draft a follow-up email for ${customer.name} using the latest saved memory and next step.`;
-    return api.sendCustomerMessage({ customer, text, memories, history: [] });
+    return api.sendCustomerMessage({ customer, text, memories, history: [], workflowConfig });
   },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),

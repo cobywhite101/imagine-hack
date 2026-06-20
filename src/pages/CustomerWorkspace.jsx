@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CustomerProfile } from "@/features/customers/CustomerProfile";
 import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
@@ -260,7 +261,7 @@ function CustomerChatMessage({ message }) {
 
 function CustomerChatThinkingIndicator() {
   return (
-    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-black/50">
+    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-[#266df0]">
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
       <span>Searching saved memory...</span>
     </div>
@@ -271,14 +272,17 @@ export function CustomerWorkspace() {
   const { customerId } = useParams();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
+  const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
   const customer = fetchedCustomer;
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const configSaveTimer = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [workflowConfig, setWorkflowConfig] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [listening, setListening] = useState(false);
@@ -302,7 +306,15 @@ export function CustomerWorkspace() {
   }, [fetchedMemories]);
 
   useEffect(() => {
+    if (fetchedConfig) setWorkflowConfig(fetchedConfig);
+  }, [fetchedConfig]);
+
+  useEffect(() => {
     return () => recognitionRef.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimeout(configSaveTimer.current);
   }, []);
 
   useEffect(() => {
@@ -499,6 +511,16 @@ export function CustomerWorkspace() {
     ]);
   }
 
+  // Update workflow config in state immediately (so the chat uses the latest)
+  // and debounce the persistence so we don't write on every keystroke.
+  function updateWorkflowConfig(next) {
+    setWorkflowConfig(next);
+    clearTimeout(configSaveTimer.current);
+    configSaveTimer.current = setTimeout(() => {
+      api.saveWorkflowConfig(customer.id, next);
+    }, 600);
+  }
+
   function callCustomer() {
     const phone = compactPhoneNumber(customer.phone);
     if (phone) {
@@ -522,7 +544,7 @@ export function CustomerWorkspace() {
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
-      const reply = await api.draftCustomerFollowUp({ customer, memories });
+      const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -540,7 +562,7 @@ export function CustomerWorkspace() {
     setSending(true);
 
     try {
-      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages });
+      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
@@ -633,6 +655,7 @@ export function CustomerWorkspace() {
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white">
+          <CustomerProfile customer={customer} />
           <WorkflowHeader />
 
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
@@ -655,7 +678,11 @@ export function CustomerWorkspace() {
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
-              <WorkflowDetails />
+              {workflowConfig ? (
+                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} />
+              ) : (
+                <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
+              )}
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
