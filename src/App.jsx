@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom";
 import { Home } from "@/pages/Home";
@@ -10,7 +10,7 @@ import { McpPage } from "@/pages/McpPage";
 import { Workflows } from "@/pages/Workflows";
 import { api } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   ChevronDown,
   Database,
@@ -43,6 +43,31 @@ const quickActions = [
 
 const SIDEBAR_OPEN_KEY = "client-os-sidebar-open";
 const CUSTOMER_CHAT_UPDATED_EVENT = "client-os-customer-chat-updated";
+const SIDEBAR_ANIMATION_MS = 200;
+const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
+
+function getInitials(name) {
+  const initials = String(name ?? "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || "CL";
+}
+
+function getCustomerAccent(seed) {
+  let hash = 0;
+  const key = String(seed ?? "");
+
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+
+  return CUSTOMER_ACCENTS[hash % CUSTOMER_ACCENTS.length];
+}
 
 function SidebarLink({
   to,
@@ -71,15 +96,13 @@ function SidebarLink({
       title={description ? `${label} · ${description}` : label}
     >
       {avatar || avatarUrl ? (
-        <Avatar className="size-6 rounded-full">
-          {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
-          <AvatarFallback
-            className="rounded-full text-[9px] font-semibold leading-none text-white"
-            style={{ backgroundColor: accent }}
-          >
-            {avatar}
-          </AvatarFallback>
-        </Avatar>
+        <span
+          className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[5px] text-[10px] font-semibold leading-none text-white"
+          style={{ backgroundColor: accent }}
+          aria-hidden="true"
+        >
+          {avatarUrl ? <img src={avatarUrl} alt="" className="size-full object-cover" /> : avatar}
+        </span>
       ) : Icon ? (
         <Icon className="size-3.5 shrink-0 text-[#5f6368]" strokeWidth={1.9} />
       ) : null}
@@ -191,16 +214,31 @@ function QuickActionsDialog({ open, onOpenChange }) {
 }
 
 function SidebarSection({ label, items, emptyText }) {
+  const [expanded, setExpanded] = useState(true);
+  const contentId = useId();
+
   return (
     <div className="flex w-[247px] flex-col gap-0.5">
       <button
         type="button"
+        onClick={() => setExpanded((current) => !current)}
         className="mx-2 flex h-7 w-[232px] items-center gap-1.5 rounded-md px-2 text-left text-[12px] font-medium leading-4 tracking-[-0.01em] text-black/60 transition-colors hover:bg-black/[0.035]"
+        aria-expanded={expanded}
+        aria-controls={contentId}
       >
-        <ChevronDown className="size-3.5 shrink-0" strokeWidth={1.8} />
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+            expanded ? "rotate-0" : "-rotate-90"
+          )}
+          strokeWidth={1.8}
+        />
         <span className="min-w-0 truncate">{label}</span>
       </button>
-      <div className="relative flex flex-col gap-px px-2 pb-0.5">
+      <div
+        id={contentId}
+        className={cn("relative flex-col gap-px px-2 pb-0.5", expanded ? "flex" : "hidden")}
+      >
         <div className="absolute left-[27px] top-0 h-full w-px bg-[#d9dade]/60" />
         {items.length ? (
           items.map((item) => (
@@ -221,7 +259,7 @@ function SidebarSection({ label, items, emptyText }) {
   );
 }
 
-function Sidebar({ onCollapse }) {
+function Sidebar({ open, onCollapse }) {
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [recentCustomerChats, setRecentCustomerChats] = useState([]);
   const [recentChatsLoading, setRecentChatsLoading] = useState(true);
@@ -231,15 +269,20 @@ function Sidebar({ onCollapse }) {
         to: `/customers/${chat.customerId}`,
         label: chat.customerName,
         description: chat.summary,
-        avatar: chat.avatar,
+        avatar: chat.avatar || getInitials(chat.customerName),
         avatarUrl: chat.avatarUrl,
-        accent: chat.accent,
+        accent: chat.accent || getCustomerAccent(chat.customerId || chat.customerName),
         showActive: true,
       })),
     [recentCustomerChats]
   );
 
   useEffect(() => {
+    if (!open) {
+      setQuickActionsOpen(false);
+      return undefined;
+    }
+
     function onKeyDown(event) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -249,7 +292,7 @@ function Sidebar({ onCollapse }) {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     let alive = true;
@@ -282,24 +325,27 @@ function Sidebar({ onCollapse }) {
   }, []);
 
   return (
-    <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
+    <aside
+      aria-hidden={!open}
+      inert={!open}
+      className={cn(
+        "flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112] transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+        open ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-2 opacity-0"
+      )}
+    >
       <div className="flex h-[49px] w-full shrink-0 items-center gap-2 border-b border-[#e6e7ea] px-3 text-left">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-black/[0.025]"
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1">
           <Avatar className="size-6 shrink-0 rounded-md">
             <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
-              C
+              A
             </AvatarFallback>
           </Avatar>
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
-              Client OS
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
+              Aether
             </span>
-            <ChevronDown className="size-3 shrink-0 text-[#101112]" strokeWidth={1.9} />
           </span>
-        </button>
+        </div>
         <button
           type="button"
           onClick={onCollapse}
@@ -354,17 +400,40 @@ export default function App() {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
   });
+  const [showExpandButton, setShowExpandButton] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_OPEN_KEY) === "false";
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(sidebarOpen));
   }, [sidebarOpen]);
 
+  useEffect(() => {
+    if (sidebarOpen) {
+      setShowExpandButton(false);
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setShowExpandButton(true);
+    }, SIDEBAR_ANIMATION_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [sidebarOpen]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {sidebarOpen ? (
-        <Sidebar onCollapse={() => setSidebarOpen(false)} />
-      ) : (
+      <div
+        className={cn(
+          "relative h-screen shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          sidebarOpen ? "w-[248px]" : "w-0"
+        )}
+      >
+        <Sidebar open={sidebarOpen} onCollapse={() => setSidebarOpen(false)} />
+      </div>
+      {showExpandButton ? (
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
@@ -374,7 +443,7 @@ export default function App() {
         >
           <PanelLeft className="size-4" strokeWidth={1.8} />
         </button>
-      )}
+      ) : null}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />

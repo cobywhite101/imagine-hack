@@ -102,7 +102,7 @@ export function Home() {
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white">
         <div className="w-full px-4 pt-4">
-          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
+          <section className="rounded-[8px] bg-white p-5 text-[#4a4a4a]">
             <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
               {initialLoading ? <SkeletonBlock width={260} height={28} /> : briefHeadline}
             </h2>

@@ -11,13 +11,9 @@ import {
   Copy,
   FileText,
   Mail,
-  Mic,
   Paperclip,
   Plus,
   Sparkles,
-  UploadCloud,
-  UserRound,
-  X,
   Pencil,
   Send,
   Check,
@@ -1501,7 +1497,7 @@ function CustomerChatThinkingIndicator({ intent = DEFAULT_THINKING_INTENT }) {
 function CustomerWorkspaceSkeleton() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
           <div className="absolute left-6 top-6 z-10">
             <Button
@@ -1632,7 +1628,6 @@ export function CustomerWorkspace() {
   const { data: fetchedMeetings } = useApi(() => api.getAdvisorMeetings(), [customerId]);
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
-  const recognitionRef = useRef(null);
   const configSaveTimer = useRef(null);
   const [customerOverride, setCustomerOverride] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -1642,10 +1637,6 @@ export function CustomerWorkspace() {
   const [articles, setArticles] = useState([]);
   const [workflowConfig, setWorkflowConfig] = useState(null);
   const [articleCandidate, setArticleCandidate] = useState(null);
-  const [noteText, setNoteText] = useState("");
-  const [dragging, setDragging] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [voiceError, setVoiceError] = useState("");
   const [savingMemory, setSavingMemory] = useState(false);
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
@@ -1717,10 +1708,6 @@ export function CustomerWorkspace() {
       unsubscribe?.();
     };
   }, [customer?.id]);
-
-  useEffect(() => {
-    return () => recognitionRef.current?.stop();
-  }, []);
 
   useEffect(() => {
     return () => clearTimeout(configSaveTimer.current);
@@ -2079,65 +2066,6 @@ export function CustomerWorkspace() {
     }
   }
 
-  async function saveNoteMemory() {
-    const body = noteText.trim();
-    if (!body || !customer) return;
-    setSavingMemory(true);
-    try {
-      await remember(
-        buildMemoryEntry({
-          kind: "voice",
-          title: "Voice or typed note",
-          body,
-          sourceName: "Advisor note",
-          sourceMeta: "Summarized",
-        })
-      );
-      setNoteText("");
-      setVoiceError("");
-    } finally {
-      setSavingMemory(false);
-    }
-  }
-
-  function startVoiceCapture() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceError("Voice capture is not supported in this browser. Paste the note and summarize it instead.");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.onresult = (event) => {
-      let transcript = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        if (event.results[index].isFinal) {
-          transcript += `${event.results[index][0].transcript} `;
-        }
-      }
-      if (transcript.trim()) {
-        setNoteText((prev) => cleanText(`${prev} ${transcript}`));
-      }
-    };
-    recognition.onerror = () => {
-      setVoiceError("Could not capture audio. Paste the note and summarize it instead.");
-      setListening(false);
-    };
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setVoiceError("");
-    setListening(true);
-  }
-
-  function stopVoiceCapture() {
-    recognitionRef.current?.stop();
-    setListening(false);
-  }
-
   function addAssistantNotice(notice) {
     const message =
       typeof notice === "string"
@@ -2357,7 +2285,7 @@ export function CustomerWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
           <div className="absolute left-6 top-6 z-10">
             <Button
@@ -2452,122 +2380,56 @@ export function CustomerWorkspace() {
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
-              <div className="grid grid-cols-2 gap-2">
-                <CustomerFact icon={Mail} label="Email" value={customer.email || "No email"} />
-                <CustomerFact icon={UserRound} label="Owner" value="Ferdinand" />
-                <CustomerFact icon={CalendarDays} label="Last touch" value={customer.lastTouch || "Not recorded"} />
-                <CustomerFact icon={FileText} label="Next step" value={customer.task || customer.nextAction || "Confirm next action"} />
-              </div>
-
-              <div className="mt-5 rounded-lg border bg-white p-3">
-                <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                  <Brain className="size-4 text-primary" />
-                  Add client note
-                </div>
-                <textarea
-                  value={noteText}
-                  onChange={(event) => setNoteText(event.target.value)}
-                  rows={4}
-                  placeholder="Paste a call note, family update, preference, or commitment..."
-                  className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
-                />
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <Button
-                    variant={listening ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={listening ? stopVoiceCapture : startVoiceCapture}
-                  >
-                    <Mic className="size-4" /> {listening ? "Stop" : "Dictate"}
-                  </Button>
-                  <Button size="sm" onClick={saveNoteMemory} disabled={!noteText.trim() || savingMemory}>
-                    <FileText className="size-4" /> Save note
-                  </Button>
-                </div>
-                {voiceError && <p className="mt-2 text-xs text-destructive-foreground">{voiceError}</p>}
-              </div>
-
-              <div className="mt-5">
+              <section aria-labelledby="recent-interactions-heading">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold">Recent interactions</h3>
-                  <span className="text-xs text-muted-foreground">{activityItems.length} saved</span>
+                  <h3 id="recent-interactions-heading" className="text-sm font-semibold">
+                    Recent interactions
+                  </h3>
+                  <span
+                    className="text-xs text-muted-foreground"
+                    aria-label={`${activityItems.length} saved interactions`}
+                  >
+                    {activityItems.length} saved
+                  </span>
                 </div>
-                <div className="space-y-3">
-                  {activityItems.map(({ ActivityIcon, typeLabel, ...memory }) => (
-                    <div key={memory.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
-                      <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                        <ActivityIcon className="size-4" />
-                      </span>
-                      <div className="border-b pb-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{memory.title}</p>
-                            <p className="mt-0.5 text-[10px] text-muted-foreground">
-                              {typeLabel} | {memory.sourceName} | {formatMemoryDate(memory.createdAt)}
-                            </p>
+
+                {activityItems.length ? (
+                  <ul className="space-y-3" aria-label="Saved recent interactions">
+                    {activityItems.map(({ ActivityIcon, typeLabel, ...memory }) => (
+                      <li key={memory.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
+                        <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                          <ActivityIcon className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="border-b pb-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{memory.title}</p>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                <span>{typeLabel}</span>
+                                <span aria-hidden="true"> | </span>
+                                <span>{memory.sourceName}</span>
+                                <span aria-hidden="true"> | </span>
+                                <time dateTime={memory.createdAt}>{formatMemoryDate(memory.createdAt)}</time>
+                              </p>
+                            </div>
+                            <span
+                              className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                              aria-label={`Source status: ${memory.sourceMeta || "Saved"}`}
+                            >
+                              {memory.sourceMeta || "Saved"}
+                            </span>
                           </div>
-                          <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            {memory.sourceMeta || "Saved"}
-                          </span>
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
                         </div>
-                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {!activityItems.length && (
-                    <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
-                      No client interactions saved yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <div
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDragging(true);
-                  }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setDragging(false);
-                    addFiles(event.dataTransfer.files);
-                  }}
-                  className={cn(
-                    "flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed bg-white px-4 py-5 text-center transition-colors",
-                    dragging ? "border-primary bg-primary/5" : "border-border"
-                  )}
-                >
-                  <UploadCloud className="size-5 text-muted-foreground" />
-                  <p className="mt-2 text-sm font-medium">Add transcript or document</p>
-                  <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, TXT, or notes from a client call</p>
-                  <Button className="mt-4" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-                    <Paperclip className="size-4" /> Choose files
-                  </Button>
-                </div>
-
-                {files.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {files.map((file) => (
-                      <div key={file.id} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2">
-                        <FileText className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium">{file.name}</p>
-                          <p className="text-[10px] text-muted-foreground">{formatFileSize(file.size)}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setFiles((prev) => prev.filter((item) => item.id !== file.id))}
-                          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                          aria-label={`Remove ${file.name}`}
-                        >
-                          <X className="size-4" />
-                        </button>
-                      </div>
+                      </li>
                     ))}
+                  </ul>
+                ) : (
+                  <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground" role="status">
+                    No client interactions saved yet.
                   </div>
                 )}
-              </div>
+              </section>
             </TabsContent>
 
             <TabsContent value="meetings" className="pt-5">
@@ -2634,18 +2496,6 @@ function CustomerMeetingsTab({ meetings, onOpen }) {
           No meetings linked to this customer yet.
         </div>
       )}
-    </div>
-  );
-}
-
-function CustomerFact({ icon: Icon, label, value }) {
-  return (
-    <div className="min-w-0 rounded-lg border bg-white p-3">
-      <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-        <Icon className="size-3.5 shrink-0" />
-        <span>{label}</span>
-      </div>
-      <p className="mt-1 truncate text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }

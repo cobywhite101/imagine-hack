@@ -948,6 +948,35 @@ function truncateCustomerText(text, maxLength = 6000) {
   return `${value.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
 }
 
+function stripInlineMarkdown(text) {
+  return cleanCustomerText(
+    String(text ?? "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^\s*[-*]\s+/gm, "")
+  );
+}
+
+function formatSidebarChatSummary(text) {
+  const summary = stripInlineMarkdown(text).replace(
+    /^here(?:'|’)s a quick snapshot before you reach out:?\s*/i,
+    ""
+  );
+  const focused = summary.match(/\b(Status|Next step|Next action|Action):\s*([^.;|]+)(?:[.;|]|$)/i);
+
+  if (focused) {
+    const label = focused[1]
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+      .replace(/\bStep\b/, "step")
+      .replace(/\bAction\b/, "action");
+    return truncateCustomerText(`${label}: ${focused[2].trim()}`, 56);
+  }
+
+  return truncateCustomerText(summary || "Recent AI chat", 56);
+}
+
 function decodeBasicHtmlEntities(text) {
   return String(text ?? "")
     .replace(/&nbsp;/gi, " ")
@@ -1628,7 +1657,7 @@ export const api = {
     return Array.from(latestByCustomer.values()).map((memory) => {
       const customer = customersById.get(String(memory.customerId));
       const customerName = customer?.name || customer?.company || `Customer ${memory.customerId}`;
-      const summary = cleanCustomerText(memory.summary || memory.body || "Recent AI chat");
+      const summary = formatSidebarChatSummary(memory.summary || memory.body || "Recent AI chat");
 
       return {
         id: memory.id,
@@ -1637,7 +1666,7 @@ export const api = {
         avatar: isImageAvatarValue(customer?.avatar) ? getInitials(customerName) : customer?.avatar || getInitials(customerName),
         avatarUrl: customer?.avatarUrl || (isImageAvatarValue(customer?.avatar) ? customer.avatar : ""),
         accent: customer?.accent || getCustomerAccent({ id: memory.customerId, name: customerName }),
-        summary: truncateCustomerText(summary, 72),
+        summary,
         createdAt: memory.createdAt,
       };
     });

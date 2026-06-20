@@ -341,7 +341,7 @@ function EventModal({ draft, setDraft, customers = [], onClose, onSave, onDelete
       onClick={onClose}
     >
       <div
-        className="w-[360px] rounded-[10px] border border-[#eeeeee] bg-white p-4 shadow-xl"
+        className="w-full max-w-xl rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -351,7 +351,8 @@ function EventModal({ draft, setDraft, customers = [], onClose, onSave, onDelete
           <button
             type="button"
             onClick={onClose}
-            className="rounded-[6px] p-1 text-[#7b7b7b] transition-colors hover:bg-[#f5f5f5]"
+            aria-label="Close"
+            className="flex size-8 items-center justify-center rounded-full bg-[#f8f8f7] text-[#1a1a1a] transition-colors hover:bg-[#eeeeec]"
           >
             <X className="size-4" strokeWidth={1.9} />
           </button>
