@@ -29,3 +29,12 @@ create policy "public read" on customer_articles for select using (true);
 create policy "public insert" on customer_articles for insert with check (true);
 create policy "public update" on customer_articles for update using (true) with check (true);
 create policy "public delete" on customer_articles for delete using (true);
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    alter publication supabase_realtime add table customer_articles;
+  end if;
+exception
+  when duplicate_object then null;
+end $$;

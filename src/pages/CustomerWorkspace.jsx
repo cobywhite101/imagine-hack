@@ -95,13 +95,14 @@ function pickRandomStepIndex(stepCount, currentIndex = -1) {
   return next === currentIndex ? (next + 1) % stepCount : next;
 }
 
-function getThinkingIntentForPrompt(text, hasArticleCandidate) {
+function getThinkingIntentForPrompt(text, hasArticleCandidate, customer = null, history = []) {
+  if (parseCustomerRecordUpdateRequest(text, customer, history)) return "memory_update";
   if (parseMemoryUpdateRequest(text)) return "memory_update";
   if (isArticleGenerationRequest(text, hasArticleCandidate)) return "article_generation";
   return "customer_message";
 }
 const MEMORY_UPDATE_VERB_PATTERN = /\b(update|change|correct|fix|amend|edit|revise)\b/i;
-const MEMORY_TARGET_PATTERN = /\b(memory|remembered|client record|customer record|saved record|profile)\b/i;
+const MEMORY_TARGET_PATTERN = /\b(memory|remembered|client record|customer record|saved record|profile|article|source file|saved source|knowledge)\b/i;
 
 function formatFileSize(size) {
   if (!size) return "0 KB";
@@ -152,7 +153,7 @@ function cleanCorrectionSubject(value) {
   return cleanText(value)
     .replace(MEMORY_UPDATE_VERB_PATTERN, "")
     .replace(MEMORY_TARGET_PATTERN, "")
-    .replace(/\b(?:the|a|an|this|that|client|customer|please|can you|could you|it)\b/gi, " ")
+    .replace(/\b(?:the|a|an|this|that|client|customer|please|can you|could you|it|his|her|their)\b/gi, " ")
     .replace(/\b(?:from|to|as|is|was|be|says|shows|listed|stored|recorded)\b\s*$/i, "")
     .replace(/[.?!:;,]+$/g, "")
     .replace(/\s+/g, " ")
@@ -179,6 +180,7 @@ function parseMemoryUpdateRequest(text) {
 
   const asksForUpdate =
     MEMORY_UPDATE_VERB_PATTERN.test(raw) ||
+    /\b(save|remember|set)\b/i.test(raw) ||
     /\bactually\b/i.test(raw) ||
     /\b(?:not|instead of)\b/i.test(raw);
 
@@ -219,6 +221,13 @@ function parseMemoryUpdateRequest(text) {
       oldIndex: 1,
       nextIndex: 2,
     },
+    {
+      regex:
+        /\b(?:update|change|correct|fix|amend|edit|revise|save|remember|set)\b([\s\S]{0,140}?)\b(?:to|as|is)\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: 1,
+      oldIndex: null,
+      nextIndex: 2,
+    },
   ];
 
   for (const pattern of patterns) {
@@ -226,13 +235,14 @@ function parseMemoryUpdateRequest(text) {
     if (!match) continue;
 
     const subject = pattern.subjectIndex ? cleanCorrectionSubject(match[pattern.subjectIndex]) : "";
-    const oldValue = cleanCorrectionValue(match[pattern.oldIndex]);
+    const oldValue = pattern.oldIndex ? cleanCorrectionValue(match[pattern.oldIndex]) : "";
     const nextValue = cleanCorrectionValue(match[pattern.nextIndex]);
-    if (
+    const hasValidReplacement =
       isValidCorrectionValue(oldValue) &&
-      isValidCorrectionValue(nextValue) &&
-      normalizeMemoryComparable(oldValue) !== normalizeMemoryComparable(nextValue)
-    ) {
+      normalizeMemoryComparable(oldValue) !== normalizeMemoryComparable(nextValue);
+    const hasValidNewFact = !oldValue && Boolean(subject) && isValidCorrectionValue(nextValue);
+
+    if (isValidCorrectionValue(nextValue) && (hasValidReplacement || hasValidNewFact)) {
       return {
         subject,
         fieldLabel: formatCorrectionSubject(subject),
@@ -329,12 +339,465 @@ function amendMemoryWithCorrection(memory, correction) {
   return { memory: nextMemory, changedFields };
 }
 
-function buildMemoryUpdatedMessage({ correction, memory }) {
+function amendArticleWithCorrection(article, correction) {
+  const nextArticle = { ...article };
+  const changedFields = [];
+
+  for (const key of ["title", "subtitle", "body", "sourceName"]) {
+    const result = replaceCorrectionValue(nextArticle[key], correction.oldValue, correction.nextValue);
+    if (result.changed) {
+      nextArticle[key] = result.text;
+      changedFields.push(key);
+    }
+  }
+
+  if (!changedFields.length) return null;
+  return { article: nextArticle, changedFields };
+}
+
+function buildKnowledgeUpdatedMessage({ correction, memory, article }) {
   return {
     type: "memory-updated",
-    text: "Memory updated",
-    detail: `${correction.fieldLabel}: ${correction.oldValue} -> ${correction.nextValue}`,
-    source: memory?.title ? `Updated ${memory.title}` : "",
+    text: article ? "Article updated" : "Memory updated",
+    detail: correction.oldValue
+      ? `${correction.fieldLabel}: ${correction.oldValue} -> ${correction.nextValue}`
+      : `${correction.fieldLabel}: ${correction.nextValue}`,
+    source: article?.title ? `Updated ${article.title}` : memory?.title ? `Updated ${memory.title}` : "",
+  };
+}
+
+const MONTH_INDEX_BY_NAME = new Map(
+  [
+    ["jan", 1],
+    ["january", 1],
+    ["feb", 2],
+    ["february", 2],
+    ["mar", 3],
+    ["march", 3],
+    ["apr", 4],
+    ["april", 4],
+    ["may", 5],
+    ["jun", 6],
+    ["june", 6],
+    ["jul", 7],
+    ["july", 7],
+    ["aug", 8],
+    ["august", 8],
+    ["sep", 9],
+    ["sept", 9],
+    ["september", 9],
+    ["oct", 10],
+    ["october", 10],
+    ["nov", 11],
+    ["november", 11],
+    ["dec", 12],
+    ["december", 12],
+  ]
+);
+
+function toIsoDate(year, month, day) {
+  const yyyy = Number(year);
+  const mm = Number(month);
+  const dd = Number(day);
+  if (yyyy < 1900 || yyyy > 2100 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return "";
+  const date = new Date(Date.UTC(yyyy, mm - 1, dd));
+  if (date.getUTCFullYear() !== yyyy || date.getUTCMonth() !== mm - 1 || date.getUTCDate() !== dd) return "";
+  return `${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
+function extractDateOfBirthValue(text, currentDateOfBirth = "") {
+  const raw = cleanText(text);
+  const matches = [];
+
+  for (const match of raw.matchAll(/\b((?:19|20)\d{2})-(\d{1,2})-(\d{1,2})\b/g)) {
+    const value = toIsoDate(match[1], match[2], match[3]);
+    if (value) matches.push({ value, raw: match[0] });
+  }
+
+  for (const match of raw.matchAll(/\b([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+((?:19|20)\d{2})\b/gi)) {
+    const month = MONTH_INDEX_BY_NAME.get(match[1].toLowerCase());
+    const value = month ? toIsoDate(match[3], month, match[2]) : "";
+    if (value) matches.push({ value, raw: match[0] });
+  }
+
+  for (const match of raw.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})[,]?\s+((?:19|20)\d{2})\b/gi)) {
+    const month = MONTH_INDEX_BY_NAME.get(match[2].toLowerCase());
+    const value = month ? toIsoDate(match[3], month, match[1]) : "";
+    if (value) matches.push({ value, raw: match[0] });
+  }
+
+  for (const match of raw.matchAll(/\b(\d{1,2})[/-](\d{1,2})[/-]((?:19|20)\d{2})\b/g)) {
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    const month = first > 12 ? second : first;
+    const day = first > 12 ? first : second;
+    const value = toIsoDate(match[3], month, day);
+    if (value) matches.push({ value, raw: match[0] });
+  }
+
+  if (matches.length) return { value: matches.at(-1).value, raw: matches.at(-1).raw };
+
+  const yearMatches = [...raw.matchAll(/\b((?:19|20)\d{2})\b/g)];
+  const currentParts = String(currentDateOfBirth ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yearMatches.length && currentParts) {
+    const year = yearMatches.at(-1)[1];
+    return { value: toIsoDate(year, currentParts[2], currentParts[3]), raw: year };
+  }
+
+  if (yearMatches.length) {
+    return { needsFullDate: true, raw: yearMatches.at(-1)[1] };
+  }
+
+  return null;
+}
+
+function extractDateValue(text, currentValue = "") {
+  const parsedDate = extractDateOfBirthValue(text, currentValue);
+  if (!parsedDate?.value) return parsedDate;
+  return parsedDate;
+}
+
+function normalizeSelectValue(value, options) {
+  const normalized = normalizeMemoryComparable(value);
+  if (!normalized) return "";
+  const exact = options.find((option) => normalizeMemoryComparable(option) === normalized);
+  if (exact) return exact;
+  return options.find((option) => {
+    const normalizedOption = normalizeMemoryComparable(option);
+    return normalized.includes(normalizedOption) || normalizedOption.includes(normalized);
+  }) ?? cleanCorrectionValue(value);
+}
+
+function normalizeBooleanValue(value) {
+  const normalized = normalizeMemoryComparable(value);
+  if (/\b(yes|true|y|has|have|with|active|enabled|done|completed)\b/.test(normalized)) return true;
+  if (/\b(no|false|n|none|without|not|disabled|incomplete|pending)\b/.test(normalized)) return false;
+  return null;
+}
+
+function normalizeIntegerValue(value) {
+  const match = String(value ?? "").match(/\b\d+\b/);
+  if (!match) return null;
+  return Number(match[0]);
+}
+
+const CUSTOMER_RECORD_FIELD_DEFINITIONS = [
+  {
+    field: "email",
+    label: "Email",
+    aliases: ["email", "email address", "e-mail"],
+    type: "email",
+  },
+  {
+    field: "phone",
+    label: "Phone",
+    aliases: ["phone", "phone number", "mobile", "mobile number", "contact number"],
+  },
+  {
+    field: "contactName",
+    label: "Contact name",
+    aliases: ["contact name", "contact person", "primary contact"],
+  },
+  {
+    field: "dateOfBirth",
+    label: "Date of birth",
+    aliases: ["birth date", "birthdate", "date of birth", "dob", "born"],
+    type: "dateOfBirth",
+  },
+  {
+    field: "gender",
+    label: "Gender",
+    aliases: ["gender", "sex"],
+    options: ["Male", "Female", "Other"],
+  },
+  {
+    field: "maritalStatus",
+    label: "Marital status",
+    aliases: ["marital status", "marriage status", "relationship status"],
+    options: ["Single", "Married", "Divorced", "Widowed"],
+  },
+  {
+    field: "occupation",
+    label: "Occupation",
+    aliases: ["occupation", "job", "job title", "profession", "role"],
+  },
+  {
+    field: "dependents",
+    label: "Dependents",
+    aliases: ["dependents", "number of dependents", "children"],
+    type: "integer",
+  },
+  {
+    field: "nationality",
+    label: "Nationality",
+    aliases: ["nationality", "citizenship"],
+  },
+  {
+    field: "advisorId",
+    label: "Advisor",
+    aliases: ["advisor", "advisor id", "assigned advisor", "assigned advisor id", "owner"],
+  },
+  {
+    field: "clientSince",
+    label: "Client since",
+    aliases: ["client since", "client since date", "became client", "onboarded"],
+    type: "date",
+  },
+  {
+    field: "acquisitionChannel",
+    label: "Acquisition channel",
+    aliases: ["acquisition channel", "source channel", "lead source"],
+  },
+  {
+    field: "referredBy",
+    label: "Referred by",
+    aliases: ["referred by", "referrer", "referral source"],
+  },
+  {
+    field: "annualIncomeBracket",
+    label: "Annual income bracket",
+    aliases: ["annual income", "income bracket", "income"],
+  },
+  {
+    field: "netWorthBracket",
+    label: "Net worth bracket",
+    aliases: ["net worth", "net worth bracket"],
+  },
+  {
+    field: "riskTolerance",
+    label: "Risk tolerance",
+    aliases: ["risk tolerance", "risk profile", "risk appetite", "risk"],
+    options: ["Conservative", "Moderate", "Aggressive"],
+  },
+  {
+    field: "investmentHorizonYears",
+    label: "Investment horizon",
+    aliases: ["investment horizon", "investment horizon years", "horizon years"],
+    type: "integer",
+  },
+  {
+    field: "liabilitiesSummary",
+    label: "Liabilities summary",
+    aliases: ["liabilities", "liabilities summary", "debt summary"],
+    type: "longText",
+  },
+  {
+    field: "hasWill",
+    label: "Has will",
+    aliases: ["has will", "will status", "will"],
+    type: "boolean",
+  },
+  {
+    field: "estatePlanStatus",
+    label: "Estate plan status",
+    aliases: ["estate plan", "estate plan status", "estate planning status"],
+  },
+  {
+    field: "businessOwnership",
+    label: "Business ownership",
+    aliases: ["business ownership", "owns business", "business owner"],
+    type: "boolean",
+  },
+  {
+    field: "intendedHeirs",
+    label: "Intended heirs",
+    aliases: ["intended heirs", "heirs", "beneficiaries"],
+    type: "longText",
+  },
+  {
+    field: "lastContactDate",
+    label: "Last contact date",
+    aliases: ["last contact", "last contact date", "last touch date"],
+    type: "date",
+  },
+  {
+    field: "preferredCommunicationChannel",
+    label: "Preferred communication channel",
+    aliases: ["preferred communication channel", "communication channel", "preferred channel", "channel"],
+    options: ["Email", "Phone call", "WhatsApp"],
+  },
+  {
+    field: "rapportNotes",
+    label: "Rapport notes",
+    aliases: ["rapport notes", "rapport", "relationship notes"],
+    type: "longText",
+  },
+  {
+    field: "kycStatus",
+    label: "KYC status",
+    aliases: ["kyc", "kyc status", "know your customer status"],
+    options: ["Pending", "In progress", "Completed"],
+  },
+  {
+    field: "lastFactFindDate",
+    label: "Last fact-find date",
+    aliases: ["last fact find", "last fact-find", "fact find date", "fact-find date", "last fact find date"],
+    type: "date",
+  },
+  {
+    field: "consentMarketing",
+    label: "Marketing consent",
+    aliases: ["marketing consent", "consent marketing", "marketing opt in", "marketing opt-in"],
+    type: "boolean",
+  },
+  {
+    field: "policyCount",
+    label: "Policy count",
+    aliases: ["policy count", "number of policies"],
+    type: "integer",
+  },
+  {
+    field: "policySummary",
+    label: "Policy summary",
+    aliases: ["policy summary", "policies summary"],
+    type: "longText",
+  },
+  {
+    field: "nextRenewal",
+    label: "Next renewal",
+    aliases: ["next renewal", "renewal date", "next renewal date"],
+    type: "date",
+  },
+  {
+    field: "nextRenewalPolicyType",
+    label: "Next renewal policy type",
+    aliases: ["next renewal policy type", "renewal policy type", "next renewal type"],
+  },
+  {
+    field: "nextLifeEvent",
+    label: "Next life event",
+    aliases: ["next life event", "life event"],
+  },
+  {
+    field: "nextLifeEventDate",
+    label: "Next life event date",
+    aliases: ["next life event date", "life event date"],
+    type: "date",
+  },
+];
+
+function buildFieldPattern(definition) {
+  return new RegExp(
+    `\\b(?:${definition.aliases.map(escapeRegExp).join("|")})\\b`,
+    "i"
+  );
+}
+
+function getCustomerRecordFieldDefinition(text) {
+  return [...CUSTOMER_RECORD_FIELD_DEFINITIONS]
+    .sort((a, b) => Math.max(...b.aliases.map((alias) => alias.length)) - Math.max(...a.aliases.map((alias) => alias.length)))
+    .find((definition) => buildFieldPattern(definition).test(text)) ?? null;
+}
+
+function inferCustomerRecordFieldFromHistory(history = []) {
+  const recentText = [...history]
+    .reverse()
+    .slice(0, 6)
+    .map((message) => message?.text ?? "")
+    .filter(Boolean)
+    .join("\n");
+
+  return getCustomerRecordFieldDefinition(recentText);
+}
+
+function extractRawRecordFieldValue(text, definition) {
+  const fieldPattern = `(?:${definition.aliases.map(escapeRegExp).join("|")})`;
+  const patterns = [
+    new RegExp(`\\b${fieldPattern}\\b\\s*(?::|=)\\s*([\\s\\S]+)$`, "i"),
+    new RegExp(`\\b${fieldPattern}\\b[\\s\\S]{0,50}?\\b(?:is|are|as|to|=|should be|actually|now)\\s+([\\s\\S]+)$`, "i"),
+    new RegExp(`\\b(?:update|change|correct|fix|amend|edit|revise|save|remember|set)\\b[\\s\\S]{0,80}?\\b${fieldPattern}\\b[\\s\\S]{0,40}?\\b(?:to|as|=|is)\\s+([\\s\\S]+)$`, "i"),
+    new RegExp(`\\b(?:has|have)\\s+([\\s\\S]{1,40}?)\\s+\\b${fieldPattern}\\b`, "i"),
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return cleanCorrectionValue(match[1]);
+  }
+
+  return "";
+}
+
+function normalizeCustomerRecordValue(rawValue, definition, customer) {
+  if (definition.type !== "boolean" && /\b(?:clear|remove|delete|blank|empty|none|unknown|not recorded)\b/i.test(rawValue)) {
+    return "";
+  }
+
+  if (definition.type === "dateOfBirth") {
+    const parsedDate = extractDateOfBirthValue(rawValue, customer?.dateOfBirth);
+    if (!parsedDate?.value && !parsedDate?.needsFullDate) return null;
+    return parsedDate;
+  }
+
+  if (definition.type === "date") {
+    const parsedDate = extractDateValue(rawValue, customer?.[definition.field]);
+    if (!parsedDate?.value) return null;
+    return parsedDate.value;
+  }
+
+  if (definition.type === "integer") {
+    return normalizeIntegerValue(rawValue);
+  }
+
+  if (definition.type === "boolean") {
+    return normalizeBooleanValue(rawValue);
+  }
+
+  if (definition.type === "email") {
+    const match = rawValue.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+    return match ? match[0] : null;
+  }
+
+  if (definition.options) {
+    return normalizeSelectValue(rawValue, definition.options);
+  }
+
+  const cleaned = cleanCorrectionValue(rawValue);
+  if (!cleaned) return null;
+  return definition.type === "longText" ? cleaned.slice(0, 2000) : cleaned.slice(0, 240);
+}
+
+function parseCustomerRecordUpdateRequest(text, customer, history = []) {
+  const raw = cleanText(text);
+  if (!raw) return null;
+  if (/\?$/.test(raw) || /\b(?:what|when|show|tell|check|look up|find)\b/i.test(raw)) return null;
+  if (!/\b(?:update|change|correct|fix|amend|edit|revise|save|remember|set|actually|should be|is|are|has|have|=)\b/i.test(raw)) {
+    return null;
+  }
+
+  const definition = getCustomerRecordFieldDefinition(raw) ?? inferCustomerRecordFieldFromHistory(history);
+  if (!definition) return null;
+
+  const rawValue = extractRawRecordFieldValue(raw, definition) || raw;
+  if (!rawValue) return null;
+
+  const normalizedValue = normalizeCustomerRecordValue(rawValue, definition, customer);
+  if (normalizedValue === null || normalizedValue === undefined) return null;
+
+  const nextValue =
+    definition.type === "dateOfBirth" && typeof normalizedValue === "object"
+      ? normalizedValue.value
+      : normalizedValue;
+  const needsFullDate =
+    definition.type === "dateOfBirth" &&
+    typeof normalizedValue === "object" &&
+    normalizedValue.needsFullDate;
+
+  return {
+    field: definition.field,
+    fieldLabel: definition.label,
+    oldValue: customer?.[definition.field] ?? "",
+    nextValue,
+    displayValue: rawValue,
+    needsFullDate,
+  };
+}
+
+function buildRecordUpdatedMessage({ correction, customer }) {
+  return {
+    type: "record-updated",
+    text: "Client record updated",
+    detail: `${correction.fieldLabel}: ${correction.oldValue || "Not recorded"} -> ${correction.nextValue}`,
+    source: customer?.name ? `Updated ${customer.name}'s CRM record` : "Updated CRM record",
   };
 }
 
@@ -741,14 +1204,17 @@ function CustomerChatMessage({ message, onSuggestion }) {
     );
   }
 
-  if (message.type === "memory-updated") {
+  if (message.type === "memory-updated" || message.type === "record-updated") {
+    const isRecordUpdate = message.type === "record-updated";
     return (
       <div className="group flex w-full items-start gap-2.5">
         <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[#e8f7ee] text-[#16794c]">
           <CircleCheck className="size-4" strokeWidth={2.1} />
         </span>
         <div className="min-w-0">
-          <p className="text-[14px] font-semibold leading-5 text-[#16794c]">Memory updated</p>
+          <p className="text-[14px] font-semibold leading-5 text-[#16794c]">
+            {message.text || (isRecordUpdate ? "Client record updated" : "Memory updated")}
+          </p>
           {message.detail && (
             <p className="mt-0.5 text-[13px] font-normal leading-5 text-[#101112]">{message.detail}</p>
           )}
@@ -842,11 +1308,11 @@ export function CustomerWorkspace() {
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
   const { data: fetchedArticles } = useApi(() => api.getCustomerArticles(customerId), [customerId]);
-  const customer = fetchedCustomer;
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
   const configSaveTimer = useRef(null);
+  const [customerOverride, setCustomerOverride] = useState(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
@@ -862,6 +1328,11 @@ export function CustomerWorkspace() {
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
   const [selectedModel, setSelectedModel] = useState("deepseek-chat");
+  const customer = customerOverride ?? fetchedCustomer;
+
+  useEffect(() => {
+    setCustomerOverride(null);
+  }, [customerId]);
 
   useEffect(() => {
     if (!customer) return;
@@ -885,6 +1356,27 @@ export function CustomerWorkspace() {
   useEffect(() => {
     if (fetchedConfig) setWorkflowConfig(fetchedConfig);
   }, [fetchedConfig]);
+
+  useEffect(() => {
+    if (!customer?.id) return undefined;
+
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshCustomerKnowledge().catch(() => {
+          /* realtime refresh is best-effort; explicit sends still fetch fresh data */
+        });
+      }, 80);
+    };
+
+    const unsubscribe = api.subscribeCustomerKnowledge(customer.id, scheduleRefresh);
+
+    return () => {
+      window.clearTimeout(refreshTimer);
+      unsubscribe?.();
+    };
+  }, [customer?.id]);
 
   useEffect(() => {
     return () => recognitionRef.current?.stop();
@@ -1020,6 +1512,7 @@ export function CustomerWorkspace() {
 
     setMemories(nextMemories);
     setArticles(nextArticles);
+    if (nextCustomer) setCustomerOverride(nextCustomer);
 
     return { customer: nextCustomer ?? customer, memories: nextMemories, articles: nextArticles };
   }
@@ -1035,7 +1528,10 @@ export function CustomerWorkspace() {
   function getCorrectionSources(availableMemories = [], availableArticles = []) {
     const articleIds = new Set(availableArticles.map((article) => String(article.id)));
     const memorySources = availableMemories
-      .filter((memory) => !(memory.kind === "article" && articleIds.has(String(getArticleIdFromMemory(memory)))))
+      .filter((memory) => {
+        if (memory.kind === "chat") return false;
+        return !(memory.kind === "article" && articleIds.has(String(getArticleIdFromMemory(memory))));
+      })
       .map((memory) => ({
         sourceType: "memory",
         ...memory,
@@ -1058,12 +1554,67 @@ export function CustomerWorkspace() {
     return [...memorySources, ...articleSources];
   }
 
+  async function saveCorrectionMemory(correction) {
+    return remember(
+      buildMemoryEntry({
+        kind: "profile",
+        title: `${correction.fieldLabel} update`,
+        body: [
+          correction.oldValue ? `${correction.fieldLabel} corrected from ${correction.oldValue}.` : null,
+          `${correction.fieldLabel}: ${correction.nextValue}`,
+        ].filter(Boolean).join("\n"),
+        sourceName: "Advisor chat update",
+        sourceMeta: "Saved from chatbot instruction",
+      }),
+      { notify: false }
+    );
+  }
+
   async function updateCustomerKnowledgeFromChat(correction, availableMemories = [], availableArticles = []) {
+    if (!correction.oldValue) {
+      const savedMemory = await saveCorrectionMemory(correction);
+
+      return {
+        status: "updated",
+        correction,
+        memory: savedMemory,
+        changedFields: ["body"],
+      };
+    }
+
     const rankedSources = getCorrectionSources(availableMemories, availableArticles)
       .map((source) => ({ source, score: scoreSourceForCorrection(source, correction) }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || new Date(b.source.createdAt) - new Date(a.source.createdAt));
-    const target = rankedSources.find((item) => item.source.sourceType === "memory")?.source;
+    const target = rankedSources[0]?.source;
+
+    if (!target) {
+      if (correction.subject && correction.nextValue) {
+        const savedMemory = await saveCorrectionMemory(correction);
+        return {
+          status: "updated",
+          correction,
+          memory: savedMemory,
+          changedFields: ["body"],
+        };
+      }
+
+      return { status: "not-found", correction };
+    }
+
+    if (target.sourceType === "article") {
+      const amendedArticle = amendArticleWithCorrection(target.article, correction);
+      if (!amendedArticle) return { status: "not-found", correction };
+
+      const savedArticle = await saveCustomerArticle(amendedArticle.article, { notify: false });
+
+      return {
+        status: "updated",
+        correction,
+        article: savedArticle,
+        changedFields: amendedArticle.changedFields,
+      };
+    }
 
     if (target) {
       const amendedMemory = amendMemoryWithCorrection(target.memory, correction);
@@ -1082,30 +1633,26 @@ export function CustomerWorkspace() {
         changedFields: amendedMemory.changedFields,
       };
     }
+  }
 
-    const articleEvidence = rankedSources.find((item) => item.source.sourceType === "article")?.source;
-    if (!articleEvidence) return { status: "not-found", correction };
+  async function updateCustomerRecordFromChat(correction) {
+    if (correction.needsFullDate) {
+      return {
+        status: "needs-detail",
+        correction,
+      };
+    }
 
-    const savedMemory = await remember(
-      buildMemoryEntry({
-        kind: "profile",
-        title: `${correction.fieldLabel} correction`,
-        body: [
-          `${correction.fieldLabel} was corrected by the advisor.`,
-          `Previous value found in article "${articleEvidence.title}": ${correction.oldValue}.`,
-          `Correct value: ${correction.nextValue}.`,
-        ].join("\n"),
-        sourceName: "Advisor chat correction",
-        sourceMeta: `Article evidence: ${articleEvidence.title || articleEvidence.id || "saved article"}`,
-      }),
-      { notify: false }
-    );
+    const savedCustomer = await api.updateCustomerRecord(customer.id, {
+      [correction.field]: correction.nextValue,
+    });
+
+    if (savedCustomer) setCustomerOverride(savedCustomer);
 
     return {
       status: "updated",
       correction,
-      memory: savedMemory,
-      changedFields: ["body"],
+      customer: savedCustomer ?? customer,
     };
   }
 
@@ -1326,8 +1873,9 @@ export function CustomerWorkspace() {
   async function sendCustomerPrompt(text) {
     if (!text || sending) return;
 
+    const customerRecordUpdateRequest = parseCustomerRecordUpdateRequest(text, customer, messages);
     const memoryUpdateRequest = parseMemoryUpdateRequest(text);
-    const intent = getThinkingIntentForPrompt(text, !!articleCandidate);
+    const intent = getThinkingIntentForPrompt(text, !!articleCandidate, customer, messages);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setValue("");
     const thinkingStartedAt = Date.now();
@@ -1336,6 +1884,21 @@ export function CustomerWorkspace() {
     let attemptedMemoryUpdate = false;
 
     try {
+      if (customerRecordUpdateRequest) {
+        attemptedMemoryUpdate = true;
+        const updateResult = await updateCustomerRecordFromChat(customerRecordUpdateRequest);
+        await waitForThinkingSequence(thinkingStartedAt, intent);
+
+        if (updateResult.status === "updated") {
+          addAssistantNotice(buildRecordUpdatedMessage(updateResult));
+        } else {
+          addAssistantNotice(
+            "I can update the date of birth, but I need the full date because this client does not already have a month and day saved."
+          );
+        }
+        return;
+      }
+
       if (memoryUpdateRequest) {
         attemptedMemoryUpdate = true;
         const latestKnowledge = await refreshCustomerKnowledge();
@@ -1347,7 +1910,7 @@ export function CustomerWorkspace() {
         await waitForThinkingSequence(thinkingStartedAt, intent);
 
         if (updateResult.status === "updated") {
-          addAssistantNotice(buildMemoryUpdatedMessage(updateResult));
+          addAssistantNotice(buildKnowledgeUpdatedMessage(updateResult));
         } else {
           addAssistantNotice(
             `I could not find "${memoryUpdateRequest.oldValue}" in ${latestKnowledge.customer.name}'s saved memories or articles, so I did not change anything.`

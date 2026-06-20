@@ -202,15 +202,6 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
 
   return (
     <div className="text-[#2a2a2e]">
-      <Section label="Workflow brief">
-        <EditableText
-          ariaLabel="Workflow brief"
-          value={config.instructions}
-          onChange={(value) => setField("instructions", value)}
-          placeholder="Describe what should happen for this client workflow..."
-        />
-      </Section>
-
       <Section label="Notes">
         <EditableText
           ariaLabel="Notes"

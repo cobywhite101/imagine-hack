@@ -24,7 +24,13 @@ offline on the data in `src/data/mock.js`.
    VITE_SUPABASE_URL=...
    VITE_SUPABASE_ANON_KEY=...
    ```
-4. Restart `npm run dev`. The badge flips to **"● live (supabase)"** and every
+4. Deploy the Home brief AI function and set the model key server-side:
+   ```
+   supabase functions deploy home-brief
+   supabase secrets set DEEPSEEK_API_KEY=...
+   ```
+5. Set `VITE_ENABLE_HOME_AI_BRIEF=true` after the function is deployed.
+6. Restart `npm run dev`. The badge flips to **"● live (supabase)"** and every
    screen now reads real data — no component changes needed.
 
 The magic is in [`src/services/dataClient.js`](src/services/dataClient.js): one

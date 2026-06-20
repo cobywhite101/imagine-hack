@@ -29,6 +29,7 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
+const CUSTOMER_RECORD_STORAGE_KEY = "client-os-customer-overrides-v1";
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
@@ -62,6 +63,42 @@ const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
 const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
 const HOME_TASK_STATUSES = ["To Do", "In progress", "Follow-up", "Done"];
 const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
+const CUSTOMER_RECORD_COLUMN_MAP = {
+  email: "email",
+  phone: "phone",
+  contactName: "contact_name",
+  dateOfBirth: "date_of_birth",
+  gender: "gender",
+  maritalStatus: "marital_status",
+  occupation: "occupation",
+  dependents: "dependents",
+  nationality: "nationality",
+  advisorId: "assigned_advisor_id",
+  clientSince: "client_since_date",
+  acquisitionChannel: "acquisition_channel",
+  referredBy: "referred_by",
+  annualIncomeBracket: "annual_income_bracket",
+  netWorthBracket: "net_worth_bracket",
+  riskTolerance: "risk_tolerance",
+  investmentHorizonYears: "investment_horizon_years",
+  liabilitiesSummary: "liabilities_summary",
+  hasWill: "has_will",
+  estatePlanStatus: "estate_plan_status",
+  businessOwnership: "business_ownership",
+  intendedHeirs: "intended_heirs",
+  lastContactDate: "last_contact_date",
+  preferredCommunicationChannel: "preferred_communication_channel",
+  rapportNotes: "rapport_notes",
+  kycStatus: "kyc_status",
+  lastFactFindDate: "last_fact_find_date",
+  consentMarketing: "consent_marketing",
+  policyCount: "policy_count",
+  policySummary: "policy_summary",
+  nextRenewal: "next_renewal",
+  nextRenewalPolicyType: "next_renewal_policy_type",
+  nextLifeEvent: "next_life_event",
+  nextLifeEventDate: "next_life_event_date",
+};
 
 function requireSupabase(feature) {
   if (!isSupabaseConfigured) {
@@ -254,6 +291,35 @@ function setStoredHomeTasks(tasks) {
   return next;
 }
 
+function getStoredCustomerOverrides() {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_RECORD_STORAGE_KEY) ?? "{}");
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function setStoredCustomerOverride(customerId, patch) {
+  if (typeof window === "undefined" || !customerId) return null;
+  try {
+    const stored = getStoredCustomerOverrides();
+    const next = {
+      ...stored,
+      [String(customerId)]: {
+        ...(stored[String(customerId)] ?? {}),
+        ...patch,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    window.localStorage.setItem(CUSTOMER_RECORD_STORAGE_KEY, JSON.stringify(next));
+    return next[String(customerId)];
+  } catch {
+    return null;
+  }
+}
+
 function normalizeAdvisorMeeting(meeting = {}) {
   const allDay = Boolean(meeting.allDay ?? meeting.all_day);
   const startValue = meeting.start ?? meeting.startsAt ?? meeting.starts_at ?? meeting.start_at;
@@ -443,31 +509,169 @@ function formatMeetingTime(meeting) {
   return `${hour12}:${pad2(minute)} ${suffix}`;
 }
 
-function buildHomeBrief(tasks, meetings) {
+function compactText(value, maxLength = 280) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}...`;
+}
+
+function getHomeBriefContext(tasks, meetings, customers = []) {
   const today = toLocalDateString();
   const todayMeetings = meetings
     .filter((meeting) => isSameLocalDate(meeting.start, today))
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
   const followUps = tasks.filter((task) => task.status === "Follow-up");
+  const dueTasks = tasks.filter((task) => task.status !== "Done" && (!task.dueDate || task.dueDate <= today));
+  const highPriorityTasks = dueTasks.filter((task) => String(task.priority).toLowerCase() === "high");
   const priority = todayMeetings[0];
   const priorityTime = formatMeetingTime(priority);
+  const customersById = new Map(customers.map((customer) => [String(customer.id), customer]));
 
   return {
     advisorName: "Daniel",
+    today,
+    todayMeetings,
+    followUps,
+    dueTasks,
+    highPriorityTasks,
+    priority,
+    priorityTime,
+    customersById,
     meetingsText: pluralize(todayMeetings.length, "meeting today", "meetings today"),
     followUpsText: pluralize(followUps.length, "follow-up due", "follow-ups due"),
     priorityText: priority
       ? `${priority.title}${priorityTime ? ` at ${priorityTime}` : ""}`
-      : "Your client task board",
+      : dueTasks[0]?.title ?? "Your client task board",
   };
 }
 
-function createHomeDashboard({ tasks, meetings, customers = [] }) {
+function buildLocalHomeBrief(tasks, meetings, customers = []) {
+  const context = getHomeBriefContext(tasks, meetings, customers);
+  const priorityTask = context.highPriorityTasks[0] ?? context.followUps[0] ?? context.dueTasks[0];
+  const priorityText = priorityTask?.title
+    ? `${priorityTask.title}${context.priorityTime ? ` before ${context.priorityTime}` : ""}`
+    : context.priorityText;
+  const workload = [
+    context.meetingsText,
+    context.followUpsText,
+    context.highPriorityTasks.length
+      ? pluralize(context.highPriorityTasks.length, "high-priority task", "high-priority tasks")
+      : "",
+  ].filter(Boolean);
+  const bodyHighlights = [
+    { id: "meetings", text: context.meetingsText, tone: "meetings" },
+    { id: "followups", text: context.followUpsText, tone: "followups" },
+    context.highPriorityTasks.length
+      ? {
+          id: "highPriorityTasks",
+          text: pluralize(context.highPriorityTasks.length, "high-priority task", "high-priority tasks"),
+          tone: "priority",
+        }
+      : null,
+  ].filter(Boolean);
+
+  return {
+    advisorName: context.advisorName,
+    headline: `Good morning, ${context.advisorName}.`,
+    body: `You have ${workload.join(", ")}. Start with ${priorityText}; it is the best next action from today's task board.`,
+    bodyHighlights,
+    meetingsText: context.meetingsText,
+    followUpsText: context.followUpsText,
+    priorityText: priorityText || context.priorityText,
+    source: "local",
+  };
+}
+
+async function buildHomeBrief(tasks, meetings, customers = []) {
+  const fallback = buildLocalHomeBrief(tasks, meetings, customers);
+  const context = getHomeBriefContext(tasks, meetings, customers);
+  const taskLines = context.dueTasks.slice(0, 8).map((task) => {
+    const customer = task.customerId ? context.customersById.get(String(task.customerId)) : null;
+    return {
+      title: task.title,
+      status: task.status,
+      priority: task.priority || "Normal",
+      category: task.category || "General",
+      dueDate: task.dueDate,
+      notes: task.notes,
+      customer: customer?.name ?? null,
+    };
+  });
+  const meetingLines = context.todayMeetings.slice(0, 6).map((meeting) => {
+    const customer = meeting.customerId ? context.customersById.get(String(meeting.customerId)) : null;
+    return {
+      title: meeting.title,
+      time: formatMeetingTime(meeting),
+      notes: meeting.notes,
+      customer: customer?.name ?? null,
+    };
+  });
+  const briefPayload = {
+    advisorName: context.advisorName,
+    today: context.today,
+    counts: {
+      meetingsToday: context.todayMeetings.length,
+      followUpsDue: context.followUps.length,
+      dueTasks: context.dueTasks.length,
+      highPriorityTasks: context.highPriorityTasks.length,
+    },
+    tasks: taskLines,
+    meetings: meetingLines,
+  };
+
+  const enableHomeAiFunction = import.meta.env.VITE_ENABLE_HOME_AI_BRIEF === "true";
+  if (isSupabaseConfigured && enableHomeAiFunction) {
+    try {
+      const { data, error } = await supabase.functions.invoke("home-brief", {
+        body: briefPayload,
+      });
+      if (!error && data?.brief) return normalizeGeneratedHomeBrief(data.brief, fallback);
+      if (!error && data) return normalizeGeneratedHomeBrief(data, fallback);
+    } catch {
+      /* fall through to local or explicitly-enabled browser AI */
+    }
+  }
+
+  const allowBrowserAi = import.meta.env.VITE_ENABLE_BROWSER_DEEPSEEK === "true";
+  const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+  if (!allowBrowserAi || !apiKey) return fallback;
+
+  const systemPrompt = `You generate a short morning brief for a financial advisor CRM home page.
+Use only the supplied tasks and meetings. Do not invent clients, counts, times, or obligations.
+Choose the first priority from urgent due tasks, follow-ups, and today's earliest meeting.
+Return only valid JSON:
+{
+  "headline": "short greeting",
+  "body": "one concise sentence under 34 words",
+  "priorityText": "short priority label"
+}`;
+  const userPrompt = JSON.stringify(briefPayload);
+
+  const reply = await queryDeepSeek([{ role: "user", text: userPrompt }], systemPrompt);
+  const generated = parseJsonObject(reply);
+  return normalizeGeneratedHomeBrief(generated, fallback);
+}
+
+function normalizeGeneratedHomeBrief(generated, fallback) {
+  const headline = compactText(generated?.headline, 90) || fallback.headline;
+  const body = compactText(generated?.body, 260) || fallback.body;
+  const priorityText = compactText(generated?.priorityText, 120) || fallback.priorityText;
+
+  return {
+    ...fallback,
+    headline,
+    body,
+    priorityText,
+    source: generated ? "ai" : fallback.source,
+  };
+}
+
+async function createHomeDashboard({ tasks, meetings, customers = [] }) {
   const normalizedTasks = sortHomeTasks(tasks.map(normalizeHomeTask));
   const normalizedMeetings = sortAdvisorMeetings(meetings.map(normalizeAdvisorMeeting));
 
   return {
-    brief: buildHomeBrief(normalizedTasks, normalizedMeetings, customers),
+    brief: await buildHomeBrief(normalizedTasks, normalizedMeetings, customers),
     stats: buildHomeStats(normalizedTasks, normalizedMeetings),
     tasks: normalizedTasks,
     meetings: normalizedMeetings,
@@ -762,6 +966,27 @@ function buildCustomerKnowledgeSources(memories = [], articles = []) {
     .filter((memory) => !isArticleBackedMemory(memory) && memory.kind !== "chat");
 
   return dedupeCustomerKnowledgeSources([...memorySources, ...articleSources]);
+}
+
+function formatRecentCustomerConversation(history = [], memories = []) {
+  const visibleTurns = history
+    .slice(-10)
+    .map((message) => {
+      const role = message?.role === "user" ? "Advisor" : "Assistant";
+      const text = truncateCustomerText(message?.text || message?.content || "", 900);
+      return text ? `${role}: ${text}` : "";
+    })
+    .filter(Boolean);
+
+  const savedTurns = memories
+    .map(normalizeCustomerMemory)
+    .filter((memory) => memory.kind === "chat")
+    .slice(0, 4)
+    .map((memory) => truncateCustomerText(memory.body || memory.summary, 900))
+    .filter(Boolean);
+
+  const lines = [...savedTurns.map((turn) => `Saved chat: ${turn}`), ...visibleTurns];
+  return lines.length ? lines.join("\n\n") : "No recent conversation context.";
 }
 
 function escapeArticleHtml(text) {
@@ -1090,6 +1315,26 @@ async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat
   }
 }
 
+function parseJsonObject(text) {
+  if (!text) return null;
+  const cleaned = String(text)
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "");
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -1143,7 +1388,8 @@ export const api = {
 
   getCustomers: async () => {
     const rows = await fromTable("customers", localCustomers, { column: "name" });
-    return rows.map(normalizeCustomerRecord);
+    const overrides = isSupabaseConfigured ? {} : getStoredCustomerOverrides();
+    return rows.map((row) => normalizeCustomerRecord({ ...row, ...(overrides[String(row.id)] ?? {}) }));
   },
 
   getCustomerById: async (customerId) => {
@@ -1152,7 +1398,8 @@ export const api = {
     if (!isSupabaseConfigured) {
       await delay();
       const customer = localCustomers.find((item) => String(item.id) === String(customerId));
-      return customer ? normalizeCustomerRecord(customer) : null;
+      const override = getStoredCustomerOverrides()[String(customerId)] ?? {};
+      return customer ? normalizeCustomerRecord({ ...customer, ...override }) : null;
     }
 
     const { data, error } = await supabase
@@ -1163,6 +1410,38 @@ export const api = {
 
     if (error) throw error;
     return data ? normalizeCustomerRecord(data) : null;
+  },
+
+  updateCustomerRecord: async (customerId, patch) => {
+    if (!customerId || !patch || typeof patch !== "object") return null;
+
+    if (!isSupabaseConfigured) {
+      await delay();
+      const current = localCustomers.find((item) => String(item.id) === String(customerId));
+      if (!current) return null;
+      const override = setStoredCustomerOverride(customerId, patch) ?? patch;
+      return normalizeCustomerRecord({ ...current, ...override });
+    }
+
+    const rowPatch = {};
+    for (const [field, value] of Object.entries(patch)) {
+      const column = CUSTOMER_RECORD_COLUMN_MAP[field];
+      if (!column) continue;
+      rowPatch[column] = value === "" ? null : value;
+    }
+
+    if (!Object.keys(rowPatch).length) return api.getCustomerById(customerId);
+    rowPatch.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from("customers")
+      .update(rowPatch)
+      .eq("id", customerId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return normalizeCustomerRecord(data);
   },
 
   getCustomerMemories: async (customerId) => {
@@ -1391,6 +1670,7 @@ export const api = {
     const knowledgeSources = buildCustomerKnowledgeSources(activeMemories, activeArticles);
     if (apiKey) {
       const customerRecordString = formatCustomerRecordForPrompt(activeCustomer);
+      const recentConversationString = formatRecentCustomerConversation(history, activeMemories);
       const memoryString = knowledgeSources.length > 0
         ? knowledgeSources
             .map((m, idx) => {
@@ -1423,10 +1703,13 @@ You are helping the advisor work from a client record.${workflowBlock}
 Current Client Record:
 ${customerRecordString}
 
+Recent Conversation:
+${recentConversationString}
+
 Saved Customer Knowledge Sources (client memories, meeting summaries, files, and saved articles):
 ${memoryString}
 
-Respond to the Advisor's inquiry. Use the current client record, client memories, and saved articles when they are relevant. Treat Current Client Record as canonical for structured CRM fields such as date of birth, KYC status, policy dates, contact preferences, and renewal dates. Never say a structured field is missing if Current Client Record includes a value for it. Do not default to articles; prefer the most recent directly relevant source, whether it is a client record field, memory, meeting note, file, or article. If sources conflict, say which source/date you used. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${activeCustomer.name}:" or similar boilerplate unless explicitly asked.`;
+Respond to the Advisor's inquiry. Use Recent Conversation to resolve follow-ups, pronouns, "it", "that", and corrections like "actually..." before answering. Use the current client record, client memories, and saved articles when they are relevant. Treat Current Client Record as canonical for structured CRM fields such as date of birth, KYC status, policy dates, contact preferences, and renewal dates. Never say a structured field is missing if Current Client Record includes a value for it. Do not default to articles; prefer the most recent directly relevant source, whether it is a client record field, memory, meeting note, file, article, or recent chat turn. If sources conflict, say which source/date you used. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${activeCustomer.name}:" or similar boilerplate unless explicitly asked.`;
 
       const chatHistory = [...history];
       if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
@@ -1723,7 +2006,7 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
       getCustomersForHomeFallback(),
     ]);
 
-    return createHomeDashboard({ tasks, meetings, customers });
+    return await createHomeDashboard({ tasks, meetings, customers });
   },
 
   subscribeHomeDashboard: (onChange) => {
@@ -1744,6 +2027,25 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
       .on("postgres_changes", { event: "*", schema: "public", table: "advisor_tasks" }, onChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "advisor_meetings" }, onChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "customers" }, onChange)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  subscribeCustomerKnowledge: (customerId, onChange) => {
+    if (!customerId || typeof onChange !== "function") return () => {};
+
+    if (!isSupabaseConfigured) return () => {};
+
+    const memoryFilter = `customer_id=eq.${customerId}`;
+    const customerFilter = `id=eq.${customerId}`;
+    const channel = supabase
+      .channel(`customer-knowledge-sync-${customerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_memories", filter: memoryFilter }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_articles", filter: memoryFilter }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: customerFilter }, onChange)
       .subscribe();
 
     return () => {

@@ -6,6 +6,7 @@ import {
   Clock3,
   ListChecks,
   MailCheck,
+  Tag,
 } from "lucide-react";
 import { MeetingsCalendar } from "../features/calendar/MeetingsCalendar";
 import { api } from "@/services/dataClient";
@@ -92,10 +93,13 @@ export function Home() {
         <div className="w-[1179px] px-4 pt-4">
           <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
             <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
-              Good morning, {brief.advisorName}.
+              {brief.headline}
             </h2>
-            <p className="max-w-[920px] text-[18px] font-medium leading-7 text-[#101112]">
-              You have <span className="font-semibold text-[#101112]">{brief.meetingsText}</span>, with <span className="font-semibold text-[#101112]">{brief.followUpsText}</span>. <span className="font-semibold text-[#101112]">{brief.priorityText}</span> is your first priority.
+            <p
+              key={brief.body}
+              className="max-w-[920px] animate-grok-fade text-[18px] font-medium leading-7 text-[#101112]"
+            >
+              <BriefBody body={brief.body} highlights={brief.bodyHighlights} />
             </p>
             {homeError ? (
               <p className="mt-2 text-[12px] font-medium text-[#d4351c]">
@@ -137,10 +141,68 @@ export function Home() {
 
 const defaultBrief = {
   advisorName: "Daniel",
+  headline: "Good morning, Daniel.",
+  body: "No generated brief is available yet. Your client task board is ready.",
+  bodyHighlights: [],
   meetingsText: "0 meetings today",
   followUpsText: "0 follow-ups due",
   priorityText: "Your client task board",
 };
+
+const briefHighlightTones = {
+  meetings: "text-[#2563eb]",
+  followups: "text-[#8b5cf6]",
+  priority: "text-[#dc2626]",
+};
+
+function BriefBody({ body, highlights = [] }) {
+  const parts = getBriefBodyParts(body, highlights);
+
+  return parts.map((part, index) => {
+    if (!part.tone) return part.text;
+
+    return (
+      <span
+        key={`${part.tone}-${part.text}-${index}`}
+        className={briefHighlightTones[part.tone] ?? "text-[#101112]"}
+      >
+        {part.text}
+      </span>
+    );
+  });
+}
+
+function getBriefBodyParts(body = "", highlights = []) {
+  const remainingHighlights = highlights.filter((highlight) => highlight?.text);
+  if (!remainingHighlights.length) return [{ text: body }];
+
+  const parts = [];
+  let cursor = 0;
+
+  while (cursor < body.length) {
+    const nextHighlight = remainingHighlights
+      .map((highlight) => ({
+        ...highlight,
+        index: body.indexOf(highlight.text, cursor),
+      }))
+      .filter((highlight) => highlight.index >= 0)
+      .sort((a, b) => a.index - b.index || b.text.length - a.text.length)[0];
+
+    if (!nextHighlight) {
+      parts.push({ text: body.slice(cursor) });
+      break;
+    }
+
+    if (nextHighlight.index > cursor) {
+      parts.push({ text: body.slice(cursor, nextHighlight.index) });
+    }
+
+    parts.push({ text: nextHighlight.text, tone: nextHighlight.tone });
+    cursor = nextHighlight.index + nextHighlight.text.length;
+  }
+
+  return parts.length ? parts : [{ text: body }];
+}
 
 const defaultStats = [
   {
@@ -376,8 +438,8 @@ function TodoCard({ card, onClick }) {
             ) : null}
             {card.category ? (
               <span className="rounded-[4px] bg-[rgba(3,87,31,0.11)] px-1.5 py-0.5 text-[12px] font-medium leading-4 text-[#2a533c]">
-                <span className="mr-1">💬</span>
-                {card.category}
+                <Tag className="mr-1 inline size-3 align-[-1px]" strokeWidth={2} />
+                Type: {card.category}
               </span>
             ) : null}
           </div>
@@ -476,7 +538,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
         </div>
 
         <div className="flex-1 overflow-auto">
-          <div className="mx-auto flex w-full max-w-[640px] flex-col px-10 pb-12 pt-10">
+          <div className="flex w-full flex-col px-6 pb-12 pt-10">
             <textarea
               rows={1}
               autoFocus

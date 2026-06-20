@@ -25,5 +25,14 @@ create policy "public insert" on customer_memories for insert with check (true);
 create policy "public update" on customer_memories for update using (true) with check (true);
 create policy "public delete" on customer_memories for delete using (true);
 
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    alter publication supabase_realtime add table customer_memories;
+  end if;
+exception
+  when duplicate_object then null;
+end $$;
+
 -- Customer memory seed data lives in supabase/aag_memories.sql.
 -- Run supabase/aag_seed.sql after schema.sql to ingest durable chatbot memory.
