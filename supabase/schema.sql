@@ -70,6 +70,7 @@ create table if not exists customers (
   name text not null,
   contact text,
   email text,
+  phone text,
   avatar text,
   accent text,
   status text not null default 'Monitoring',
@@ -96,10 +97,14 @@ create table if not exists customer_memories (
   created_at timestamptz default now()
 );
 
+alter table customers add column if not exists phone text;
+
 insert into customers (
   id,
   name,
   contact,
+  email,
+  phone,
   avatar,
   accent,
   status,
@@ -112,12 +117,31 @@ insert into customers (
   overdue,
   tags
 ) values
-  ('cust1', 'Greenleaf', 'Maya Chen · VP Sales', 'GL', '#3bd4cb', 'Negotiation', 'Enterprise', 52, '$148k', '2d ago', 'Send security review', 'Today', true, array['AI', 'Migration']),
-  ('cust2', 'Northwind Labs', 'Dev Okafor · Head of RevOps', 'NL', '#317cff', 'Proposal', 'Mid-market', 24, '$61k', '5d ago', 'Share ROI deck', 'Tomorrow', false, array['Expansion']),
-  ('cust3', 'Atlas Freight', 'Priya Nair · COO', 'AF', '#ec5d40', 'Qualified', 'Enterprise', 80, '$210k', '1d ago', 'Book technical demo', 'Thu', false, array['Logistics', 'ICP fit']),
-  ('cust4', 'Sunrise Retail', 'Tom Becker · Director', 'SR', '#4991e5', 'Won', 'Mid-market', 18, '$44k', 'Today', 'Kickoff onboarding', 'Fri', false, array['Closed']),
-  ('cust5', 'Quanta Health', 'Dr. Lena Voss · CIO', 'QH', '#39bdd6', 'Churn-risk', 'Enterprise', 64, '$172k', '21d ago', 'Re-engage exec sponsor', 'Overdue', true, array['At risk', 'Renewal']),
-  ('cust6', 'Beacon Studios', 'Iris Wong · Founder', 'BS', '#3bd4cb', 'Lead', 'Startup', 9, '$12k', '8d ago', 'Qualify budget', 'Next week', false, array['Inbound'])
+  ('cust1', 'Greenleaf', 'Maya Chen · VP Sales', 'maya.chen@greenleaf.example', '+1-415-555-0128', 'GL', '#3bd4cb', 'Negotiation', 'Enterprise', 52, '$148k', '2d ago', 'Send security review', 'Today', true, array['AI', 'Migration']),
+  ('cust2', 'Northwind Labs', 'Dev Okafor · Head of RevOps', 'dev.okafor@northwind.example', '+1-646-555-0184', 'NL', '#317cff', 'Proposal', 'Mid-market', 24, '$61k', '5d ago', 'Share ROI deck', 'Tomorrow', false, array['Expansion']),
+  ('cust3', 'Atlas Freight', 'Priya Nair · COO', 'priya.nair@atlasfreight.example', '+1-312-555-0196', 'AF', '#ec5d40', 'Qualified', 'Enterprise', 80, '$210k', '1d ago', 'Book technical demo', 'Thu', false, array['Logistics', 'ICP fit']),
+  ('cust4', 'Sunrise Retail', 'Tom Becker · Director', 'tom.becker@sunriseretail.example', '+1-206-555-0161', 'SR', '#4991e5', 'Won', 'Mid-market', 18, '$44k', 'Today', 'Kickoff onboarding', 'Fri', false, array['Closed']),
+  ('cust5', 'Quanta Health', 'Dr. Lena Voss · CIO', 'lena.voss@quantahealth.example', '+1-617-555-0119', 'QH', '#39bdd6', 'Churn-risk', 'Enterprise', 64, '$172k', '21d ago', 'Re-engage exec sponsor', 'Overdue', true, array['At risk', 'Renewal']),
+  ('cust6', 'Beacon Studios', 'Iris Wong · Founder', 'iris.wong@beaconstudios.example', '+1-213-555-0147', 'BS', '#3bd4cb', 'Lead', 'Startup', 9, '$12k', '8d ago', 'Qualify budget', 'Next week', false, array['Inbound'])
+on conflict (id) do nothing;
+
+insert into customer_memories (
+  id,
+  customer_id,
+  kind,
+  title,
+  summary,
+  source_name,
+  source_meta,
+  created_at
+) values
+  ('mem-cust1-renewal', 'cust1', 'meeting', 'Renewal review', 'Annual review call focused on renewal readiness, premium sensitivity, and confirming the beneficiary sequence before the next policy cycle.', 'Jun 12 meeting', 'Saved context', '2026-06-12T09:00:00.000Z'),
+  ('mem-cust1-security', 'cust1', 'note', 'Security blocker', 'Maya asked for a concise security review and wants open data-retention questions answered before moving the Greenleaf deal to procurement.', 'Jun 14 advisor note', 'Action item', '2026-06-14T11:15:00.000Z'),
+  ('mem-cust2-roi', 'cust2', 'meeting', 'ROI deck prep', 'Northwind wants the ROI deck to compare saved RevOps hours against rollout effort and include a short migration timeline.', 'Jun 10 meeting', 'Saved context', '2026-06-10T10:30:00.000Z'),
+  ('mem-cust3-demo', 'cust3', 'note', 'Technical demo scope', 'Atlas Freight needs the demo to show logistics exception handling and executive-level reporting for late shipments.', 'Jun 11 advisor note', 'Demo prep', '2026-06-11T14:00:00.000Z'),
+  ('mem-cust4-onboarding', 'cust4', 'note', 'Kickoff checklist', 'Sunrise Retail is ready for onboarding; first kickoff should confirm store rollout order, admin owners, and reporting cadence.', 'Jun 15 note', 'Closed won', '2026-06-15T09:45:00.000Z'),
+  ('mem-cust5-risk', 'cust5', 'meeting', 'Sponsor re-engagement', 'Quanta Health has gone quiet for 21 days. Re-engage the executive sponsor with a short risk recap and one concrete renewal checkpoint.', 'May 30 meeting', 'At-risk account', '2026-05-30T16:20:00.000Z'),
+  ('mem-cust6-budget', 'cust6', 'note', 'Budget qualification', 'Beacon Studios is inbound but budget is still unqualified. Ask Iris for decision timing, target team size, and approval process.', 'Jun 08 note', 'Qualification', '2026-06-08T12:10:00.000Z')
 on conflict (id) do nothing;
 
 -- Atomic point award used by api.awardPoints().

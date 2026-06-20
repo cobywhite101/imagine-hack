@@ -436,10 +436,10 @@ export function CustomerWorkspace() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={callCustomer}>
             <Phone className="size-4" /> Call
           </Button>
-          <Button size="sm">
+          <Button size="sm" render={<a href={getScheduleUrl(customer)} target="_blank" rel="noreferrer" />}>
             <CalendarDays className="size-4" /> Schedule
           </Button>
         </div>
@@ -487,6 +487,16 @@ export function CustomerWorkspace() {
                     </div>
                   </div>
                 ))}
+                {sending && (
+                  <div className="flex gap-3">
+                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                      <Bot className="size-4" />
+                    </span>
+                    <div className="max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed text-muted-foreground">
+                      Searching saved memory...
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -509,11 +519,11 @@ export function CustomerWorkspace() {
                   <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
                     <Paperclip className="size-4" /> Minutes
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={draftFollowUp} loading={sending}>
                     <Sparkles className="size-4" /> Draft
                   </Button>
                 </div>
-                <Button size="icon-sm" onClick={submit} disabled={!value.trim()} aria-label="Send message">
+                <Button size="icon-sm" onClick={submit} disabled={!value.trim() || sending} loading={sending} aria-label="Send message">
                   <ArrowUp className="size-4" />
                 </Button>
               </div>
@@ -575,7 +585,7 @@ export function CustomerWorkspace() {
             </div>
 
             <div className="mt-4 space-y-3">
-              {allMemories.slice(0, 6).map((memory) => (
+              {memories.slice(0, 6).map((memory) => (
                 <div key={memory.id} className="border-l-2 border-primary/25 pl-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

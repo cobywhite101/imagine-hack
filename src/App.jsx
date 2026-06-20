@@ -100,7 +100,7 @@ function SidebarSection({ label, items }) {
 
 function Sidebar() {
   return (
-    <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-[#fbfbfb] text-[#101112]">
+    <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
       <button
         type="button"
         className="flex h-16 w-full items-center gap-2.5 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
@@ -119,25 +119,15 @@ function Sidebar() {
         <PanelLeft className="size-5 shrink-0 text-black/60" strokeWidth={1.7} />
       </button>
 
-      <div className="flex h-11 w-[247px] items-center gap-1.5 px-2.5 pb-2.5 pt-2">
+      <div className="flex h-11 w-[247px] items-center px-2.5 pb-2.5 pt-2">
         <button
           type="button"
-          className="flex h-7 w-[174px] items-center gap-1.5 rounded-lg bg-white px-1.5 text-left text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
+          className="flex h-7 w-full items-center gap-1.5 rounded-[5px] bg-white px-1.5 text-left text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
         >
           <Keyboard className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
           <span className="min-w-0 flex-1 truncate">Quick actions</span>
           <kbd className="flex h-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] leading-none tracking-[0.02em] text-black/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
             ⌘K
-          </kbd>
-        </button>
-        <button
-          type="button"
-          className="flex h-7 w-[44px] items-center gap-1 rounded-lg bg-white px-1.5 shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
-          aria-label="Search"
-        >
-          <Search className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
-          <kbd className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] leading-none tracking-[0.02em] text-black/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
-            /
           </kbd>
         </button>
       </div>

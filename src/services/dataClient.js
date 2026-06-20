@@ -26,7 +26,10 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const CUSTOMER_MEMORY_KEY = "client-companion-memory-v1";
-const useSupabaseCustomerMemory = isSupabaseConfigured;
+const useSupabaseCustomerMemory =
+  isSupabaseConfigured && import.meta.env.VITE_ENABLE_SUPABASE_MEMORY === "true";
+const useSupabaseCustomerChat =
+  isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
   "about",
   "after",
@@ -81,19 +84,21 @@ async function fromTableOrMock(table, mockValue) {
 }
 
 function normalizeCustomerRecord(customer) {
+  const mockCustomer = mockCustomers.find((item) => String(item.id) === String(customer.id));
   const name = customer.name ?? customer.company ?? "Unnamed customer";
 
   return {
+    ...mockCustomer,
     ...customer,
     name,
-    lastTouch: customer.lastTouch ?? customer.last_touch,
-    nextAction: customer.nextAction ?? customer.next_action,
-    task: customer.task ?? customer.nextAction ?? customer.next_action ?? "",
-    avatar: customer.avatar ?? getInitials(name),
-    accent: customer.accent ?? "#868e96",
-    email: customer.email ?? customer.contact ?? "",
-    phone: customer.phone ?? "",
-    tags: customer.tags ?? [],
+    lastTouch: customer.lastTouch ?? customer.last_touch ?? mockCustomer?.lastTouch,
+    nextAction: customer.nextAction ?? customer.next_action ?? mockCustomer?.nextAction,
+    task: customer.task ?? customer.nextAction ?? customer.next_action ?? mockCustomer?.task ?? mockCustomer?.nextAction ?? "",
+    avatar: customer.avatar ?? mockCustomer?.avatar ?? getInitials(name),
+    accent: customer.accent ?? mockCustomer?.accent ?? "#868e96",
+    email: customer.email ?? mockCustomer?.email ?? customer.contact ?? "",
+    phone: customer.phone ?? mockCustomer?.phone ?? "",
+    tags: customer.tags ?? mockCustomer?.tags ?? [],
   };
 }
 
@@ -384,12 +389,13 @@ export const api = {
   sendCustomerMessage: async ({ customer, text, memories = [] }) => {
     if (!customer || !text?.trim()) return null;
 
-    if (isSupabaseConfigured) {
+    if (useSupabaseCustomerChat) {
       try {
         const { data, error } = await supabase.functions.invoke("customer-chat", {
           body: { customer, text, memories },
         });
         if (!error && data?.message) return data.message;
+        if (!error && data?.text) return data;
       } catch {
         /* fall through to local grounded reply */
       }
