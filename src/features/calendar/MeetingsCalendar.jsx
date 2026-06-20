@@ -7,7 +7,16 @@ import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
 
 // --- Local seed events (today = demo). Replace with backend data later. ---
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const pad = (n) => String(n).padStart(2, "0");
+const toLocalDateKey = (value = new Date()) => {
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+  return "";
+};
+const todayISO = () => toLocalDateKey();
+const isToday = (event) => toLocalDateKey(event?.start) === todayISO();
 
 const seedEvents = () => {
   const d = todayISO();
@@ -37,7 +46,6 @@ const uid = () => `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 // Build a combined ISO local string the calendar understands; "" time => all-day.
 const toISO = (date, time) => (time ? `${date}T${time}` : date);
-const pad = (n) => String(n).padStart(2, "0");
 const toDateInputValue = (dt) =>
   dt ? `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}` : todayISO();
 const toTimeInputValue = (dt) => (dt ? `${pad(dt.getHours())}:${pad(dt.getMinutes())}` : "");
@@ -58,19 +66,20 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
   const selectedEventRef = useRef(null);
   const [localEvents, setLocalEvents] = useState(seedEvents);
   const [draft, setDraft] = useState(null); // null = modal closed
-  const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
+  const [viewMode, setViewMode] = useState("list"); // "calendar" | "list"
   const [calendarError, setCalendarError] = useState(null);
   const { data: fetchedCustomers } = useApi(() => api.getCustomers(), []);
   const events = controlledEvents ?? localEvents;
   const customers = fetchedCustomers ?? [];
 
-  const scheduledCount = events.length;
-
-  // Events sorted by date ascending, for the list view.
-  const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0)),
+  const todaysEvents = useMemo(
+    () =>
+      events
+        .filter(isToday)
+        .sort((a, b) => String(a.start).localeCompare(String(b.start))),
     [events],
   );
+  const scheduledCount = todaysEvents.length;
 
   // --- Open modal for a new event on the clicked date ---
   const handleDateClick = useCallback((info) => {
@@ -181,9 +190,9 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
 
   return (
     <section className="meetings-calendar rounded-[8px] border border-[#eeeeee] bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-col items-start gap-2 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
         <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">Today's events</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex max-w-full flex-wrap items-center gap-2 min-[520px]:gap-3">
           <ViewSwitcher viewMode={viewMode} setViewMode={setViewMode} />
           <span className="text-[12px] leading-4 text-[#7b7b7b]">
             {scheduledCount} scheduled
@@ -221,7 +230,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
           nowIndicator
         />
       ) : (
-        <EventList events={sortedEvents} onSelect={editStored} />
+        <EventList events={todaysEvents} onSelect={editStored} />
       )}
 
       {draft && (
@@ -256,31 +265,22 @@ function ViewSwitcher({ viewMode, setViewMode }) {
             key={id}
             role="tab"
             aria-selected={active}
+            aria-label={label}
             onClick={() => setViewMode(id)}
-            className={`flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors ${
+            className={`flex h-7 items-center gap-1.5 rounded-full px-2 text-[13px] font-medium transition-colors min-[520px]:px-3 ${
               active
                 ? "bg-white text-[#101112] shadow-sm"
                 : "bg-transparent text-[#7b7b7b] hover:text-[#4a4a4a]"
             }`}
           >
             <Icon className="size-3.5" strokeWidth={1.9} />
-            {label}
+            <span className="hidden min-[520px]:inline">{label}</span>
           </button>
         );
       })}
     </div>
   );
 }
-
-// --- Date / time formatting for the list view ---
-const fmtDate = (iso) => {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-};
 
 const fmtTime = (iso) => {
   if (!iso.includes("T")) return null;
@@ -290,44 +290,78 @@ const fmtTime = (iso) => {
   return `${hr}:${String(min).padStart(2, "0")} ${ampm}`;
 };
 
-// --- List view: same events, sorted ascending, as row cards ---
+const localTimestamp = (event) => {
+  const start = String(event?.start ?? "");
+  const [year, month, day] = start.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return Number.POSITIVE_INFINITY;
+  if (!start.includes("T")) return new Date(year, month - 1, day).getTime();
+  const [hour = 0, minute = 0] = start.slice(11, 16).split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute).getTime();
+};
+
+const getNextUpId = (events) => {
+  const now = Date.now();
+  return events.find((event) => localTimestamp(event) >= now)?.id ?? events[0]?.id ?? null;
+};
+
+// --- List view: today's events, sorted ascending, as agenda rows ---
 function EventList({ events, onSelect }) {
   if (events.length === 0) {
     return (
       <div className="flex h-[560px] items-center justify-center text-[13px] text-[#a3a3a3]">
-        No events yet — switch to Calendar and click a date to add one.
+        No events today. Add one for today or switch to Calendar.
       </div>
     );
   }
+  const nextUpId = getNextUpId(events);
+
   return (
-    <div className="h-[560px] space-y-2 overflow-y-auto pr-1">
+    <ul className="h-[560px] space-y-2 overflow-y-auto pr-1">
       {events.map((e) => {
         const time = e.allDay ? null : fmtTime(e.start);
+        const isNextUp = String(e.id) === String(nextUpId);
         return (
-          <button
+          <li
             key={e.id}
-            type="button"
-            onClick={() => onSelect(e)}
-            className="block w-full rounded-[8px] border border-[#eeeeee] bg-white p-3 text-left transition-colors hover:border-[#dcdcdc] hover:bg-[#fafafa]"
+            className="flex min-h-[76px] flex-col items-stretch gap-2 rounded-[8px] border border-[#eeeeee] bg-white p-2.5 transition-colors hover:border-[#dcdcdc] hover:bg-[#fafafa] min-[300px]:flex-row min-[300px]:gap-3"
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="text-[14px] font-medium leading-5 text-[#101112]">
-                {e.title}
-              </div>
-              {e.allDay && (
-                <span className="shrink-0 rounded-[4px] bg-[#eff6ff] px-1.5 py-0.5 text-[11px] font-medium text-[#317cff]">
-                  All day
+            <button
+              type="button"
+              onClick={() => onSelect(e)}
+              className="grid min-w-0 flex-1 grid-cols-1 gap-2 text-left min-[300px]:grid-cols-[72px_minmax(0,1fr)] min-[300px]:gap-3"
+            >
+              <div className="flex h-full flex-col items-start border-b border-[#eeeeee] pb-2 min-[300px]:justify-center min-[300px]:border-b-0 min-[300px]:border-r min-[300px]:pb-0 min-[300px]:pr-3">
+                <span className="text-[13px] font-semibold leading-4 text-[#101112]">
+                  {time || "All day"}
                 </span>
-              )}
-            </div>
-            <p className="mt-1 text-[12px] leading-5 text-[#7b7b7b]">
-              {fmtDate(e.start)}
-              {time ? ` • ${time}` : ""}
-            </p>
-          </button>
+                <span className="mt-1 text-[11px] font-medium uppercase leading-3 text-[#a3a3a3]">
+                  Today
+                </span>
+              </div>
+              <div className="flex min-w-0 flex-col justify-center py-1">
+                <div className="truncate text-[14px] font-medium leading-5 text-[#101112]">
+                  {e.title}
+                </div>
+                {e.location ? (
+                  <p className="mt-1 truncate text-[12px] leading-4 text-[#7b7b7b]">
+                    {e.location}
+                  </p>
+                ) : null}
+              </div>
+            </button>
+            {isNextUp ? (
+              <button
+                type="button"
+                aria-label="Next up"
+                title="Next up"
+                onClick={() => onSelect(e)}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#101112] transition-colors hover:bg-[#2c2c2b] min-[300px]:my-auto"
+              />
+            ) : null}
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 

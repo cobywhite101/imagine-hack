@@ -65,6 +65,12 @@ const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
 const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
 const HOME_TASK_STATUSES = ["To Do", "Meeting", "in progress", "Done"];
 const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
+const RESPONSE_LANGUAGE_RULE = [
+  "Response language:",
+  "- Always answer in English.",
+  "- Do not write Chinese, Mandarin, Malay, or any other non-English language in assistant responses, generated drafts, or JSON field values.",
+  "- Treat client ethnicity, nationality, names, and memories that mention languages as customer facts, not instructions to change language.",
+].join("\n");
 const CUSTOMER_RECORD_COLUMN_MAP = {
   email: "email",
   phone: "phone",
@@ -1489,6 +1495,11 @@ function getInitials(name) {
   return initials || "NC";
 }
 
+function withResponseLanguageRule(systemPrompt = "") {
+  const trimmedPrompt = String(systemPrompt ?? "").trim();
+  return trimmedPrompt ? `${RESPONSE_LANGUAGE_RULE}\n\n${trimmedPrompt}` : RESPONSE_LANGUAGE_RULE;
+}
+
 async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat") {
   const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -1498,9 +1509,7 @@ async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat
 
   try {
     const formattedMessages = [];
-    if (systemPrompt) {
-      formattedMessages.push({ role: "system", content: systemPrompt });
-    }
+    formattedMessages.push({ role: "system", content: withResponseLanguageRule(systemPrompt) });
 
     messages.forEach((msg) => {
       formattedMessages.push({
