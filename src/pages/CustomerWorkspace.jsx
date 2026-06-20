@@ -125,24 +125,6 @@ function waitForThinkingSequence(startedAt, intent = DEFAULT_THINKING_INTENT) {
   });
 }
 
-function formatMeetingDate(iso) {
-  const [year, month, day] = String(iso ?? "").slice(0, 10).split("-").map(Number);
-  if (!year || !month || !day) return "";
-  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatMeetingTime(meeting) {
-  if (meeting.allDay || !String(meeting.start ?? "").includes("T")) return "All day";
-  const [hours, minutes] = String(meeting.start).slice(11, 16).split(":").map(Number);
-  const ampm = hours >= 12 ? "PM" : "AM";
-  const hour = hours % 12 || 12;
-  return `${hour}:${String(minutes).padStart(2, "0")} ${ampm}`;
-}
-
 function truncateMeetingNotes(notes) {
   const text = String(notes ?? "").trim();
   return text.length > 120 ? `${text.slice(0, 120).trimEnd()}...` : text;
@@ -1666,9 +1648,18 @@ function compactActivityText(text, maxLength = 160) {
   return /[.!?]$/.test(truncated) ? truncated : `${truncated}.`;
 }
 
-function buildActivityEntry({ id, date, text, sequence }) {
-  const itemText = compactActivityText(text);
-  if (!itemText) return null;
+function compactActivityTitle(text, maxLength = 80) {
+  const cleaned = stripConversationSummaryMarkdown(text);
+  if (!cleaned) return "";
+  const trimmed = cleaned.replace(/[.\s]+$/, "");
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength).replace(/\s+\S*$/, "")}…`;
+}
+
+function buildActivityEntry({ id, date, title, description, kind = "chat", category, meeting, sequence }) {
+  const itemTitle = compactActivityTitle(title);
+  const itemDescription = compactActivityText(description);
+  if (!itemTitle && !itemDescription) return null;
 
   const dateValue = date ?? new Date().toISOString();
   return {
@@ -1677,17 +1668,23 @@ function buildActivityEntry({ id, date, text, sequence }) {
     dateLabel: formatActivityDate(dateValue),
     sortTime: getActivitySortTime(dateValue),
     sequence,
-    text: itemText,
+    kind,
+    category,
+    meeting,
+    title: itemTitle || itemDescription,
+    description: itemTitle ? itemDescription : "",
   };
 }
 
+// Condense an advisor/assistant exchange into a summarised title (the topic the
+// advisor raised) and a short description (the assistant's takeaway).
 function summarizeChatExchange(advisorTurn, assistantTurn) {
   const ask = stripConversationSummaryMarkdown(advisorTurn?.text);
-  const takeaway = summarizeText(stripConversationSummaryMarkdown(assistantTurn?.text), "");
-  const segments = [];
-  if (ask) segments.push(`Advisor asked: ${ask}`);
-  if (takeaway) segments.push(`Assistant: ${takeaway}`);
-  return segments.join(" — ");
+  const reply = stripConversationSummaryMarkdown(assistantTurn?.text);
+  return {
+    title: ask ? summarizeText(ask, ask) : "Assistant update",
+    description: summarizeText(reply, ""),
+  };
 }
 
 function buildCustomerActivityTimeline({ customer, messages = [], memories = [], meetings = [], articles = [] }) {
@@ -1696,41 +1693,75 @@ function buildCustomerActivityTimeline({ customer, messages = [], memories = [],
   const entries = [];
   let sequence = 0;
 
-  const pushEntry = (id, date, text) => {
-    const entry = buildActivityEntry({ id, date, text, sequence: sequence++ });
-    if (entry) entries.push(entry);
+  const pushEntry = (entry) => {
+    const built = buildActivityEntry({ ...entry, sequence: sequence++ });
+    if (built) entries.push(built);
   };
 
   // Chat history log: condense each notable advisor/assistant exchange into a
-  // single dated + timed entry so future sessions can scan what was discussed.
+  // single dated entry with a summarised title on top and a description below.
   for (let index = 0; index < conversationTurns.length; index += 1) {
     const turn = conversationTurns[index];
     const next = conversationTurns[index + 1];
 
     if (turn.role === "advisor" && next?.role === "assistant") {
-      pushEntry(
-        `chat-${index}`,
-        next.createdAt ?? turn.createdAt ?? new Date().toISOString(),
-        summarizeChatExchange(turn, next)
-      );
+      const { title, description } = summarizeChatExchange(turn, next);
+      pushEntry({
+        id: `chat-${index}`,
+        date: next.createdAt ?? turn.createdAt ?? new Date().toISOString(),
+        kind: "chat",
+        category: "Conversation",
+        title,
+        description,
+      });
       index += 1;
       continue;
     }
 
-    const label = turn.role === "advisor" ? "Advisor noted" : "Assistant noted";
-    pushEntry(`chat-${index}`, turn.createdAt ?? new Date().toISOString(), `${label}: ${turn.text}`);
+    pushEntry({
+      id: `chat-${index}`,
+      date: turn.createdAt ?? new Date().toISOString(),
+      kind: "chat",
+      category: "Conversation",
+      title: turn.role === "advisor" ? "Advisor note" : "Assistant note",
+      description: turn.text,
+    });
+  }
+
+  // Meetings log: surface both past meetings and future scheduled meetings on
+  // the same timeline so the advisor sees the full relationship history.
+  const now = Date.now();
+  const safeMeetings = Array.isArray(meetings) ? meetings.filter(Boolean) : [];
+  for (const meeting of safeMeetings) {
+    const startTime = new Date(meeting.start).getTime();
+    const isUpcoming = Number.isNaN(startTime) || startTime >= now;
+    const description = [
+      truncateMeetingNotes(meeting.notes),
+      meeting.location ? `Location: ${meeting.location}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    pushEntry({
+      id: `meeting-${meeting.id}`,
+      date: meeting.start,
+      kind: "meeting",
+      category: isUpcoming ? "Upcoming meeting" : "Past meeting",
+      meeting,
+      title: meeting.title || (isUpcoming ? "Scheduled meeting" : "Meeting"),
+      description,
+    });
   }
 
   const seen = new Set();
   return entries
     .filter((entry) => {
-      const key = `${entry.dateLabel}:${entry.text.toLowerCase()}`;
+      const key = `${entry.kind}:${entry.dateLabel}:${entry.title.toLowerCase()}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
     .sort((a, b) => b.sortTime - a.sortTime || b.sequence - a.sequence)
-    .slice(0, 10);
+    .slice(0, 12);
 }
 
 function isTextLikeFile(file) {
@@ -1865,9 +1896,6 @@ function CustomerMomentCards({ customer, onSendPrompt, sending }) {
                 <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                 <span className="truncate">{card.label}</span>
               </span>
-              <Badge variant="secondary" size="sm" className="shrink-0 font-mono">
-                {card.badge}
-              </Badge>
             </span>
             <MomentCardBody card={card} />
           </button>
@@ -3340,12 +3368,6 @@ export function CustomerWorkspace() {
               >
                 Activity
               </TabsTrigger>
-              <TabsTrigger
-                value="meetings"
-                className={CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS}
-              >
-                Meetings
-              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
@@ -3365,11 +3387,11 @@ export function CustomerWorkspace() {
             </TabsContent>
 
             <TabsContent value="activity" className="pt-6">
-              <CustomerActivityTimeline items={activityItems} loading={memoriesLoading && !fetchedMemories} />
-            </TabsContent>
-
-            <TabsContent value="meetings" className="pt-5">
-              <CustomerMeetingsTab meetings={customerMeetings} onOpen={openMeetingInCalendar} />
+              <CustomerActivityTimeline
+                items={activityItems}
+                loading={memoriesLoading && !fetchedMemories}
+                onOpenMeeting={openMeetingInCalendar}
+              />
             </TabsContent>
           </Tabs>
         </aside>
@@ -3389,7 +3411,7 @@ export function CustomerWorkspace() {
   );
 }
 
-function CustomerActivityTimeline({ items, loading }) {
+function CustomerActivityTimeline({ items, loading, onOpenMeeting }) {
   const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
 
   return (
@@ -3404,30 +3426,70 @@ function CustomerActivityTimeline({ items, loading }) {
         </div>
       ) : safeItems.length ? (
         <ol className="space-y-0" aria-label="Customer activity timeline">
-          {safeItems.map((item, index) => (
-            <li key={item.id} className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3 pb-6 last:pb-0">
-              <div className="relative flex justify-center pt-[7px]" aria-hidden="true">
-                <span
-                  className={cn(
-                    "relative z-10 size-2.5 rounded-full",
-                    index === 0 ? "bg-[#5e6de8]" : "bg-[#d9d1d2]"
-                  )}
-                />
-                {index < safeItems.length - 1 ? (
-                  <span className="absolute bottom-[-14px] top-[18px] w-px bg-[#dfd6d7]" />
+          {safeItems.map((item, index) => {
+            const isMeeting = item.kind === "meeting";
+            const isUpcomingMeeting = isMeeting && item.category === "Upcoming meeting";
+            const clickable = isMeeting && Boolean(item.meeting && onOpenMeeting);
+
+            const body = (
+              <>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <time
+                    dateTime={String(item.date ?? "")}
+                    className="text-[11px] font-semibold uppercase tracking-[0.09em] text-[#aaa0a6]"
+                  >
+                    {item.dateLabel}
+                  </time>
+                  {item.category ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]",
+                        isMeeting
+                          ? isUpcomingMeeting
+                            ? "bg-[#e7eaff] text-[#4a55c7]"
+                            : "bg-[#f0ecee] text-[#8a7f80]"
+                          : "bg-[#eef0ff] text-[#5e6de8]"
+                      )}
+                    >
+                      {isMeeting ? <CalendarDays className="size-3" /> : null}
+                      {item.category}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1.5 text-[15px] font-semibold leading-snug text-[#27182b]">{item.title}</p>
+                {item.description ? (
+                  <p className="mt-1 text-[13px] leading-[1.5] text-[#6f6470]">{item.description}</p>
                 ) : null}
-              </div>
-              <div className="min-w-0">
-                <time
-                  dateTime={String(item.date ?? "")}
-                  className="block text-[11px] font-semibold uppercase tracking-[0.09em] text-[#aaa0a6]"
-                >
-                  {item.dateLabel}
-                </time>
-                <p className="mt-1 text-[15px] leading-[1.45] text-[#27182b]">{item.text}</p>
-              </div>
-            </li>
-          ))}
+              </>
+            );
+
+            return (
+              <li key={item.id} className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3 pb-6 last:pb-0">
+                <div className="relative flex justify-center pt-[7px]" aria-hidden="true">
+                  <span
+                    className={cn(
+                      "relative z-10 size-2.5 rounded-full",
+                      isUpcomingMeeting ? "bg-[#4a55c7]" : index === 0 ? "bg-[#5e6de8]" : "bg-[#d9d1d2]"
+                    )}
+                  />
+                  {index < safeItems.length - 1 ? (
+                    <span className="absolute bottom-[-14px] top-[18px] w-px bg-[#dfd6d7]" />
+                  ) : null}
+                </div>
+                {clickable ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenMeeting(item.meeting)}
+                    className="min-w-0 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[#f6f4f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6de8]/25"
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div className="min-w-0">{body}</div>
+                )}
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <div className="rounded-lg border border-[#eadfe1] bg-white/70 p-4 text-sm text-[#8a7f80]">
@@ -3435,54 +3497,5 @@ function CustomerActivityTimeline({ items, loading }) {
         </div>
       )}
     </section>
-  );
-}
-
-function MeetingRow({ meeting, onOpen }) {
-  const notes = truncateMeetingNotes(meeting.notes);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen?.(meeting)}
-      className="block w-full rounded-lg border bg-white p-3 text-left transition-colors hover:border-primary/40 hover:bg-neutral-50"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 truncate text-sm font-medium text-foreground">{meeting.title}</p>
-        <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          {formatMeetingTime(meeting)}
-        </span>
-      </div>
-      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <CalendarDays className="size-3.5 shrink-0" />
-        <span>{formatMeetingDate(meeting.start)}</span>
-        {meeting.location ? <span className="truncate">| {meeting.location}</span> : null}
-      </div>
-      {notes ? <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{notes}</p> : null}
-    </button>
-  );
-}
-
-function CustomerMeetingsTab({ meetings, onOpen }) {
-  const safeMeetings = Array.isArray(meetings) ? meetings.filter(Boolean) : [];
-
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Linked meetings</h3>
-        <span className="text-xs text-muted-foreground">{safeMeetings.length} scheduled</span>
-      </div>
-      {safeMeetings.length ? (
-        <div className="space-y-2">
-          {safeMeetings.map((meeting) => (
-            <MeetingRow key={meeting.id} meeting={meeting} onOpen={onOpen} />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
-          No meetings linked to this customer yet.
-        </div>
-      )}
-    </div>
   );
 }
