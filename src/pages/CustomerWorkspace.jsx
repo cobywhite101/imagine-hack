@@ -843,13 +843,13 @@ export function CustomerWorkspace() {
             >
               <TabsTrigger
                 value="details"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
               >
                 Activity
               </TabsTrigger>
@@ -857,7 +857,7 @@ export function CustomerWorkspace() {
 
             <TabsContent value="details" className="pt-1">
               {workflowConfig ? (
-                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} />
+                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} customerId={customer.id} />
               ) : (
                 <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
               )}

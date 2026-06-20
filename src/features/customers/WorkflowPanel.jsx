@@ -1,6 +1,40 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
+
+const ARTICLES_KEY = "client-companion-articles-v1";
+
+const seedArticles = () => [
+  {
+    id: "seed-articles",
+    title: "Articles",
+    subtitle: "Snippets, public, internal, docs",
+    type: "Internal article",
+    body: "",
+  },
+];
+
+function loadArticles(customerId) {
+  if (typeof window === "undefined") return seedArticles();
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ARTICLES_KEY) ?? "{}");
+    return stored[String(customerId)] ?? seedArticles();
+  } catch {
+    return seedArticles();
+  }
+}
+
+function persistArticles(customerId, articles) {
+  if (typeof window === "undefined") return;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ARTICLES_KEY) ?? "{}");
+    stored[String(customerId)] = articles;
+    window.localStorage.setItem(ARTICLES_KEY, JSON.stringify(stored));
+  } catch {
+    /* best-effort local persistence for the demo */
+  }
+}
 
 /* Notion-like workflow configuration panel. Replicates the agent settings layout:
    a pixel app icon, title + status, owner row, action buttons, and a stack of
@@ -188,13 +222,31 @@ export function WorkflowHeader({ customer }) {
 }
 
 // Controlled: parent owns `config` and persists changes via `onChange`.
-export function WorkflowDetails({ config, onChange }) {
+export function WorkflowDetails({ config, onChange, customerId }) {
   const knowledge = config.knowledge ?? {};
   const tools = config.tools ?? {};
 
   const setField = (field, value) => onChange({ ...config, [field]: value });
   const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
   const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
+
+  // Knowledge "source files" — local + localStorage so the demo persists even
+  // though the workflow_configs table normalizes away unknown keys.
+  const [articles, setArticles] = useState(() => loadArticles(customerId));
+  const [editing, setEditing] = useState(null); // { article } | { article: null } for new
+
+  function writeArticles(next) {
+    setArticles(next);
+    persistArticles(customerId, next);
+  }
+
+  function saveArticle(article) {
+    const id = article.id ?? `article-${Date.now()}`;
+    const entry = { ...article, id };
+    const exists = articles.some((item) => item.id === id);
+    writeArticles(exists ? articles.map((item) => (item.id === id ? entry : item)) : [...articles, entry]);
+    setEditing(null);
+  }
 
   return (
     <div className="text-[#2a2a2e]">
@@ -276,6 +328,27 @@ export function WorkflowDetails({ config, onChange }) {
             <Plus className="size-4" strokeWidth={2} />
             Add connection
           </button>
+
+          <div className="mt-3 border-t border-[#ededed] pt-1">
+            <p className="py-2 font-mono text-[11px] uppercase tracking-wide text-[#a0a0a6]">Source files</p>
+            {articles.map((article) => (
+              <SourceFileRow
+                key={article.id}
+                title={article.title || "Untitled internal article"}
+                subtitle={article.subtitle || article.type || "Internal article"}
+                onClick={() => setEditing({ article })}
+              />
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setEditing({ article: null })}
+              className="mt-1 flex items-center gap-2 py-1.5 text-[15px] text-[#6b6b70] transition-colors hover:text-[#1a1a1a]"
+            >
+              <Plus className="size-4" strokeWidth={2} />
+              New source file
+            </button>
+          </div>
         </div>
       </Section>
 
@@ -290,6 +363,14 @@ export function WorkflowDetails({ config, onChange }) {
           </div>
         </div>
       </Section>
+
+      {editing && (
+        <ArticleEditor
+          article={editing.article}
+          onClose={() => setEditing(null)}
+          onSave={saveArticle}
+        />
+      )}
     </div>
   );
 }
