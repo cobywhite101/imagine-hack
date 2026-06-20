@@ -18,6 +18,7 @@ import {
   Pencil,
   Send,
   Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import { SkeletonBlock } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
+import aetherLogo from "@/assets/Aether-logo.png";
 
 const ACTION_WORDS = [
   "action",
@@ -1299,7 +1301,7 @@ const CUSTOMER_RECORD_FIELD_DEFINITIONS = [
     field: "kycStatus",
     label: "KYC status",
     aliases: ["kyc", "kyc status", "know your customer status"],
-    options: ["Pending", "In progress", "Completed"],
+    options: ["Pending", "In Progress", "Completed"],
   },
   {
     field: "lastFactFindDate",
@@ -1533,6 +1535,16 @@ function stripConversationSummaryMarkdown(text) {
   );
 }
 
+function normalizeConversationMessageText(text) {
+  return String(text ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function parseCustomerConversationMemory(memory) {
   const body = String(memory?.body ?? "").trim();
   const match = body.match(/^Advisor:\s*([\s\S]*?)(?:(?:\n{2,}|\s+)Assistant:\s*([\s\S]*))?$/i);
@@ -1556,16 +1568,18 @@ function buildConversationTurnsFromMemory(memory) {
 
   if (advisorText) {
     turns.push({
+      id: memory?.id,
       role: "advisor",
-      text: stripConversationSummaryMarkdown(advisorText),
+      text: normalizeConversationMessageText(advisorText),
       createdAt: memory?.createdAt,
     });
   }
 
   if (assistantText) {
     turns.push({
+      id: memory?.id,
       role: "assistant",
-      text: stripConversationSummaryMarkdown(assistantText),
+      text: normalizeConversationMessageText(assistantText),
       createdAt: memory?.createdAt,
     });
   }
@@ -1577,8 +1591,9 @@ function buildCurrentConversationTurns(messages = []) {
   return messages
     .filter((message) => message?.id !== "seed-1" && (message?.role === "user" || message?.role === "assistant"))
     .map((message) => ({
+      id: message.id,
       role: message.role === "user" ? "advisor" : "assistant",
-      text: stripConversationSummaryMarkdown(message.text),
+      text: normalizeConversationMessageText(message.text),
       createdAt: message.createdAt ?? message.created_at,
     }))
     .filter((turn) => turn.text);
@@ -1656,7 +1671,7 @@ function compactActivityTitle(text, maxLength = 80) {
   return `${trimmed.slice(0, maxLength).replace(/\s+\S*$/, "")}…`;
 }
 
-function buildActivityEntry({ id, date, title, description, kind = "chat", category, meeting, sequence }) {
+function buildActivityEntry({ id, date, title, description, kind = "chat", category, meeting, messageId, conversation, sequence }) {
   const itemTitle = compactActivityTitle(title);
   const itemDescription = compactActivityText(description);
   if (!itemTitle && !itemDescription) return null;
@@ -1671,19 +1686,23 @@ function buildActivityEntry({ id, date, title, description, kind = "chat", categ
     kind,
     category,
     meeting,
+    messageId,
+    conversation: Array.isArray(conversation) ? conversation.filter((turn) => turn?.text) : [],
     title: itemTitle || itemDescription,
     description: itemTitle ? itemDescription : "",
   };
 }
 
-// Condense an advisor/assistant exchange into a summarised title (the topic the
-// advisor raised) and a short description (the assistant's takeaway).
+// Condense an advisor/assistant exchange into a summarised title (the topic that
+// was discussed) and a short description (the assistant's takeaway). The title
+// is a summary of what was provided, not the verbatim message.
 function summarizeChatExchange(advisorTurn, assistantTurn) {
   const ask = stripConversationSummaryMarkdown(advisorTurn?.text);
   const reply = stripConversationSummaryMarkdown(assistantTurn?.text);
+  const basis = ask || reply;
   return {
-    title: ask ? summarizeText(ask, ask) : "Assistant update",
-    description: summarizeText(reply, ""),
+    title: summarizeText(basis, basis) || "Conversation",
+    description: ask ? summarizeText(reply, "") : "",
   };
 }
 
@@ -1711,6 +1730,8 @@ function buildCustomerActivityTimeline({ customer, messages = [], memories = [],
         date: next.createdAt ?? turn.createdAt ?? new Date().toISOString(),
         kind: "chat",
         category: "Conversation",
+        messageId: turn.id ?? next.id,
+        conversation: [turn, next],
         title,
         description,
       });
@@ -1723,6 +1744,8 @@ function buildCustomerActivityTimeline({ customer, messages = [], memories = [],
       date: turn.createdAt ?? new Date().toISOString(),
       kind: "chat",
       category: "Conversation",
+      messageId: turn.id,
+      conversation: [turn],
       title: turn.role === "advisor" ? "Advisor note" : "Assistant note",
       description: turn.text,
     });
@@ -1864,6 +1887,10 @@ function CustomerPromptStart({ customer, onSendPrompt, sending }) {
 
   return (
     <div className="flex w-[660px] max-w-full flex-col items-center self-center px-5 py-6 text-center xl:py-7">
+      <div className="mb-4 flex items-center gap-2">
+        <img src={aetherLogo} alt="Aether logo" className="size-6 object-contain rounded-[4px]" />
+        <span className="text-[15px] font-semibold tracking-[-0.01em] text-[#101112]">Aether</span>
+      </div>
       <h2 className="max-w-[600px] text-[27px] font-semibold leading-[1.14] text-[#101112] sm:text-[31px] xl:text-[34px]">
         What would you like to know about {promptName}?
       </h2>
@@ -1915,7 +1942,7 @@ function MomentCardBody({ card }) {
     return (
       <>
         <span className="mt-2 flex items-baseline gap-1.5">
-          <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">{card.metric}</span>
+          <span className="text-[18px] font-bold leading-none tabular-nums text-foreground">{card.metric}</span>
           <span className="min-w-0 text-xs leading-4 text-muted-foreground">{card.metricCaption}</span>
         </span>
         <span className="block pt-2 text-xs leading-5 text-muted-foreground">{card.detail}</span>
@@ -1932,7 +1959,7 @@ function MomentCardBody({ card }) {
             {card.title}
           </span>
         ) : null}
-        <span className="mt-1 block border-l-2 border-primary/40 pl-2.5 text-sm italic leading-5 text-foreground">
+        <span className="mt-1 block border-l-2 border-primary/40 pl-2.5 text-sm leading-5 text-foreground">
           &ldquo;{card.detail}&rdquo;
         </span>
         <span className="mt-auto block pt-2 text-xs leading-5">{action}</span>
@@ -2039,16 +2066,13 @@ function CustomerChatComposer({
                 </>
               )}
             </div>
-            <CustomerChatIconButton label="Attach file" onClick={onAttach}>
-              <Plus className="size-3.5" strokeWidth={1.9} />
-            </CustomerChatIconButton>
             <button
               type="button"
               onClick={onAttach}
               className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55 transition-colors hover:bg-black/[0.04]"
             >
               <Paperclip className="size-3.5" strokeWidth={1.9} />
-              Minutes
+              Upload Attachments
             </button>
             <button
               type="button"
@@ -2057,7 +2081,7 @@ function CustomerChatComposer({
               className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55 transition-colors hover:bg-black/[0.04] disabled:pointer-events-none disabled:opacity-35"
             >
               <Sparkles className="size-3.5" strokeWidth={1.9} />
-              Draft
+              Draft Follow-up Message
             </button>
           </div>
           <button
@@ -2094,43 +2118,301 @@ function shouldAnimateMessageText(message) {
   return message?.role === "assistant" && message?.animateText === true;
 }
 
+
+
 function renderMessageText(text, isAssistant = false, animate = false) {
   const displayText = getRenderableMessageText(text, isAssistant);
   if (!displayText) return "";
-  const parts = displayText.split("**");
-  let wordIndex = 0;
 
-  return parts.flatMap((part, partIndex) => {
-    const isBold = partIndex % 2 === 1;
-    const tokens = part.split(/(\s+)/);
+  const lines = displayText.split("\n");
+  const blocks = [];
+  let i = 0;
+  const wordIndexRef = { current: 0 };
 
-    return tokens.map((token, tokenIndex) => {
-      if (!token) return null;
-      if (/^\s+$/.test(token)) {
-        return <span key={`space-${partIndex}-${tokenIndex}`}>{token}</span>;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 1. Table
+    if (trimmed.startsWith("|")) {
+      const tableLines = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        tableLines.push(lines[i].trim());
+        i++;
       }
 
-      const currentWordIndex = wordIndex;
-      wordIndex += 1;
+      // Parse table lines
+      if (tableLines.length >= 2) {
+        // First line: headers
+        const headerRow = tableLines[0]
+          .split("|")
+          .map(cell => cell.trim())
+          .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
 
-      const style = isAssistant && animate
+        // Check if second line is separator
+        const secondLineIsSeparator = tableLines[1]
+          .split("|")
+          .map(cell => cell.trim())
+          .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
+          .every(cell => /^:?-+:?$/.test(cell));
+
+        const startDataIndex = secondLineIsSeparator ? 2 : 1;
+        const dataRows = tableLines.slice(startDataIndex).map(tLine =>
+          tLine
+            .split("|")
+            .map(cell => cell.trim())
+            .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
+        );
+
+        blocks.push(
+          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-lg border border-[#e6e6e9] bg-white">
+            <table className="min-w-full divide-y divide-[#e6e6e9] text-[13px] text-left text-[#101112]">
+              <thead className="bg-[#fafafa]">
+                <tr>
+                  {headerRow.map((h, hIdx) => (
+                    <th key={hIdx} className="px-4 py-2 font-semibold text-[#101112] border-r border-[#e6e6e9] last:border-r-0">
+                      {renderInlineMarkdown(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e6e6e9]">
+                {dataRows.map((row, rIdx) => (
+                  <tr key={rIdx} className="hover:bg-[#fafafa] transition-colors">
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx} className="px-4 py-2 border-r border-[#e6e6e9] last:border-r-0">
+                        {renderInlineMarkdown(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      } else {
+        // Not a valid table, render as single line
+        blocks.push(
+          <p key={`p-${i}`} className="my-1.5 text-[14px] leading-6 text-[#101112]">
+            {renderParagraphWithAnimation(trimmed, animate, wordIndexRef)}
+          </p>
+        );
+      }
+      continue;
+    }
+
+    // 2. Unordered List
+    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      const listItems = [];
+      while (
+        i < lines.length &&
+        (lines[i].trim().startsWith("- ") || lines[i].trim().startsWith("* "))
+      ) {
+        listItems.push(lines[i].trim().substring(2));
+        i++;
+      }
+
+      blocks.push(
+        <ul key={`ul-${i}`} className="my-2.5 list-disc pl-5 space-y-1 text-[14px] leading-6 text-[#101112]">
+          {listItems.map((item, itemIdx) => (
+            <li key={itemIdx}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // 3. Ordered List
+    const numListMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+    if (numListMatch) {
+      const listItems = [];
+      while (i < lines.length && lines[i].trim().match(/^\d+\.\s+(.+)$/)) {
+        const itemMatch = lines[i].trim().match(/^\d+\.\s+(.+)$/);
+        listItems.push(itemMatch[1]);
+        i++;
+      }
+
+      blocks.push(
+        <ol key={`ol-${i}`} className="my-2.5 list-decimal pl-5 space-y-1 text-[14px] leading-6 text-[#101112]">
+          {listItems.map((item, itemIdx) => (
+            <li key={itemIdx}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    // 4. Headings
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+
+      if (level === 1) {
+        blocks.push(
+          <h1 key={`h1-${i}`} className="text-[20px] font-bold mt-4 mb-2 text-[#101112]">
+            {renderInlineMarkdown(content)}
+          </h1>
+        );
+      } else if (level === 2) {
+        blocks.push(
+          <h2 key={`h2-${i}`} className="text-[18px] font-bold mt-3 mb-2 text-[#101112]">
+            {renderInlineMarkdown(content)}
+          </h2>
+        );
+      } else {
+        blocks.push(
+          <h3 key={`h3-${i}`} className="text-[16px] font-semibold mt-3 mb-1.5 text-[#101112]">
+            {renderInlineMarkdown(content)}
+          </h3>
+        );
+      }
+      i++;
+      continue;
+    }
+
+    // 5. Empty line
+    if (!trimmed) {
+      blocks.push(<div key={`br-${i}`} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // 6. Default paragraph
+    blocks.push(
+      <p key={`p-${i}`} className="my-1.5 text-[14px] leading-6 text-[#101112] last:mb-0">
+        {renderParagraphWithAnimation(line, animate, wordIndexRef)}
+      </p>
+    );
+    i++;
+  }
+
+  return blocks;
+}
+
+function renderInlineMarkdown(text) {
+  if (!text) return "";
+  const boldParts = text.split("**");
+  return boldParts.map((boldPart, boldIndex) => {
+    const isBold = boldIndex % 2 === 1;
+    const italicParts = boldPart.split("*");
+    const elements = [];
+    let idx = 0;
+
+    while (idx < italicParts.length) {
+      if (idx + 2 < italicParts.length) {
+        if (italicParts[idx]) {
+          elements.push(<span key={`n-${idx}`}>{italicParts[idx]}</span>);
+        }
+        if (italicParts[idx + 1]) {
+          elements.push(
+            <em key={`i-${idx + 1}`} className="italic text-[#101112]">
+              {italicParts[idx + 1]}
+            </em>
+          );
+        }
+        idx += 2;
+      } else if (idx + 1 < italicParts.length) {
+        if (italicParts[idx]) {
+          elements.push(<span key={`n-${idx}`}>{italicParts[idx]}</span>);
+        }
+        elements.push(<span key={`lit-${idx}`}>*</span>);
+        if (italicParts[idx + 1]) {
+          elements.push(<span key={`n-${idx + 1}`}>{italicParts[idx + 1]}</span>);
+        }
+        idx += 2;
+      } else {
+        if (italicParts[idx]) {
+          elements.push(<span key={`n-${idx}`}>{italicParts[idx]}</span>);
+        }
+        idx += 1;
+      }
+    }
+
+    return isBold ? (
+      <strong key={boldIndex} className="font-semibold text-[#101112]">
+        {elements}
+      </strong>
+    ) : (
+      <span key={boldIndex}>{elements}</span>
+    );
+  });
+}
+
+function animateWords(wordText, isBold, isItalic, animate, startWordIndexRef, keyPrefix) {
+  if (!wordText) return [];
+  const tokens = wordText.split(/(\s+)/);
+  return tokens
+    .map((token, tokenIndex) => {
+      if (!token) return null;
+      if (/^\s+$/.test(token)) {
+        return <span key={`space-${keyPrefix}-${tokenIndex}`}>{token}</span>;
+      }
+
+      const currentWordIndex = startWordIndexRef.current;
+      startWordIndexRef.current += 1;
+
+      const style = animate
         ? {
             animationDelay: `${currentWordIndex * 15}ms`,
           }
         : undefined;
 
+      const className = cn(
+        isBold && "font-semibold text-[#101112]",
+        isItalic && "italic text-[#101112]",
+        animate && "inline-block animate-grok-fade opacity-0"
+      );
+
       return (
         <span
-          key={`word-${partIndex}-${tokenIndex}`}
+          key={`word-${keyPrefix}-${tokenIndex}`}
           style={style}
-          className={`${isBold ? "font-semibold" : ""} ${
-            isAssistant && animate ? "inline-block animate-grok-fade opacity-0" : ""
-          }`}
+          className={className}
         >
           {token}
         </span>
       );
-    });
+    })
+    .filter(Boolean);
+}
+
+function renderParagraphWithAnimation(text, animate, startWordIndexRef) {
+  const boldParts = text.split("**");
+  return boldParts.flatMap((boldPart, boldPartIndex) => {
+    const isBold = boldPartIndex % 2 === 1;
+    const italicParts = boldPart.split("*");
+    const elements = [];
+    let idx = 0;
+
+    while (idx < italicParts.length) {
+      if (idx + 2 < italicParts.length) {
+        elements.push(
+          ...animateWords(italicParts[idx], isBold, false, animate, startWordIndexRef, `normal-${boldPartIndex}-${idx}`)
+        );
+        elements.push(
+          ...animateWords(italicParts[idx + 1], isBold, true, animate, startWordIndexRef, `italic-${boldPartIndex}-${idx + 1}`)
+        );
+        idx += 2;
+      } else if (idx + 1 < italicParts.length) {
+        elements.push(
+          ...animateWords(italicParts[idx], isBold, false, animate, startWordIndexRef, `normal-${boldPartIndex}-${idx}`)
+        );
+        elements.push(
+          ...animateWords("*", isBold, false, animate, startWordIndexRef, `literal-${boldPartIndex}-${idx}`)
+        );
+        elements.push(
+          ...animateWords(italicParts[idx + 1], isBold, false, animate, startWordIndexRef, `normal-${boldPartIndex}-${idx + 1}`)
+        );
+        idx += 2;
+      } else {
+        elements.push(
+          ...animateWords(italicParts[idx], isBold, false, animate, startWordIndexRef, `normal-${boldPartIndex}-${idx}`)
+        );
+        idx += 1;
+      }
+    }
+    return elements;
   });
 }
 
@@ -2306,6 +2588,10 @@ function CustomerChatMessage({ message, onSuggestion }) {
     const finalPreText = parsedDraft.preText || `Here is the drafted email for this customer:`;
     return (
       <div className="group flex flex-col gap-1 w-full items-start">
+        <div className="mb-2 flex items-center gap-1.5">
+          <img src={aetherLogo} alt="Aether logo" className="size-5 object-contain rounded-[3px]" />
+          <span className="text-[13px] font-semibold tracking-[-0.01em] text-[#101112]">Aether</span>
+        </div>
         {finalPreText && (
           <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112] w-full mb-2">
             {renderMessageText(finalPreText, true, animateText)}
@@ -2338,6 +2624,10 @@ function CustomerChatMessage({ message, onSuggestion }) {
 
   return (
     <div className="group">
+      <div className="mb-2 flex items-center gap-1.5">
+        <img src={aetherLogo} alt="Aether logo" className="size-5 object-contain rounded-[3px]" />
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-[#101112]">Aether</span>
+      </div>
       <div
         className={cn(
           "whitespace-pre-wrap font-normal text-[#101112]",
@@ -2466,7 +2756,7 @@ function CustomerWorkspaceSkeleton() {
 
 function WorkflowDetailsSkeleton() {
   return (
-    <div className="pt-1 text-[#2a2a2e]">
+    <div className="mt-6 pt-1 text-[#2a2a2e]">
       {Array.from({ length: 2 }).map((_, sectionIndex) => (
         <section key={sectionIndex} className="py-4">
           <div className="flex items-center justify-between gap-3">
@@ -2530,6 +2820,7 @@ export function CustomerWorkspace() {
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
   const [selectedModel, setSelectedModel] = useState("base");
+  const [historyConversation, setHistoryConversation] = useState(null);
   const customer = customerOverride ?? fetchedCustomer;
   const apiModel = selectedModel === "reasoning" ? "deepseek-reasoner" : "deepseek-chat";
   const customerMeetings = useMemo(() => {
@@ -3071,7 +3362,7 @@ export function CustomerWorkspace() {
   async function draftFollowUp() {
     if (!customer || sending) return;
 
-    const prompt = "Draft a follow-up email from this customer's latest saved knowledge.";
+    const prompt = "Draft a follow-up message from this customer's latest saved knowledge.";
     const thinkingStartedAt = Date.now();
     setThinkingIntent("follow_up");
     setSending(true);
@@ -3263,6 +3554,20 @@ export function CustomerWorkspace() {
     });
   }
 
+  // Open the exact saved exchange behind an activity entry. If that message is
+  // still live in the current thread, also scroll to it and flash a highlight.
+  function openConversationHistory(item) {
+    if (!item) return;
+    setHistoryConversation(item);
+
+    const node = item.messageId ? document.getElementById(`customer-msg-${item.messageId}`) : null;
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    const highlightClasses = ["rounded-xl", "ring-2", "ring-[#5e6de8]/40", "ring-offset-2", "ring-offset-white"];
+    node.classList.add(...highlightClasses);
+    window.setTimeout(() => node.classList.remove(...highlightClasses), 1600);
+  }
+
   const activityItems = buildCustomerActivityTimeline({
     customer,
     messages: visibleMessages,
@@ -3310,7 +3615,9 @@ export function CustomerWorkspace() {
                   <CustomerPromptStart customer={customer} onSendPrompt={sendCustomerPrompt} sending={sending} />
                 ) : (
                   visibleMessages.map((message) => (
-                    <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
+                    <div key={message.id} id={`customer-msg-${message.id}`} className="scroll-mt-6 transition-shadow">
+                      <CustomerChatMessage message={message} onSuggestion={handleSuggestion} />
+                    </div>
                   ))
                 )}
                 {sending && <CustomerChatThinkingIndicator intent={thinkingIntent} />}
@@ -3372,7 +3679,6 @@ export function CustomerWorkspace() {
 
             <TabsContent value="details" className="pt-1">
               <CustomerProfileCard customer={customer} />
-              <div className="mt-1 border-t border-[#ededed] pt-1" />
               {workflowConfig ? (
                 <WorkflowDetails
                   config={workflowConfig}
@@ -3391,6 +3697,7 @@ export function CustomerWorkspace() {
                 items={activityItems}
                 loading={memoriesLoading && !fetchedMemories}
                 onOpenMeeting={openMeetingInCalendar}
+                onOpenConversation={openConversationHistory}
               />
             </TabsContent>
           </Tabs>
@@ -3407,11 +3714,82 @@ export function CustomerWorkspace() {
           event.target.value = "";
         }}
       />
+      <ConversationHistoryModal
+        item={historyConversation}
+        onClose={() => setHistoryConversation(null)}
+      />
     </div>
   );
 }
 
-function CustomerActivityTimeline({ items, loading, onOpenMeeting }) {
+function ConversationHistoryModal({ item, onClose }) {
+  useEffect(() => {
+    if (!item) return;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [item, onClose]);
+
+  if (!item) return null;
+
+  const turns = Array.isArray(item.conversation) ? item.conversation.filter((turn) => turn?.text) : [];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Conversation history"
+    >
+      <button
+        type="button"
+        aria-label="Close conversation history"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+      />
+      <div className="relative z-10 flex max-h-[80vh] w-[700px] max-w-full flex-col overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_20px_70px_rgba(0,0,0,0.25)]">
+        <div className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-[#aaa0a6]">{item.dateLabel}</p>
+            <h2 className="mt-0.5 text-[16px] font-semibold leading-snug text-[#27182b]">{item.title}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-black/45 transition-colors hover:bg-black/[0.05]"
+          >
+            <X className="size-4" strokeWidth={1.9} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+          {turns.length ? (
+            turns.map((turn, turnIndex) => {
+              const isAdvisor = turn.role === "advisor";
+              const historyMessage = {
+                id: turn.id ?? `history-${turnIndex}`,
+                role: isAdvisor ? "user" : "assistant",
+                text: turn.text,
+              };
+              return (
+                <div key={`${historyMessage.id}-${turnIndex}`}>
+                  <CustomerChatMessage message={historyMessage} />
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-sm text-[#8a7f80]">The full text for this conversation is no longer available.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomerActivityTimeline({ items, loading, onOpenMeeting, onOpenConversation }) {
   const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
 
   return (
@@ -3429,7 +3807,15 @@ function CustomerActivityTimeline({ items, loading, onOpenMeeting }) {
           {safeItems.map((item, index) => {
             const isMeeting = item.kind === "meeting";
             const isUpcomingMeeting = isMeeting && item.category === "Upcoming meeting";
-            const clickable = isMeeting && Boolean(item.meeting && onOpenMeeting);
+            const isConversation = item.kind === "chat";
+            const onActivate = isMeeting
+              ? item.meeting && onOpenMeeting
+                ? () => onOpenMeeting(item.meeting)
+                : null
+              : isConversation && onOpenConversation
+                ? () => onOpenConversation(item)
+                : null;
+            const clickable = Boolean(onActivate);
 
             const body = (
               <>
@@ -3479,7 +3865,8 @@ function CustomerActivityTimeline({ items, loading, onOpenMeeting }) {
                 {clickable ? (
                   <button
                     type="button"
-                    onClick={() => onOpenMeeting(item.meeting)}
+                    onClick={onActivate}
+                    title={isConversation ? "Jump to this conversation in the chat" : "Open in calendar"}
                     className="min-w-0 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[#f6f4f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6de8]/25"
                   >
                     {body}

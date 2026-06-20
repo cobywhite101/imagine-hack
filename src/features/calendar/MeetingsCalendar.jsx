@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { CalendarDays, List, Plus, Trash2, X } from "lucide-react";
+import { CalendarDays, List, Plus, Trash2, User, X } from "lucide-react";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
 
@@ -16,7 +16,6 @@ const toLocalDateKey = (value = new Date()) => {
   return "";
 };
 const todayISO = () => toLocalDateKey();
-const isToday = (event) => toLocalDateKey(event?.start) === todayISO();
 
 const seedEvents = () => {
   const d = todayISO();
@@ -72,14 +71,22 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
   const events = controlledEvents ?? localEvents;
   const customers = fetchedCustomers ?? [];
 
-  const todaysEvents = useMemo(
+  // List view shows only today's events.
+  const upcomingEvents = useMemo(
     () =>
       events
-        .filter(isToday)
-        .sort((a, b) => String(a.start).localeCompare(String(b.start))),
+        .filter((event) => toLocalDateKey(event?.start) === todayISO())
+        .sort((a, b) => localTimestamp(a) - localTimestamp(b)),
     [events],
   );
-  const scheduledCount = todaysEvents.length;
+
+  const customerNameById = useMemo(() => {
+    const map = new Map();
+    for (const customer of customers) map.set(String(customer.id), customer.name);
+    return map;
+  }, [customers]);
+
+  const scheduledCount = upcomingEvents.length;
 
   // --- Open modal for a new event on the clicked date ---
   const handleDateClick = useCallback((info) => {
@@ -191,7 +198,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
   return (
     <section className="meetings-calendar rounded-[8px] border border-[#eeeeee] bg-white p-4">
       <div className="mb-3 flex flex-col items-start gap-2 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
-        <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">Today's events</h2>
+        <h2 className="text-[14px] font-semibold leading-5 text-[#101112]">Today's events</h2>
         <div className="flex max-w-full flex-wrap items-center gap-2 min-[520px]:gap-3">
           <ViewSwitcher viewMode={viewMode} setViewMode={setViewMode} />
           <span className="text-[12px] leading-4 text-[#7b7b7b]">
@@ -219,7 +226,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
           plugins={[dayGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           headerToolbar={headerToolbar}
-          buttonText={{ today: "Today" }}
+          buttonText={{ today: "Move to Today" }}
           height={560}
           fixedWeekCount={false}
           dayMaxEvents={3}
@@ -230,7 +237,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
           nowIndicator
         />
       ) : (
-        <EventList events={todaysEvents} onSelect={editStored} />
+        <EventList events={upcomingEvents} customerNameById={customerNameById} onSelect={editStored} />
       )}
 
       {draft && (
@@ -250,8 +257,8 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
 // --- Segmented control (Calendar / List) ---
 function ViewSwitcher({ viewMode, setViewMode }) {
   const tabs = [
-    { id: "calendar", label: "Calendar", icon: CalendarDays },
     { id: "list", label: "List", icon: List },
+    { id: "calendar", label: "Calendar", icon: CalendarDays },
   ];
   return (
     <div
@@ -304,62 +311,94 @@ const getNextUpId = (events) => {
   return events.find((event) => localTimestamp(event) >= now)?.id ?? events[0]?.id ?? null;
 };
 
-// --- List view: today's events, sorted ascending, as agenda rows ---
-function EventList({ events, onSelect }) {
+// Left-column date parts + a relative label (Today / Tomorrow) for the agenda.
+const fmtDateParts = (iso) => {
+  const key = String(iso ?? "").slice(0, 10);
+  const [year, month, day] = key.split("-").map(Number);
+  if (!year || !month || !day) return { day: "--", month: "", weekday: "", relative: "" };
+  const date = new Date(year, month - 1, day);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+  return {
+    day: String(day),
+    month: date.toLocaleDateString("en-US", { month: "short" }).toUpperCase(),
+    weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+    relative: key === todayKey ? "Today" : key === tomorrowKey ? "Tomorrow" : "",
+  };
+};
+
+// --- List view: upcoming meetings as agenda rows. Left = date; right = title,
+// description and client. ---
+function EventList({ events, customerNameById, onSelect }) {
   if (events.length === 0) {
     return (
-      <div className="flex h-[560px] items-center justify-center text-[13px] text-[#a3a3a3]">
-        No events today. Add one for today or switch to Calendar.
+      <div className="flex max-h-[560px] flex-col items-center justify-center gap-1 py-12 text-center">
+        <p className="text-[13px] font-medium text-[#6b6b70]">No upcoming meetings</p>
+        <p className="text-[12px] text-[#a3a3a3]">Add one with “New”, or switch to Calendar.</p>
       </div>
     );
   }
   const nextUpId = getNextUpId(events);
 
   return (
-    <ul className="h-[560px] space-y-2 overflow-y-auto pr-1">
+    <ul className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
       {events.map((e) => {
         const time = e.allDay ? null : fmtTime(e.start);
+        const date = fmtDateParts(e.start);
         const isNextUp = String(e.id) === String(nextUpId);
+        const client = e.customerId ? customerNameById?.get(String(e.customerId)) : "";
+        const description = e.notes?.trim() || e.location?.trim() || "";
         return (
-          <li
-            key={e.id}
-            className="flex min-h-[76px] flex-col items-stretch gap-2 rounded-[8px] border border-[#eeeeee] bg-white p-2.5 transition-colors hover:border-[#dcdcdc] hover:bg-[#fafafa] min-[300px]:flex-row min-[300px]:gap-3"
-          >
+          <li key={e.id}>
             <button
               type="button"
               onClick={() => onSelect(e)}
-              className="grid min-w-0 flex-1 grid-cols-1 gap-2 text-left min-[300px]:grid-cols-[72px_minmax(0,1fr)] min-[300px]:gap-3"
+              className="flex w-full items-stretch gap-3 rounded-[12px] border border-[#ededed] bg-white p-3 text-left transition-all hover:border-[#d6d6d6] hover:shadow-[0_1px_2px_rgba(16,17,18,0.04),0_8px_20px_rgba(16,17,18,0.05)]"
             >
-              <div className="flex h-full flex-col items-start border-b border-[#eeeeee] pb-2 min-[300px]:justify-center min-[300px]:border-b-0 min-[300px]:border-r min-[300px]:pb-0 min-[300px]:pr-3">
-                <span className="text-[13px] font-semibold leading-4 text-[#101112]">
-                  {time || "All day"}
+              {/* Date — left */}
+              <div className="flex w-[60px] shrink-0 flex-col items-center justify-center rounded-[10px] bg-[#f6f7f9] py-2 text-center">
+                <span className="text-[10px] font-semibold uppercase leading-none tracking-[0.08em] text-[#8a8a8f]">
+                  {date.month}
                 </span>
-                <span className="mt-1 text-[11px] font-medium uppercase leading-3 text-[#a3a3a3]">
-                  Today
+                <span className="mt-1 text-[20px] font-semibold leading-none text-[#101112]">
+                  {date.day}
+                </span>
+                <span className="mt-1 text-[10px] font-medium leading-none text-[#a3a3a3]">
+                  {date.relative || date.weekday}
                 </span>
               </div>
-              <div className="flex min-w-0 flex-col justify-center py-1">
-                <div className="truncate text-[14px] font-medium leading-5 text-[#101112]">
-                  {e.title}
-                </div>
-                {e.location ? (
-                  <p className="mt-1 truncate text-[12px] leading-4 text-[#7b7b7b]">
-                    {e.location}
+
+              {/* Title + description + client — right */}
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 truncate text-[14px] font-semibold leading-5 text-[#101112]">
+                    {e.title}
                   </p>
+                  {isNextUp ? (
+                    <span className="shrink-0 rounded-full border border-[#bfd7ff] bg-[#eaf3ff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-[#1f63d3]">
+                      Next up
+                    </span>
+                  ) : null}
+                </div>
+                {description ? (
+                  <p className="line-clamp-2 text-[12px] leading-4 text-[#7b7b7b]">{description}</p>
                 ) : null}
+                <div className="mt-0.5 flex items-center gap-2 text-[11px] font-medium text-[#9a9aa0]">
+                  <span>{time || "All day"}</span>
+                  {client ? (
+                    <>
+                      <span className="text-[#d6d6d6]">·</span>
+                      <span className="inline-flex min-w-0 items-center gap-1 truncate">
+                        <User className="size-3 shrink-0" strokeWidth={1.9} />
+                        <span className="min-w-0 truncate text-[#5a5a60]">{client}</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
               </div>
             </button>
-            {isNextUp ? (
-              <button
-                type="button"
-                aria-label="Coming up"
-                title="Coming up"
-                onClick={() => onSelect(e)}
-                className="inline-flex h-8 shrink-0 items-center justify-center self-start rounded-[6px] border border-[#bfd7ff] bg-[#eaf3ff] px-3 text-[12px] font-medium text-[#1f63d3] transition-colors hover:bg-[#dceaff] min-[300px]:my-auto"
-              >
-                Coming up...
-              </button>
-            ) : null}
           </li>
         );
       })}
@@ -409,13 +448,13 @@ function EventModal({ draft, setDraft, customers = [], onClose, onSave, onDelete
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Customer</span>
+            <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Client</span>
             <select
               value={draft.customerId ?? ""}
               onChange={(e) => update({ customerId: e.target.value })}
               className="w-full rounded-[6px] border border-[#e6e6e9] bg-white px-2.5 py-1.5 text-[14px] text-[#101112] outline-none focus:border-[#317cff]"
             >
-              <option value="">No customer</option>
+              <option value="">No client</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.name}

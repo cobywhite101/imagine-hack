@@ -5,6 +5,7 @@ import { Home } from "@/pages/Home";
 import { Chat } from "@/pages/Chat";
 import { CustomerHub } from "@/pages/CustomerHub";
 import { CustomerWorkspace } from "@/pages/CustomerWorkspace";
+import { Expenses } from "@/pages/Expenses";
 import { AgentHub } from "@/pages/AgentHub";
 import { McpPage } from "@/pages/McpPage";
 import { Workflows } from "@/pages/Workflows";
@@ -16,31 +17,21 @@ import {
   ChevronDown,
   Database,
   House,
-  Keyboard,
   PanelLeft,
   Search,
   Users,
-  X,
+  WalletCards,
 } from "lucide-react";
 
 const primaryNav = [
   { to: "/home", label: "Home", icon: House, end: true },
-  { to: "/customers", label: "Customer Hub", icon: Users },
+  { to: "/customers", label: "My Clients", icon: Users },
+  { to: "/expenses", label: "My Expenses", icon: WalletCards },
 ];
 
-const sections = [
-  {
-    label: "Client Memory",
-    items: [
-      { to: "/customers", label: "Client records", icon: Database },
-    ],
-  },
-];
 
-const quickActions = [
-  { to: "/home", label: "Open home", description: "Review today and follow-ups", icon: House },
-  { to: "/customers", label: "Open customer hub", description: "Find and manage client records", icon: Users },
-];
+
+
 
 const SIDEBAR_OPEN_KEY = "client-os-sidebar-open";
 const CUSTOMER_CHAT_UPDATED_EVENT = "client-os-customer-chat-updated";
@@ -119,102 +110,9 @@ function SidebarLink({
   );
 }
 
-function QuickActionsDialog({ open, onOpenChange }) {
-  const navigate = useNavigate();
-  const inputRef = useRef(null);
-  const [query, setQuery] = useState("");
 
-  const filteredActions = useMemo(() => {
-    const term = query.trim().toLowerCase();
 
-    if (!term) {
-      return quickActions;
-    }
-
-    return quickActions.filter((action) =>
-      `${action.label} ${action.description}`.toLowerCase().includes(term)
-    );
-  }, [query]);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery("");
-      return;
-    }
-
-    const frame = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
-
-  function runAction(action) {
-    navigate(action.to);
-    onOpenChange(false);
-  }
-
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-        <Dialog.Content className="fixed left-1/2 top-[18vh] z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-[#e6e7ea] bg-white shadow-[0_18px_60px_rgba(28,40,64,0.22)]">
-          <Dialog.Title className="sr-only">Quick actions</Dialog.Title>
-          <div className="flex h-12 items-center gap-2 border-b border-[#ececef] px-3">
-            <Search className="size-4 shrink-0 text-black/45" strokeWidth={1.9} />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search actions"
-              className="h-full min-w-0 flex-1 bg-transparent text-[15px] font-medium text-[#101112] outline-none placeholder:text-black/35"
-            />
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="flex size-7 shrink-0 items-center justify-center rounded-md text-black/55 transition-colors hover:bg-black/[0.05]"
-                aria-label="Close quick actions"
-              >
-                <X className="size-4" strokeWidth={1.9} />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="max-h-[360px] overflow-y-auto p-1.5">
-            {filteredActions.length ? (
-              filteredActions.map((action) => {
-                const Icon = action.icon;
-
-                return (
-                  <button
-                    key={action.to}
-                    type="button"
-                    onClick={() => runAction(action)}
-                    className="flex min-h-12 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-black/[0.04] focus-visible:bg-black/[0.04] focus-visible:outline-none"
-                  >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-black/[0.035] text-black/60">
-                      <Icon className="size-4" strokeWidth={1.9} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-semibold leading-5 text-[#101112]">
-                        {action.label}
-                      </span>
-                      <span className="block truncate text-[12px] font-medium leading-4 text-black/45">
-                        {action.description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="flex h-20 items-center justify-center px-4 text-[13px] font-medium text-black/45">
-                No actions found
-              </div>
-            )}
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
-
-function SidebarSection({ label, items, emptyText }) {
+function SidebarSection({ label, items, emptyText, onSearch, searchValue }) {
   const [expanded, setExpanded] = useState(true);
   const contentId = useId();
 
@@ -241,6 +139,17 @@ function SidebarSection({ label, items, emptyText }) {
         className={cn("relative flex-col gap-px px-2 pb-0.5", expanded ? "flex" : "hidden")}
       >
         <div className="absolute left-[27px] top-0 h-full w-px bg-[#d9dade]/60" />
+        {onSearch && (
+          <div className="relative z-10 ml-5 mr-2 mb-1.5 mt-0.5 flex h-6 items-center gap-1.5 rounded-md border border-[#e6e7ea] bg-white px-1.5 focus-within:border-[#317cff] focus-within:ring-1 focus-within:ring-[#317cff]">
+            <Search className="size-3 text-black/40" />
+            <input
+              value={searchValue}
+              onChange={(e) => onSearch(e.target.value)}
+              placeholder="Search chats"
+              className="min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-black/40"
+            />
+          </div>
+        )}
         {items.length ? (
           items.map((item) => (
             <SidebarLink
@@ -261,49 +170,42 @@ function SidebarSection({ label, items, emptyText }) {
 }
 
 function Sidebar({ open, onCollapse }) {
-  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [recentCustomerChats, setRecentCustomerChats] = useState([]);
   const [recentChatsLoading, setRecentChatsLoading] = useState(true);
-  const recentChatItems = useMemo(
-    () =>
-      recentCustomerChats
-        .map((chat) => {
-          const desc = String(chat.summary || "").toLowerCase();
-          const shouldClearDesc =
-            desc.includes("thank you") ||
-            desc.includes("trusting") ||
-            desc.includes("aiman hakim") ||
-            desc.includes("summarize");
+  const [chatSearch, setChatSearch] = useState("");
 
-          return {
-            to: `/customers/${chat.customerId}`,
-            label: chat.customerName,
-            description: shouldClearDesc ? "" : chat.summary,
-            avatar: chat.avatar || getInitials(chat.customerName),
-            avatarUrl: chat.avatarUrl,
-            accent: chat.accent || getCustomerAccent(chat.customerId || chat.customerName),
-            showActive: true,
-          };
-        }),
-    [recentCustomerChats]
-  );
+  const recentChatItems = useMemo(() => {
+    let items = recentCustomerChats.map((chat) => {
+      const desc = String(chat.summary || "").toLowerCase();
+      const shouldClearDesc =
+        desc.includes("thank you") ||
+        desc.includes("trusting") ||
+        desc.includes("aiman hakim") ||
+        desc.includes("summarize");
 
-  useEffect(() => {
-    if (!open) {
-      setQuickActionsOpen(false);
-      return undefined;
+      return {
+        to: `/customers/${chat.customerId}`,
+        label: chat.customerName,
+        description: shouldClearDesc ? "" : chat.summary,
+        avatar: chat.avatar || getInitials(chat.customerName),
+        avatarUrl: chat.avatarUrl,
+        accent: chat.accent || getCustomerAccent(chat.customerId || chat.customerName),
+        showActive: true,
+      };
+    });
+
+    if (chatSearch.trim()) {
+      const query = chatSearch.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          (item.description && item.description.toLowerCase().includes(query))
+      );
     }
+    return items;
+  }, [recentCustomerChats, chatSearch]);
 
-    function onKeyDown(event) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setQuickActionsOpen((open) => !open);
-      }
-    }
 
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
 
   useEffect(() => {
     let alive = true;
@@ -373,22 +275,7 @@ function Sidebar({ open, onCollapse }) {
         </button>
       </div>
 
-      <div className="flex h-11 w-[247px] items-center px-2.5 pb-2.5 pt-2">
-        <button
-          type="button"
-          onClick={() => setQuickActionsOpen(true)}
-          className="flex h-7 w-full items-center gap-1.5 rounded-[5px] bg-white px-1.5 text-left text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
-          aria-haspopup="dialog"
-          aria-expanded={quickActionsOpen}
-        >
-          <Keyboard className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
-          <span className="min-w-0 flex-1 truncate">Quick actions</span>
-          <kbd className="flex h-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] leading-none tracking-[0.02em] text-black/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
-            ⌘K
-          </kbd>
-        </button>
-      </div>
-      <QuickActionsDialog open={quickActionsOpen} onOpenChange={setQuickActionsOpen} />
+
 
       <nav className="min-h-0 flex w-[247px] flex-1 flex-col">
         <div className="h-0 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
@@ -398,13 +285,12 @@ function Sidebar({ open, onCollapse }) {
             ))}
           </div>
           <div className="mt-3 -ml-2 flex flex-col gap-3">
-            {sections.map((section) => (
-              <SidebarSection key={section.label} {...section} />
-            ))}
             <SidebarSection
               label="Chat"
               items={recentChatItems}
               emptyText={recentChatsLoading ? "Loading AI chats..." : "No AI customer chats yet"}
+              onSearch={setChatSearch}
+              searchValue={chatSearch}
             />
           </div>
         </div>
@@ -487,6 +373,7 @@ export default function App() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/customers" element={<CustomerHub />} />
           <Route path="/customers/:customerId" element={<CustomerWorkspace />} />
+          <Route path="/expenses" element={<Expenses />} />
           <Route path="/agents" element={<AgentHub />} />
           <Route path="/workflows" element={<Workflows />} />
           <Route path="/mcp" element={<McpPage />} />

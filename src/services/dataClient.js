@@ -3,6 +3,7 @@
 // need to know which mode they're in — they just `await` these functions.
 
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { recognize } from "tesseract.js";
 import {
   mockUsers,
   mockCurrentUser,
@@ -65,7 +66,9 @@ const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff",
 const FALLBACK_CUSTOMER_ACCENT = "#868e96";
 const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
 const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
-const HOME_TASK_STATUSES = ["To Do", "Meeting", "in progress", "Done"];
+const ADVISOR_EXPENSE_STORAGE_KEY = "client-os-advisor-expenses-v1";
+const DEFAULT_EXPENSE_QUOTA = 10000;
+const HOME_TASK_STATUSES = ["To Do", "Meeting", "In Progress", "Done"];
 const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
 const RESPONSE_LANGUAGE_RULE = [
   "Response language:",
@@ -237,8 +240,9 @@ function writeStoredArray(key, value) {
 }
 
 function normalizeHomeTaskStatus(status) {
-  if (status === "Follow-up") return "in progress";
-  if (status === "In progress") return "in progress";
+  if (status === "Follow-up") return "In Progress";
+  if (status === "In progress") return "In Progress";
+  if (status === "in progress") return "In Progress";
   return HOME_TASK_STATUSES.includes(status) ? status : "To Do";
 }
 
@@ -246,7 +250,7 @@ function getHomeTaskIcon(task) {
   const status = normalizeHomeTaskStatus(task?.status);
   if (status === "Done") return "check";
   if (status === "Meeting") return "meeting";
-  if (status === "in progress") return "mail";
+  if (status === "In Progress") return "mail";
   if (/brief|prep|note|draft/i.test(task?.title ?? "")) return "notepad";
   return "plus";
 }
@@ -489,7 +493,7 @@ function buildCustomerHomeTasks(customers) {
     candidates.map((customer, index) => {
       const category = getCustomerTaskCategory(customer);
       const dueDate = customer.nextRenewal && customer.nextRenewal < "2030-01-01" ? customer.nextRenewal : today;
-      const status = category === "Renewal" ? "To Do" : "in progress";
+      const status = category === "Renewal" ? "To Do" : "In Progress";
       const task = customer.task || customer.nextAction || `Follow up with ${customer.name}`;
       return normalizeHomeTask({
         id: `customer-task-${customer.id}`,
@@ -547,7 +551,7 @@ function buildHomeStats(tasks, meetings) {
   const today = toLocalDateString();
   const todoToday = tasks.filter((task) => task.status === "To Do" && (!task.dueDate || task.dueDate <= today)).length;
   const meetingsToday = meetings.filter((meeting) => isSameLocalDate(meeting.start, today)).length;
-  const followUps = tasks.filter((task) => task.status === "in progress").length;
+  const followUps = tasks.filter((task) => task.status === "In Progress").length;
   const completed = tasks.filter((task) => task.status === "Done").length;
 
   return [
@@ -597,7 +601,7 @@ function getHomeBriefContext(tasks, meetings, customers = []) {
   const todayMeetings = meetings
     .filter((meeting) => isSameLocalDate(meeting.start, today))
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
-  const followUps = tasks.filter((task) => task.status === "in progress");
+  const followUps = tasks.filter((task) => task.status === "In Progress");
   const dueTasks = tasks.filter(
     (task) => !["Done", "Meeting"].includes(task.status) && (!task.dueDate || task.dueDate <= today)
   );
@@ -747,6 +751,57 @@ function normalizeGeneratedHomeBrief(generated, fallback) {
   };
 }
 
+// Whole-day gap between today and an ISO date string (null if unparseable).
+function daysSinceContact(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((todayMidnight.getTime() - date.getTime()) / 86_400_000);
+}
+
+// Demo fallback so the "quiet clients" surface is meaningful when the customers
+// table is empty (live-but-empty / mock mode).
+const STALE_CONTACT_SEED = [
+  { id: "stale-seed-1", name: "Pravin a/l Subramaniam", days: 72, focus: "general insurance renewal coming up" },
+  { id: "stale-seed-2", name: "Mei Ling Tan", days: 58, focus: "investment-linked plan review still open" },
+  { id: "stale-seed-3", name: "Arjun Nair", days: 96, focus: "no contact since onboarding paperwork" },
+  { id: "stale-seed-4", name: "Siti Nuraini", days: 41, focus: "promised a savings-plan follow-up" },
+];
+
+// Surface clients with the longest gap since last contact, so the advisor can
+// reconnect. Falls back to demo data when nothing real qualifies.
+function buildStaleContacts(customers = [], { limit = 5, minDays = 30 } = {}) {
+  const ranked = customers
+    .map((customer) => ({ customer, days: daysSinceContact(customer?.lastContactDate) }))
+    .filter((item) => item.days != null && item.days >= minDays)
+    .sort((a, b) => b.days - a.days)
+    .slice(0, limit)
+    .map(({ customer, days }) => {
+      const focus = cleanCustomerText(customer.task || customer.nextAction || customer.policySummary || "");
+      return {
+        id: customer.id,
+        name: customer.name,
+        days,
+        description: focus
+          ? `${days} days since last contact · ${focus}`
+          : `${days} days since last contact — overdue for a check-in.`,
+      };
+    });
+
+  if (ranked.length) return ranked;
+
+  return STALE_CONTACT_SEED.map((item) => ({
+    id: item.id,
+    name: item.name,
+    days: item.days,
+    description: `${item.days} days since last contact · ${item.focus}`,
+  }));
+}
+
 async function createHomeDashboard({ tasks, meetings, customers = [] }) {
   const normalizedTasks = sortHomeTasks(tasks.map(normalizeHomeTask));
   const normalizedMeetings = sortAdvisorMeetings(meetings.map(normalizeAdvisorMeeting));
@@ -756,6 +811,7 @@ async function createHomeDashboard({ tasks, meetings, customers = [] }) {
     stats: buildHomeStats(normalizedTasks, normalizedMeetings),
     tasks: normalizedTasks,
     meetings: normalizedMeetings,
+    staleContacts: buildStaleContacts(customers),
     syncedAt: new Date().toISOString(),
   };
 }
@@ -1458,6 +1514,28 @@ function buildCustomerDraft(customer, memories) {
   ].join("\n");
 }
 
+// Plain client-facing follow-up, written as a chat/WhatsApp-style message
+// (no "Subject:" line) so the workspace renders it as a normal message rather
+// than the email draft card.
+function buildCustomerFollowUpMessage(customer, memories) {
+  const topMemories = memories.slice(0, 2);
+  const recap = topMemories
+    .map((memory) => memory.summary)
+    .filter(Boolean)
+    .join(" ");
+  const nextStep = customer.task || customer.nextAction || "confirm the next step and timing";
+  const greetingName = customer.contactName || customer.name;
+
+  return [
+    `Hi ${greetingName}, hope you're doing well!`,
+    recap
+      ? `Just wanted to follow up on where we left things — ${recap}`
+      : "Just wanted to follow up on where we left things.",
+    `Next on my side: ${nextStep}.`,
+    "Would you be free for a quick chat this week to close the loop? No rush — just let me know what works for you.",
+  ].join("\n\n");
+}
+
 function buildLocalCustomerChatReply({ customer, text, memories, articles = [] }) {
   const knowledgeSources = buildCustomerKnowledgeSources(memories, articles);
   const ranked = rankCustomerMemories(text, knowledgeSources);
@@ -1646,6 +1724,164 @@ function parseJsonObject(text) {
   }
 }
 
+function normalizeAdvisorExpense(expense = {}) {
+  return {
+    id: String(expense.id ?? `expense-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+    customerId: expense.customerId ?? expense.customer_id ?? null,
+    title: String(expense.title ?? "Client expense").trim() || "Client expense",
+    amount: Number(expense.amount ?? 0),
+    label: String(expense.label ?? "Other").trim() || "Other",
+    merchant: expense.merchant ?? null,
+    location: expense.location ?? null,
+    expenseDate: expense.expenseDate ?? expense.expense_date ?? null,
+    proofName: expense.proofName ?? expense.proof_name ?? "",
+    proofPath: expense.proofPath ?? expense.proof_path ?? null,
+    proofPreview: expense.proofPreview ?? null,
+    confidence: Number(expense.confidence ?? expense.ai_confidence ?? 0),
+    createdAt: expense.createdAt ?? expense.created_at ?? new Date().toISOString(),
+  };
+}
+
+function sortAdvisorExpenses(expenses = []) {
+  return [...expenses]
+    .map(normalizeAdvisorExpense)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function getStoredAdvisorExpenses() {
+  return sortAdvisorExpenses(readStoredArray(ADVISOR_EXPENSE_STORAGE_KEY, []));
+}
+
+function setStoredAdvisorExpense(expense) {
+  const normalizedExpense = normalizeAdvisorExpense(expense);
+  const next = sortAdvisorExpenses([
+    normalizedExpense,
+    ...getStoredAdvisorExpenses().filter((item) => String(item.id) !== String(expense.id)),
+  ]);
+  writeStoredArray(ADVISOR_EXPENSE_STORAGE_KEY, next);
+  return normalizedExpense;
+}
+
+function removeStoredAdvisorExpense(id) {
+  const next = getStoredAdvisorExpenses().filter((item) => String(item.id) !== String(id));
+  writeStoredArray(ADVISOR_EXPENSE_STORAGE_KEY, next);
+}
+
+function sanitizeStorageFileName(name) {
+  return String(name ?? "receipt")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "receipt";
+}
+
+function extractReceiptAmount(text) {
+  const lines = String(text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const amountPattern = /(?:RM|MYR)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})|\d+\.\d{2})\b/gi;
+  const priorityPatterns = [
+    /grand\s+total|total\s+paid|amount\s+paid/i,
+    /\btotal\b/i,
+    /amount|balance\s+due/i,
+  ];
+
+  for (const priority of priorityPatterns) {
+    const matches = lines
+      .filter((line) => priority.test(line) && !/subtotal/i.test(line))
+      .flatMap((line) => [...line.matchAll(amountPattern)].map((match) => Number(match[1].replaceAll(",", ""))))
+      .filter((amount) => Number.isFinite(amount) && amount > 0 && amount < 100000);
+    if (matches.length) return matches.at(-1);
+  }
+
+  return null;
+}
+
+function inferExpenseLabel(text) {
+  const value = String(text ?? "").toLowerCase();
+  if (/parking|toll|touch\s*n\s*go/.test(value)) return "Parking & Tolls";
+  if (/restaurant|cafe|coffee|lunch|dinner|meal|food/.test(value)) return "Client Meal";
+  if (/grab|taxi|fuel|petrol|transport|fare/.test(value)) return "Transport";
+  if (/hotel|accommodation|lodging/.test(value)) return "Accommodation";
+  if (/gift|hamper|flowers/.test(value)) return "Client Gift";
+  if (/cinema|entertainment|karaoke|event ticket/.test(value)) return "Entertainment";
+  if (/stationery|printing|meeting supplies/.test(value)) return "Meeting Supplies";
+  return "Other";
+}
+
+async function analyzeExpenseProof({ file, title, customer }) {
+  if (!file) throw new Error("Proof of payment is required.");
+  if (!file.type?.startsWith("image/")) throw new Error("Upload an image receipt or payment screenshot.");
+
+  let receiptText = "";
+  let ocrConfidence = 0;
+  try {
+    const result = await recognize(file, "eng");
+    receiptText = String(result?.data?.text ?? "").trim();
+    ocrConfidence = Math.min(1, Math.max(0, Number(result?.data?.confidence ?? 0) / 100));
+  } catch (error) {
+    console.error("Receipt OCR failed:", error);
+    throw new Error("The receipt text could not be read. Try a clearer, well-lit image.");
+  }
+
+  if (receiptText.length < 6) {
+    throw new Error("No readable receipt text was found. Try a sharper image with the total visible.");
+  }
+
+  const labels = [
+    "Client Meal",
+    "Transport",
+    "Parking & Tolls",
+    "Accommodation",
+    "Client Gift",
+    "Entertainment",
+    "Meeting Supplies",
+    "Other",
+  ];
+  const response = await queryDeepSeek(
+    [
+      {
+        role: "user",
+        text: [
+          `Expense title: ${String(title ?? "").trim() || "Client expense"}`,
+          `Customer: ${customer?.name || "Not specified"}`,
+          "Extract the final amount paid in Malaysian Ringgit and classify the expense from this OCR text:",
+          "",
+          receiptText.slice(0, 12000),
+          "",
+          "Return JSON only. Do not estimate an amount that is absent from the OCR text.",
+        ].join("\n"),
+      },
+    ],
+    `You analyze advisor expense receipts. Return exactly one JSON object with this shape:
+{"amount": 0, "label": "Other", "merchant": null, "location": null, "expenseDate": null, "confidence": 0}
+
+Rules:
+- amount must be the final paid total in MYR as a number, or null when unreadable.
+- label must be one of: ${labels.join(", ")}.
+- merchant must be the vendor/business name (e.g. Starbucks, Grab, McDonald's) or null.
+- location must be the branch/city/address location of the place (e.g. Mid Valley, Kuala Lumpur, Bangsar, etc.) or null.
+- expenseDate must be YYYY-MM-DD or null.
+- confidence must be from 0 to 1.
+- Never add commentary or markdown.`,
+    "deepseek-chat"
+  );
+  const parsed = parseJsonObject(response);
+  const parsedAmount = Number(parsed?.amount);
+  const fallbackAmount = extractReceiptAmount(receiptText);
+  const amount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : fallbackAmount;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("No valid RM total was found. Upload a receipt with the final total clearly visible.");
+  }
+
+  return {
+    amount: Math.round(amount * 100) / 100,
+    label: labels.includes(parsed?.label) ? parsed.label : inferExpenseLabel(`${title}\n${receiptText}`),
+    merchant: parsed?.merchant ? String(parsed.merchant).slice(0, 120) : null,
+    location: parsed?.location ? String(parsed.location).slice(0, 120) : null,
+    expenseDate: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed?.expenseDate ?? "")) ? parsed.expenseDate : null,
+    confidence: Math.min(1, Math.max(0, Number(parsed?.confidence) || ocrConfidence)),
+  };
+}
+
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -1654,6 +1890,23 @@ export const api = {
     }
     const { data } = await supabase.auth.getUser();
     return data?.user ?? mockCurrentUser;
+  },
+
+  getExpenseProofUrl: async (proofPath) => {
+    if (!proofPath) return "";
+    if (proofPath.startsWith("data:") || proofPath.startsWith("blob:") || proofPath.startsWith("http")) {
+      return proofPath;
+    }
+    if (!isSupabaseConfigured) return "";
+    try {
+      const { data, error } = await supabase.storage
+        .from("expense-proofs")
+        .createSignedUrl(proofPath, 3600);
+      if (error) throw error;
+      return data?.signedUrl || "";
+    } catch {
+      return "";
+    }
   },
 
   getLeaderboard: () =>
@@ -1665,6 +1918,151 @@ export const api = {
   getBadges: () => fromTable("badges", mockBadges),
 
   getQuests: () => fromTable("quests", mockQuests),
+
+  getAdvisorExpenseQuota: async () => {
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      return DEFAULT_EXPENSE_QUOTA;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_expense_settings")
+        .select("total_quota")
+        .eq("id", "default")
+        .maybeSingle();
+      if (error) throw error;
+      return Number(data?.total_quota) || DEFAULT_EXPENSE_QUOTA;
+    } catch {
+      return DEFAULT_EXPENSE_QUOTA;
+    }
+  },
+
+  getAdvisorExpenses: async () => {
+    if (!isSupabaseConfigured) {
+      await delay(100);
+      return getStoredAdvisorExpenses();
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_expenses")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const cachedExpenses = getStoredAdvisorExpenses();
+      const cachedById = new Map(cachedExpenses.map((expense) => [expense.id, expense]));
+      const remoteExpenses = (data ?? []).map((expense) => ({
+        ...expense,
+        proofPreview: cachedById.get(String(expense.id))?.proofPreview || null,
+      }));
+      const remoteIds = new Set(remoteExpenses.map((expense) => String(expense.id)));
+      return sortAdvisorExpenses([
+        ...remoteExpenses,
+        ...cachedExpenses.filter((expense) => !remoteIds.has(expense.id)),
+      ]);
+    } catch {
+      return getStoredAdvisorExpenses();
+    }
+  },
+
+  analyzeExpenseProof,
+
+  saveAdvisorExpense: async ({
+    id,
+    title,
+    customerId,
+    proofFile,
+    analysis,
+    existingProofPath,
+    existingProofPreview,
+    existingProofName,
+    existingCreatedAt,
+  }) => {
+    const expenseId = id || (globalThis.crypto?.randomUUID?.() ?? `expense-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+    const createdAt = existingCreatedAt || new Date().toISOString();
+    let proofPath = existingProofPath || null;
+    const proofPreview = existingProofPreview || null;
+    let proofName = existingProofName || "";
+
+    if (isSupabaseConfigured && proofFile) {
+      try {
+        const uploadedProofPath = `${customerId}/${expenseId}-${sanitizeStorageFileName(proofFile.name)}`;
+        const { error } = await supabase.storage.from("expense-proofs").upload(uploadedProofPath, proofFile, {
+          contentType: proofFile.type,
+          upsert: true,
+        });
+        if (!error) proofPath = uploadedProofPath;
+      } catch {
+        /* Keep the existing path and local preview when storage is unavailable. */
+      }
+    }
+    if (proofFile) {
+      proofName = proofFile.name;
+    }
+
+    const entry = normalizeAdvisorExpense({
+      id: expenseId,
+      customerId,
+      title,
+      amount: analysis.amount,
+      label: analysis.label,
+      merchant: analysis.merchant,
+      location: analysis.location,
+      expenseDate: analysis.expenseDate,
+      proofName,
+      proofPath,
+      proofPreview,
+      confidence: analysis.confidence,
+      createdAt,
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("advisor_expenses")
+          .upsert({
+            id: entry.id,
+            customer_id: entry.customerId,
+            title: entry.title,
+            amount: entry.amount,
+            label: entry.label,
+            merchant: entry.merchant,
+            location: entry.location,
+            expense_date: entry.expenseDate,
+            proof_name: entry.proofName || null,
+            proof_path: entry.proofPath,
+            ai_confidence: entry.confidence,
+            created_at: entry.createdAt,
+          })
+          .select("*")
+          .single();
+        if (!error && data) {
+          const saved = normalizeAdvisorExpense({ ...data, proofPreview: entry.proofPreview });
+          setStoredAdvisorExpense(saved);
+          return saved;
+        }
+      } catch {
+        /* fall through to local persistence */
+      }
+    }
+
+    await delay(80);
+    return setStoredAdvisorExpense(entry);
+  },
+
+  deleteAdvisorExpense: async (id) => {
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from("advisor_expenses").delete().eq("id", id);
+      } catch {
+        /* fall through to local removal */
+      }
+    }
+    removeStoredAdvisorExpense(id);
+    await delay(60);
+    return { id };
+  },
 
   getAgents: () => fromTable("agents", mockAgents),
 
@@ -2181,8 +2579,27 @@ Respond to the Advisor's inquiry. Use Recent Conversation to resolve follow-ups,
 
   draftCustomerFollowUp: async ({ customer, memories = [], articles = [], workflowConfig = null, model }) => {
     if (!customer) return null;
-    const text = `Draft a follow-up email for ${customer.name} using the latest saved customer knowledge, including memories and articles, plus the next step.`;
-    return api.sendCustomerMessage({ customer, text, memories, articles, history: [], workflowConfig, model });
+
+    const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+    if (apiKey || useSupabaseCustomerChat) {
+      const text = `Write a short, warm follow-up message to ${customer.name} using the latest saved customer knowledge, including memories and articles, plus the next step. Write it as a direct chat or WhatsApp-style message addressed to the client — do not include a subject line or any email formatting.`;
+      const reply = await api.sendCustomerMessage({ customer, text, memories, articles, history: [], workflowConfig, model });
+      if (reply?.text) {
+        // Guard against the model slipping into email formatting: drop any leading "Subject:" line.
+        reply.text = reply.text.replace(/^\s*(?:\*\*|\*)?\s*Subject\s*(?:\*\*|\*)?\s*:.*$/im, "").replace(/^\n+/, "").trim();
+      }
+      return reply;
+    }
+
+    await delay(450);
+    const knowledgeSources = buildCustomerKnowledgeSources(memories, articles);
+    const message = buildCustomerFollowUpMessage(customer, knowledgeSources);
+    const sources = knowledgeSources.slice(0, 2).map((memory) => formatCustomerSource(memory)).join("; ");
+    return {
+      id: `a-${Date.now()}`,
+      role: "assistant",
+      text: sources ? `${message}\n\nSources: ${sources}` : message,
+    };
   },
 
   generateWorkflowGuidance: async ({

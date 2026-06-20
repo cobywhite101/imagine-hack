@@ -1,5 +1,18 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ChevronUp, Info, Plus } from "lucide-react";
+import {
+  ChevronUp,
+  Info,
+  Plus,
+  Cake,
+  User,
+  Globe,
+  Fingerprint,
+  Baby,
+  Coins,
+  Wallet,
+  ShieldAlert,
+  Hourglass,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
@@ -113,51 +126,132 @@ function MessagesMark() {
   );
 }
 
+// Malay/patronymic connectors that shouldn't seed an initial ("Pravin a/l
+// Subramaniam" -> "PS", not "PA").
+const NAME_CONNECTORS = new Set(["a/l", "a/p", "s/o", "d/o", "bin", "binti", "bt", "al", "el", "van", "de"]);
+
 function initialsFor(value) {
   return String(value ?? "")
     .split(/\s+/)
     .filter(Boolean)
+    .filter((part) => !NAME_CONNECTORS.has(part.toLowerCase()))
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
 }
 
+function monthYear(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "";
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+}
+
+function yearsSince(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
+  const today = new Date();
+  let years = today.getFullYear() - year;
+  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) years -= 1;
+  return years >= 0 ? years : null;
+}
+
+// Signed whole-day delta from today: positive = future, negative = past.
+function dayDelta(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
+  const target = new Date(year, month - 1, day);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((target.getTime() - todayMidnight.getTime()) / 86_400_000);
+}
+
+// Scannable status pills derived from the record: renewal urgency + contact gap.
+function buildStatusBadges(customer) {
+  const badges = [];
+
+  const renewalDelta = dayDelta(customer?.nextRenewal);
+  if (renewalDelta != null) {
+    const urgent = renewalDelta <= 30;
+    const label =
+      renewalDelta < 0
+        ? `Renewal ${Math.abs(renewalDelta)}d overdue`
+        : renewalDelta === 0
+          ? "Renews today"
+          : `Renews in ${renewalDelta}d`;
+    badges.push({ key: "renewal", label, bg: urgent ? "#f7e3e3" : "#eef0f2", fg: urgent ? "#b23b3b" : "#5a6068" });
+  }
+
+  const contactDelta = dayDelta(customer?.lastContactDate);
+  if (contactDelta != null && contactDelta <= 0) {
+    const days = Math.abs(contactDelta);
+    const stale = days >= 30;
+    badges.push({
+      key: "contact",
+      label: days === 0 ? "Contacted today" : `${days}d since contact`,
+      bg: stale ? "#f3ead0" : "#e7f1e8",
+      fg: stale ? "#8a6d1c" : "#3f7a52",
+    });
+  }
+
+  return badges;
+}
+
 export function WorkflowHeader({ customer }) {
   const customerName = customer?.name || "Customer";
-  const ownerLabel = customer?.advisorId ? `Managed by ${customer.advisorId}` : "Advisor unassigned";
-  const statusLabel = customer?.task || customer?.nextAction || customer?.kycStatus || "No next action recorded";
-  const tagLabel = customer?.acquisitionChannel || customer?.preferredCommunicationChannel || customer?.kycStatus || "Client";
   const avatar = customer?.avatar || initialsFor(customerName) || "C";
   const accent = customer?.accent || "#868e96";
 
+  const age = computeAge(customer?.dateOfBirth);
+  const metaLine = [age != null ? String(age) : "", customer?.maritalStatus, customer?.occupation]
+    .filter(Boolean)
+    .map((part) => String(part).toLowerCase())
+    .join(" · ");
+
+  const sinceLabel = monthYear(customer?.clientSince);
+  const tenure = yearsSince(customer?.clientSince);
+  const clientSinceLine = sinceLabel
+    ? `Client since ${sinceLabel}${tenure != null ? ` · ${tenure} ${tenure === 1 ? "year" : "years"}` : ""}`
+    : "";
+
+  const badges = buildStatusBadges(customer);
+
   return (
     <>
-      <div
-        className="flex size-[48px] items-center justify-center rounded-xl text-[18px] font-semibold text-white"
-        style={{ backgroundColor: accent }}
-      >
-        {avatar}
-      </div>
-
-      <h1 className="mt-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#1a1a1a]">
-        {customerName}
-      </h1>
-      <p className="mt-1 text-[13px] text-[#9a9aa0]">{statusLabel}</p>
-
-      <div className="mt-2.5 flex min-w-0 items-center gap-2 text-[13px] text-[#3f3f46]">
-        <span
-          className="flex size-[18px] shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+      <div className="flex items-center gap-3">
+        <div
+          className="flex size-12 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold text-white ring-1 ring-black/5"
           style={{ backgroundColor: accent }}
         >
-          {initialsFor(customer?.advisorId) || avatar[0] || "A"}
-        </span>
-        <span className="min-w-0 truncate">{ownerLabel}</span>
-        <span className="ml-0.5 inline-flex min-w-0 max-w-[150px] items-center gap-1 rounded-md bg-[#f1f1f3] px-1.5 py-0.5 text-[12px] text-[#6b6b70]">
-          <span className="shrink-0 text-[#a0a0a6]">#</span>
-          <span className="min-w-0 truncate">{tagLabel}</span>
-        </span>
+          {avatar}
+        </div>
+        <div className="min-w-0">
+          <h1 className="truncate text-[18px] font-semibold leading-tight tracking-[-0.01em] text-[#1a1a1a]">
+            {customerName}
+          </h1>
+          {metaLine ? <p className="mt-0.5 truncate text-[13px] text-[#9a9aa0]">{metaLine}</p> : null}
+        </div>
       </div>
 
+      {clientSinceLine ? <p className="mt-3 text-[13px] text-[#9a9aa0]">{clientSinceLine}</p> : null}
+
+      {badges.length ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {badges.map((badge) => (
+            <span
+              key={badge.key}
+              className="inline-flex items-center rounded-md px-2 py-0.5 text-[12px] font-medium"
+              style={{ backgroundColor: badge.bg, color: badge.fg }}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -196,76 +290,75 @@ function nationalityFlag(value) {
 // Conservative / Moderate / Aggressive get a scannable status dot.
 const RISK_DOT_COLOR = { Conservative: "#16a06a", Moderate: "#e0992a", Aggressive: "#d9534f" };
 
-function ProfileRow({ label, value, dotColor }) {
+function StatCell({ label, value, icon: Icon, dotColor }) {
   const hasValue = value === 0 || Boolean(value);
-  const content = hasValue ? value : "Not recorded";
   return (
-    <div className="flex items-baseline justify-between gap-4 py-[5px]">
-      <span className="shrink-0 text-[13px] text-[#9a9aa0]">{label}</span>
-      <span
-        className={cn(
-          "flex min-w-0 items-center gap-1.5 text-right text-[13px] font-medium",
-          hasValue ? "text-[#2a2a2e]" : "text-[#c0c0c6]"
-        )}
-      >
+    <div className="group relative min-w-0 rounded-xl border border-[#eef0f2] bg-[#fafbfc] p-3 transition-all duration-200 hover:border-[#dbe1e8] hover:bg-[#f4f7f9] hover:shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+      <div className="flex items-center gap-1.5 text-[#868d9a]">
+        {Icon && <Icon className="size-3.5 shrink-0" strokeWidth={1.8} />}
+        <span className="text-[11px] font-semibold uppercase tracking-wider leading-none">{label}</span>
+      </div>
+      <div className="mt-2 flex items-center gap-1.5">
         {hasValue && dotColor ? (
           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />
         ) : null}
-        <span className="min-w-0 truncate">{content}</span>
-      </span>
+        <span
+          className={cn(
+            "text-[14px] font-normal leading-none truncate",
+            hasValue ? "text-[#111827]" : "text-[#9ca3af] font-medium italic"
+          )}
+        >
+          {hasValue ? value : "Not recorded"}
+        </span>
+      </div>
     </div>
   );
 }
 
 // Read-only biography + fact-find snapshot, sourced from the customer record
 // (Supabase `customers` row). Matches the panel's existing light styling.
+// Age, marital status and occupation live in the header now, so they're omitted
+// here to avoid duplicating the same facts.
 export function CustomerProfileCard({ customer }) {
   if (!customer) return null;
 
-  const age = computeAge(customer.dateOfBirth);
-  const dobDisplay = customer.dateOfBirth
-    ? `${formatProfileDate(customer.dateOfBirth)}${age != null ? ` (${age})` : ""}`
-    : "";
+  const dobDisplay = customer.dateOfBirth ? formatProfileDate(customer.dateOfBirth) : "";
   const dependents =
     customer.dependents === 0 || customer.dependents ? String(customer.dependents) : "";
   const flag = nationalityFlag(customer.nationality);
+  const nationalityValue =
+    flag && customer.nationality ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true">{flag}</span>
+        <span className="min-w-0 truncate">{customer.nationality}</span>
+      </span>
+    ) : (
+      customer.nationality
+    );
 
   return (
     <div className="text-[#2a2a2e]">
       <Section label="Biography">
-        <div className="-mt-1">
-          <ProfileRow label="Date of birth" value={dobDisplay} />
-          <ProfileRow label="Gender" value={customer.gender} />
-          <ProfileRow label="Marital status" value={customer.maritalStatus} />
-          <ProfileRow label="Occupation" value={customer.occupation} />
-          <ProfileRow
-            label="Nationality"
-            value={
-              flag ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden="true">{flag}</span>
-                  <span>{customer.nationality}</span>
-                </span>
-              ) : (
-                customer.nationality
-              )
-            }
-          />
-          <ProfileRow label="Ethnicity" value={customer.ethnicity} />
-          <ProfileRow label="Dependents" value={dependents} />
+        <div className="grid grid-cols-2 gap-3">
+          <StatCell label="Date of birth" value={dobDisplay} icon={Cake} />
+          <StatCell label="Gender" value={customer.gender} icon={User} />
+          <StatCell label="Nationality" value={nationalityValue} icon={Globe} />
+          <StatCell label="Ethnicity" value={customer.ethnicity} icon={Fingerprint} />
+          <StatCell label="Dependents" value={dependents} icon={Baby} />
         </div>
       </Section>
 
       <Section label="Financial profile">
-        <div className="-mt-1">
-          <ProfileRow label="Annual income" value={customer.annualIncomeBracket} />
-          <ProfileRow label="Net worth" value={customer.netWorthBracket} />
-          <ProfileRow
-            label="Risk tolerance"
+        <div className="grid grid-cols-2 gap-3">
+          <StatCell label="Income" value={customer.annualIncomeBracket} icon={Coins} />
+          <StatCell label="Net worth" value={customer.netWorthBracket} icon={Wallet} />
+          <StatCell
+            label="Risk"
             value={customer.riskTolerance}
+            icon={ShieldAlert}
             dotColor={RISK_DOT_COLOR[customer.riskTolerance]}
           />
-          <ProfileRow label="Investment horizon" value={formatHorizon(customer.investmentHorizonYears)} />
+          <StatCell label="Horizon" value={formatHorizon(customer.investmentHorizonYears)} icon={Hourglass} />
         </div>
       </Section>
     </div>
@@ -290,7 +383,7 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
     setEditing(null);
   }
   return (
-    <div className="text-[#2a2a2e]">
+    <div className="mt-6 text-[#2a2a2e]">
       <Section label="Notes">
         <EditableText
           ariaLabel="Notes"

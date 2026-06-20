@@ -8,7 +8,7 @@ export function CustomerHub() {
         <div className="flex min-w-0 items-center gap-2">
           <Users className="size-4 shrink-0" strokeWidth={1.9} />
           <h1 className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
-            Customers
+            My Clients
           </h1>
         </div>
       </header>

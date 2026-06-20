@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node scripts/assert-english-response-rule.mjs && node scripts/assert-customer-chat-history-source.mjs && node scripts/assert-customer-chat-divider-lines.mjs && node scripts/assert-customer-chat-fresh-animation.mjs",
+    "test": "node scripts/assert-english-response-rule.mjs && node scripts/assert-customer-chat-history-source.mjs && node scripts/assert-customer-chat-history-format.mjs && node scripts/assert-customer-chat-divider-lines.mjs && node scripts/assert-customer-chat-fresh-animation.mjs && node scripts/assert-customer-task-migration.mjs && node scripts/assert-advisor-expenses.mjs",
     "preview": "vite preview",
     "sync:aag": "node scripts/sync-aag-data.mjs"
   },
@@ -28,7 +28,8 @@
     "react-dom": "^19.0.0",
     "react-loading-skeleton": "^3.5.0",
     "react-router-dom": "^7.1.5",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

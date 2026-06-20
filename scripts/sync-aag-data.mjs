@@ -9,6 +9,7 @@ const memoriesPath = path.join(importRoot, "aag_memories.json");
 const clientsSeedPath = path.join(root, "supabase/aag_clients.sql");
 const memoriesSeedPath = path.join(root, "supabase/aag_memories.sql");
 const seedPath = path.join(root, "supabase/aag_seed.sql");
+const customerTasksPath = path.join(root, "supabase/2026-06-21-customer-task-variety.sql");
 
 const clients = JSON.parse(fs.readFileSync(clientsPath, "utf8"));
 const memories = JSON.parse(fs.readFileSync(memoriesPath, "utf8"));
@@ -38,10 +39,7 @@ function sqlTextArray(values) {
 
 function getNextRenewal(policies = []) {
   return policies
-    .map((policy) => ({
-      date: policy.renewal_date,
-      type: policy.policy_type,
-    }))
+    .map((policy) => ({ ...policy, date: policy.renewal_date, type: policy.policy_type }))
     .filter((policy) => policy.date)
     .sort((a, b) => new Date(a.date) - new Date(b.date))[0] ?? null;
 }
@@ -52,12 +50,123 @@ function formatPolicySummary(policies = []) {
   return `${policies.length} ${policies.length === 1 ? "policy" : "policies"}${types.length ? `: ${types.join(", ")}` : ""}`;
 }
 
+const CUSTOMER_TASKS = [
+  // Compliance and profile maintenance
+  "Refresh KYC documents",
+  "Confirm source of funds",
+  "Validate identity details",
+  "Update address proof",
+  "Complete risk profile",
+  "Review fact-find notes",
+  "Verify income declaration",
+  "Confirm marketing consent",
+  "Update occupation details",
+  "Check contact information",
+  // Portfolio and planning
+  "Schedule annual review",
+  "Prepare portfolio summary",
+  "Review investment allocation",
+  "Rebalance growth portfolio",
+  "Assess risk tolerance",
+  "Review fund performance",
+  "Discuss retirement goals",
+  "Model retirement shortfall",
+  "Review cash reserves",
+  "Update net-worth statement",
+  // Protection and renewals
+  "Review medical renewal",
+  "Compare life coverage",
+  "Check critical illness gap",
+  "Review policy exclusions",
+  "Confirm premium affordability",
+  "Verify beneficiary nominations",
+  "Review sum assured",
+  "Prepare renewal options",
+  "Check claims eligibility",
+  "Consolidate policy schedule",
+  // Estate planning
+  "Schedule will consultation",
+  "Confirm intended heirs",
+  "Review executor choice",
+  "Discuss guardian nomination",
+  "Check estate-plan progress",
+  "Prepare estate checklist",
+  "Review trust options",
+  "Update legacy objectives",
+  "Confirm asset distribution",
+  "Review nomination forms",
+  // Business protection
+  "Plan business succession",
+  "Review shareholder protection",
+  "Assess key-person coverage",
+  "Update business valuation",
+  "Review loan protection",
+  "Discuss buy-sell agreement",
+  "Verify ownership structure",
+  "Prepare succession briefing",
+  "Review continuity risks",
+  "Confirm successor readiness",
+  // Family planning
+  "Review education funding",
+  "Update dependent details",
+  "Model university costs",
+  "Check child coverage",
+  "Confirm guardian details",
+  "Review family protection",
+  "Update household budget",
+  "Assess dependency needs",
+  "Review spouse coverage",
+  "Plan milestone funding",
+  // Client communication
+  "Send WhatsApp follow-up",
+  "Email document checklist",
+  "Call to confirm appointment",
+  "Share renewal reminder",
+  "Request signed forms",
+  "Chase outstanding documents",
+  "Send meeting summary",
+  "Confirm preferred channel",
+  "Schedule phone check-in",
+  "Send action recap",
+  // Liabilities and affordability
+  "Review mortgage protection",
+  "Check car-loan coverage",
+  "Assess debt exposure",
+  "Update liability summary",
+  "Review emergency fund",
+  "Model debt repayment",
+  "Check affordability ratio",
+  "Review cash-flow needs",
+  "Confirm outstanding loans",
+  "Map protection gaps",
+  // Relationship management
+  "Review referral details",
+  "Update client profile",
+  "Log latest interaction",
+  "Confirm next meeting",
+  "Prepare advisory brief",
+  "Review client goals",
+  "Update relationship notes",
+  "Check service preferences",
+  "Schedule progress call",
+  "Close pending follow-up",
+  // Specialist reviews
+  "Review travel coverage",
+  "Check general insurance",
+  "Compare medical riders",
+  "Review investment charges",
+  "Assess inflation exposure",
+  "Check policy maturity",
+  "Update nomination records",
+  "Prepare coverage summary",
+  "Review tax relief options",
+  "Plan next annual review",
+];
+
 function getNextAction(client) {
-  const renewal = getNextRenewal(client.policies);
-  if (client.kyc_status && client.kyc_status !== "Completed") return "Complete KYC follow-up";
-  if (!client.has_will || client.estate_plan_status !== "Completed") return "Discuss will planning";
-  if (renewal?.type) return `Review ${renewal.type} renewal`;
-  return "Schedule annual portfolio review";
+  const numericId = Number(String(client.client_id ?? "").match(/\d+$/)?.[0]);
+  const taskIndex = Number.isInteger(numericId) && numericId > 0 ? numericId - 1 : 0;
+  return CUSTOMER_TASKS[taskIndex % CUSTOMER_TASKS.length];
 }
 
 function getStatus(client) {
@@ -243,6 +352,18 @@ on conflict (id) do update set
   next_renewal_policy_type = excluded.next_renewal_policy_type;
 `;
 
+const customerTasksSql = `-- Generated from aag_clients.json.
+-- Non-destructive task refresh. Rebuild with: npm run sync:aag
+
+update customers as customer
+set
+  task = task_seed.task
+from (values
+${clients.map((client) => `  (${sqlString(client.client_id)}, ${sqlString(getNextAction(client))})`).join(",\n")}
+) as task_seed(id, task)
+where customer.id = task_seed.id;
+`;
+
 const memoriesSql = `-- Generated from aag_memories.json.
 -- Rebuild with: npm run sync:aag
 
@@ -294,6 +415,8 @@ on conflict (id) do update set
 fs.writeFileSync(clientsSeedPath, clientsSql);
 fs.writeFileSync(memoriesSeedPath, memoriesSql);
 fs.writeFileSync(seedPath, `${clientsSql}\n${memoriesSql}`);
+fs.writeFileSync(customerTasksPath, customerTasksSql);
 console.log(`Wrote ${path.relative(root, clientsSeedPath)} from ${clients.length} clients.`);
 console.log(`Wrote ${path.relative(root, memoriesSeedPath)} from ${memories.length} memories.`);
 console.log(`Wrote combined ${path.relative(root, seedPath)}.`);
+console.log(`Wrote non-destructive ${path.relative(root, customerTasksPath)}.`);
