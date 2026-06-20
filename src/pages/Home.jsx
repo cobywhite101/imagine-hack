@@ -97,8 +97,8 @@ export function Home() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-        <div className="w-[1179px] px-4 pt-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white">
+        <div className="w-full px-4 pt-4">
           <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
             <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
               {initialLoading ? <SkeletonBlock width={260} height={28} /> : briefHeadline}
@@ -124,7 +124,7 @@ export function Home() {
           </section>
         </div>
 
-        <div className="w-[1179px] px-4 pb-6 pt-4">
+        <div className="w-full px-4 pb-6 pt-4">
           <TodoList
             cards={todoCards}
             loading={initialLoading}
@@ -134,7 +134,7 @@ export function Home() {
           />
         </div>
 
-        <div className="w-[1179px] px-4 pb-6 pt-4">
+        <div className="w-full px-4 pb-6 pt-4">
           {initialLoading ? (
             <HomeCalendarSkeleton />
           ) : (
@@ -275,10 +275,10 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
   return (
     <div
       data-testid="home-todo-list"
-      className="w-[1169px] overflow-x-auto text-[#2c2c2b] transition-all"
+      className="w-full overflow-x-auto text-[#2c2c2b] transition-all"
     >
-      <div className="relative w-max pl-2 pt-12 transition-all">
-        <div className="absolute left-2 top-0 z-10 h-12 w-max bg-white pt-2">
+      <div className="relative w-full pl-2 pt-12 transition-all">
+        <div className="absolute left-2 top-0 z-10 h-12 w-full bg-white pt-2">
           <div className="inline-flex">
             {boardGroups.map((group) => {
               const groupCards = cards.filter((card) => card.status === group.status);
@@ -294,7 +294,7 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
           </div>
         </div>
 
-        <div className="relative flex w-max transition-all">
+        <div className="relative flex w-full transition-all">
           {boardGroups.map((group) => {
             const groupCards = cards.filter((card) => card.status === group.status);
             return (

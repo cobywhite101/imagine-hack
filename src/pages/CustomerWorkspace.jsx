@@ -1083,8 +1083,8 @@ function CustomerChatComposer({
   const [open, setOpen] = useState(false);
 
   const modelLabels = {
-    "deepseek-chat": "DeepSeek Chat",
-    "deepseek-reasoner": "DeepSeek Reasoner",
+    base: "Base",
+    reasoning: "Reasoning",
   };
 
   return (
@@ -1116,28 +1116,28 @@ function CustomerChatComposer({
                     <button
                       type="button"
                       onClick={() => {
-                        onModelChange("deepseek-chat");
+                        onModelChange("base");
                         setOpen(false);
                       }}
                       className={cn(
                         "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
-                        model === "deepseek-chat" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                        model === "base" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
                       )}
                     >
-                      DeepSeek Chat
+                      Base
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        onModelChange("deepseek-reasoner");
+                        onModelChange("reasoning");
                         setOpen(false);
                       }}
                       className={cn(
                         "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
-                        model === "deepseek-reasoner" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                        model === "reasoning" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
                       )}
                     >
-                      DeepSeek Reasoner
+                      Reasoning
                     </button>
                   </div>
                 </>
@@ -1510,7 +1510,7 @@ function CustomerWorkspaceSkeleton() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto bg-white px-6">
+        <aside className="min-h-0 overflow-y-auto bg-white px-6 text-[13px]">
           <div className="pt-4">
             <SkeletonBlock width={48} height={48} />
 
@@ -1611,8 +1611,9 @@ export function CustomerWorkspace() {
   const [savingMemory, setSavingMemory] = useState(false);
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
-  const [selectedModel, setSelectedModel] = useState("deepseek-chat");
+  const [selectedModel, setSelectedModel] = useState("base");
   const customer = customerOverride ?? fetchedCustomer;
+  const apiModel = selectedModel === "reasoning" ? "deepseek-reasoner" : "deepseek-chat";
 
   useEffect(() => {
     setCustomerOverride(null);
@@ -1965,7 +1966,7 @@ export function CustomerWorkspace() {
       memory: sourceMemory,
       memories: activeMemories,
       workflowConfig,
-      model: selectedModel,
+      model: apiModel,
       instruction,
     });
 
@@ -2136,7 +2137,7 @@ export function CustomerWorkspace() {
         memories: latestKnowledge.memories,
         articles: latestKnowledge.articles,
         workflowConfig,
-        model: selectedModel,
+        model: apiModel,
       });
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       if (reply) setMessages((prev) => [...prev, reply]);
@@ -2215,7 +2216,7 @@ export function CustomerWorkspace() {
         articles: latestKnowledge.articles,
         history: messages,
         workflowConfig,
-        model: selectedModel,
+        model: apiModel,
       });
       await waitForThinkingSequence(thinkingStartedAt, intent);
       if (reply) {
@@ -2373,13 +2374,13 @@ export function CustomerWorkspace() {
             >
               <TabsTrigger
                 value="details"
-                className="h-8 rounded-[4px] px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-8 rounded-[4px] px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Activity
               </TabsTrigger>
@@ -2449,11 +2450,11 @@ export function CustomerWorkspace() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">{memory.title}</p>
-                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">
                               {typeLabel} | {memory.sourceName} | {formatMemoryDate(memory.createdAt)}
                             </p>
                           </div>
-                          <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
                             {memory.sourceMeta || "Saved"}
                           </span>
                         </div>
@@ -2500,8 +2501,8 @@ export function CustomerWorkspace() {
                       <div key={file.id} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2">
                         <FileText className="size-4 shrink-0 text-muted-foreground" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{file.name}</p>
-                          <p className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
+                        <p className="truncate text-[13px] font-medium">{file.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatFileSize(file.size)}</p>
                         </div>
                         <button
                           type="button"
@@ -2538,7 +2539,7 @@ export function CustomerWorkspace() {
 function CustomerFact({ icon: Icon, label, value }) {
   return (
     <div className="min-w-0 rounded-lg border bg-white p-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
         <Icon className="size-3.5 shrink-0" />
         <span>{label}</span>
       </div>
