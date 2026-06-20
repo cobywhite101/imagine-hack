@@ -547,6 +547,52 @@ function buildCustomerHomeMeetings(customers) {
   );
 }
 
+function getMeetingContactFirstName(customer) {
+  const fullName = cleanCustomerText(customer?.contactName || customer?.name || "client");
+  return fullName.split(/\s+/).find(Boolean) || "client";
+}
+
+function getPotentialCatchUpSeedMeeting(customers = []) {
+  const targetCustomer = [...customers]
+    .filter((customer) => /\bmahesh\b/i.test(cleanCustomerText(customer?.contactName || customer?.name || "")))
+    .sort((a, b) => {
+      const ar = a.nextRenewal || "9999-12-31";
+      const br = b.nextRenewal || "9999-12-31";
+      return ar.localeCompare(br) || String(a.name).localeCompare(String(b.name));
+    })[0];
+
+  if (!targetCustomer) return null;
+
+  const today = toLocalDateString();
+  const shortName = getMeetingContactFirstName(targetCustomer);
+
+  return normalizeAdvisorMeeting({
+    id: `customer-meeting-catchup-${targetCustomer.id}`,
+    customerId: targetCustomer.id,
+    title: `Potential Catch up with ${shortName}`,
+    start: `${today}T16:00`,
+    end: `${today}T16:30`,
+    notes: "Client input",
+  });
+}
+
+function mergeSeededHomeMeetings(meetings = [], customers = []) {
+  const normalizedMeetings = meetings.map(normalizeAdvisorMeeting);
+  const catchUpMeeting = getPotentialCatchUpSeedMeeting(customers);
+  if (!catchUpMeeting) return sortAdvisorMeetings(normalizedMeetings);
+
+  const alreadyPresent = normalizedMeetings.some((meeting) => {
+    const sameId = String(meeting.id) === String(catchUpMeeting.id);
+    const sameShape =
+      String(meeting.customerId) === String(catchUpMeeting.customerId) &&
+      String(meeting.start).slice(0, 10) === String(catchUpMeeting.start).slice(0, 10) &&
+      cleanCustomerText(meeting.title).toLowerCase() === cleanCustomerText(catchUpMeeting.title).toLowerCase();
+    return sameId || sameShape;
+  });
+
+  return alreadyPresent ? sortAdvisorMeetings(normalizedMeetings) : sortAdvisorMeetings([...normalizedMeetings, catchUpMeeting]);
+}
+
 function buildHomeStats(tasks, meetings) {
   const today = toLocalDateString();
   const todoToday = tasks.filter((task) => task.status === "To Do" && (!task.dueDate || task.dueDate <= today)).length;
@@ -2847,7 +2893,7 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
   getAdvisorMeetings: async () => {
     if (!isSupabaseConfigured) {
       await delay(120);
-      return getStoredHomeMeetings();
+      return mergeSeededHomeMeetings(getStoredHomeMeetings(), localCustomers.map(normalizeCustomerRecord));
     }
 
     try {
@@ -2857,14 +2903,20 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
         .order("starts_at", { ascending: true });
 
       if (error) throw error;
-      if (data?.length) return sortAdvisorMeetings(data.map(normalizeAdvisorMeeting));
+      if (data?.length) {
+        const customers = await getCustomersForHomeFallback();
+        return mergeSeededHomeMeetings(data.map(normalizeAdvisorMeeting), customers);
+      }
     } catch {
       const stored = readStoredArray(HOME_MEETING_STORAGE_KEY, []);
-      if (stored.length) return sortAdvisorMeetings(stored.map(normalizeAdvisorMeeting));
+      if (stored.length) {
+        const customers = await getCustomersForHomeFallback();
+        return mergeSeededHomeMeetings(stored.map(normalizeAdvisorMeeting), customers);
+      }
     }
 
     const customers = await getCustomersForHomeFallback();
-    return buildCustomerHomeMeetings(customers);
+    return mergeSeededHomeMeetings(buildCustomerHomeMeetings(customers), customers);
   },
 
   saveAdvisorMeeting: async (meeting) => {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node scripts/assert-english-response-rule.mjs && node scripts/assert-customer-chat-history-source.mjs && node scripts/assert-customer-chat-history-format.mjs && node scripts/assert-customer-chat-divider-lines.mjs && node scripts/assert-customer-chat-fresh-animation.mjs && node scripts/assert-customer-task-migration.mjs && node scripts/assert-advisor-expenses.mjs",
+    "test": "node scripts/assert-english-response-rule.mjs && node scripts/assert-customer-chat-history-source.mjs && node scripts/assert-customer-chat-history-format.mjs && node scripts/assert-customer-chat-divider-lines.mjs && node scripts/assert-customer-chat-fresh-animation.mjs && node scripts/assert-customer-task-migration.mjs && node scripts/assert-advisor-expenses.mjs && node scripts/assert-home-mahesh-meeting.mjs",
     "preview": "vite preview",
     "sync:aag": "node scripts/sync-aag-data.mjs"
   },
