@@ -474,7 +474,6 @@ function CustomerChatThinkingIndicator() {
   return (
     <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-[#266df0]">
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
-      <span>Searching saved memory...</span>
     </div>
   );
 }
