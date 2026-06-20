@@ -117,18 +117,22 @@
   --fc-event-bg-color: #317cff;
   --fc-event-border-color: #317cff;
 }
+
 .meetings-calendar .fc {
   font-size: 12px;
   color: #4a4a4a;
 }
+
 .meetings-calendar .fc .fc-toolbar-title {
   font-size: 15px;
   font-weight: 600;
   color: #101112;
 }
+
 .meetings-calendar .fc .fc-toolbar.fc-header-toolbar {
   margin-bottom: 12px;
 }
+
 .meetings-calendar .fc .fc-button {
   background: #ffffff;
   border: 1px solid #e6e6e9;
@@ -139,10 +143,12 @@
   box-shadow: none;
   text-transform: capitalize;
 }
+
 .meetings-calendar .fc .fc-button:hover {
   background: #f5f5f5;
   color: #101112;
 }
+
 .meetings-calendar .fc .fc-button-primary:not(:disabled):active,
 .meetings-calendar .fc .fc-button-primary:focus {
   background: #f1f1f3;
@@ -150,33 +156,40 @@
   color: #101112;
   box-shadow: none;
 }
+
 .meetings-calendar .fc .fc-col-header-cell-cushion {
   color: #7b7b7b;
   font-weight: 500;
   padding: 6px 4px;
   text-decoration: none;
 }
+
 .meetings-calendar .fc .fc-daygrid-day-number {
   color: #4a4a4a;
   padding: 4px 6px;
   text-decoration: none;
 }
+
 .meetings-calendar .fc .fc-day-today .fc-daygrid-day-number {
   font-weight: 600;
   color: #317cff;
 }
+
 .meetings-calendar .fc .fc-daygrid-day.fc-day-today {
   background: var(--fc-today-bg-color);
 }
+
 .meetings-calendar .fc .fc-event {
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 11px;
   cursor: pointer;
 }
+
 .meetings-calendar .fc .fc-daygrid-day {
   cursor: pointer;
 }
+
 .meetings-calendar .fc .fc-daygrid-day-frame:hover {
   background: #fafafa;
 }

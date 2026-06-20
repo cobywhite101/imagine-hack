@@ -7,10 +7,13 @@ create table if not exists customer_memories (
   kind text not null default 'note',
   title text not null,
   summary text not null,
+  body text,
   source_name text,
   source_meta text,
   created_at timestamptz default now()
 );
+
+alter table customer_memories add column if not exists body text;
 
 delete from customer_memories where customer_id in ('cust1', 'cust2', 'cust3', 'cust4', 'cust5', 'cust6');
 delete from customer_memories where customer_id like 'CL-%' or source_name = 'AAG dataset';

@@ -11,17 +11,14 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Bot,
-  BookOpenText,
   CalendarDays,
   ChevronDown,
-  ChevronRight,
   Database,
   House,
   Keyboard,
   MessageCircle,
   PanelLeft,
   Plug,
-  Search,
   Sparkles,
   Users,
   Workflow,
@@ -145,32 +142,6 @@ function Sidebar() {
           ))}
         </div>
       </nav>
-
-      <div className="border-t border-[#e6e7ea] px-4 pb-4 pt-3">
-        <button
-          type="button"
-          className="mb-3 flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[14px] font-medium tracking-[-0.01em] hover:bg-black/[0.035]"
-        >
-          <BookOpenText className="size-4 shrink-0 text-[#101112]" strokeWidth={1.8} />
-          <span className="truncate">Advisor workspace</span>
-        </button>
-        <div className="flex items-center justify-between border-t border-[#e6e7ea] pt-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Avatar className="size-8 shrink-0 rounded-lg">
-              <AvatarFallback className="rounded-lg bg-primary/15 text-[13px] font-medium text-primary">
-                AL
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 leading-tight">
-              <div className="truncate text-[14px] font-medium">Ada Lovelace</div>
-              <div className="truncate text-[11px] text-black/55">
-                {dataMode === "supabase" ? "live (supabase)" : "mock data"}
-              </div>
-            </div>
-          </div>
-          <ChevronRight className="size-4 shrink-0 text-black/45" strokeWidth={1.8} />
-        </div>
-      </div>
     </aside>
   );
 }

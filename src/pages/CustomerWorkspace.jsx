@@ -6,12 +6,12 @@ import {
   ArrowUp,
   Brain,
   CalendarDays,
+  ChevronDown,
   Copy,
   FileText,
   Mail,
   Mic,
   Paperclip,
-  Phone,
   Plus,
   RotateCcw,
   Sparkles,
@@ -20,6 +20,9 @@ import {
   UploadCloud,
   UserRound,
   X,
+  Pencil,
+  Send,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
@@ -65,31 +68,7 @@ function cleanText(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
 }
 
-function compactPhoneNumber(value) {
-  return String(value ?? "").replace(/[^\d+]/g, "");
-}
 
-function formatCalendarDate(date) {
-  return date.toISOString().replace(/[-:]|\.\d{3}/g, "");
-}
-
-function getScheduleUrl(customer) {
-  const start = new Date();
-  start.setDate(start.getDate() + 1);
-  start.setHours(9, 0, 0, 0);
-  const end = new Date(start);
-  end.setMinutes(end.getMinutes() + 30);
-
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: `${customer.name} follow-up`,
-    details: `Next step: ${customer.task || customer.nextAction || "Confirm next action"}`,
-    dates: `${formatCalendarDate(start)}/${formatCalendarDate(end)}`,
-  });
-
-  if (customer.email?.includes("@")) params.set("add", customer.email);
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
 
 function summarizeText(rawText, fallback) {
   const text = cleanText(rawText);
@@ -128,6 +107,23 @@ async function readFileText(file) {
   }
 }
 
+function isMeetingMinutesUpload(fileName, text) {
+  const haystack = `${fileName} ${text}`.toLowerCase();
+  return /\b(meeting|minutes|transcript|call notes|advisor notes|agenda|action items?)\b/.test(haystack);
+}
+
+function isArticleGenerationRequest(text, hasCandidate = false) {
+  const lower = text.toLowerCase();
+  const asksForArticle = /\b(article|internal article|source file|knowledge article|knowledge base|write[- ]?up)\b/.test(lower);
+  const acceptsPrompt = hasCandidate && /^(yes|yeah|yep|sure|ok|okay|please|do it|go ahead|create it|generate it)\b/.test(lower);
+  return asksForArticle || acceptsPrompt;
+}
+
+function upsertArticleList(articles, article) {
+  const next = [article, ...articles.filter((item) => item.id !== article.id)];
+  return next.sort((a, b) => new Date(b.updatedAt ?? 0) - new Date(a.updatedAt ?? 0));
+}
+
 function CustomerChatIconButton({ label, children, onClick, disabled, className = "" }) {
   return (
     <button
@@ -154,9 +150,18 @@ function CustomerChatComposer({
   onAttach,
   onDraft,
   sending,
+  model,
+  onModelChange,
 }) {
+  const [open, setOpen] = useState(false);
+
+  const modelLabels = {
+    "deepseek-chat": "DeepSeek Chat",
+    "deepseek-reasoner": "DeepSeek Reasoner",
+  };
+
   return (
-    <div className="flex h-[126px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[10px]">
+    <div className="flex h-[140px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[24px]">
       <div className="relative flex h-[116px] w-full flex-col rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] focus-within:shadow-[inset_0_0_0_1px_rgba(38,109,240,0.28),0_8px_24px_rgba(28,40,64,0.08)]">
         <textarea
           value={value}
@@ -167,12 +172,50 @@ function CustomerChatComposer({
         />
         <div className="flex h-11 items-end justify-between gap-3 p-2">
           <div className="flex min-w-0 items-center gap-1">
-            <button
-              type="button"
-              className="flex h-7 items-center justify-center rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55"
-            >
-              Auto
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                className="flex h-7 items-center gap-1 rounded-lg px-2 text-[13px] font-medium leading-5 text-[#266df0] hover:bg-black/[0.04] transition-colors"
+              >
+                <span>{modelLabels[model] || "Auto"}</span>
+                <ChevronDown className="size-3 text-[#266df0]/70" />
+              </button>
+
+              {open && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                  <div className="absolute bottom-full left-0 mb-1.5 z-50 w-48 rounded-lg bg-white p-1 shadow-[0_4px_12px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.05)] flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onModelChange("deepseek-chat");
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
+                        model === "deepseek-chat" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                      )}
+                    >
+                      DeepSeek Chat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onModelChange("deepseek-reasoner");
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
+                        model === "deepseek-reasoner" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                      )}
+                    >
+                      DeepSeek Reasoner
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <CustomerChatIconButton label="Attach file" onClick={onAttach}>
               <Plus className="size-3.5" strokeWidth={1.9} />
             </CustomerChatIconButton>
@@ -209,19 +252,146 @@ function CustomerChatComposer({
   );
 }
 
-function renderMessageText(text) {
+function renderMessageText(text, isAssistant = false) {
   if (!text) return "";
   const parts = text.split("**");
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
+  let wordIndex = 0;
+
+  return parts.flatMap((part, partIndex) => {
+    const isBold = partIndex % 2 === 1;
+    const tokens = part.split(/(\s+)/);
+
+    return tokens.map((token, tokenIndex) => {
+      if (!token) return null;
+      if (/^\s+$/.test(token)) {
+        return <span key={`space-${partIndex}-${tokenIndex}`}>{token}</span>;
+      }
+
+      const currentWordIndex = wordIndex;
+      wordIndex += 1;
+
+      const style = isAssistant
+        ? {
+            animationDelay: `${currentWordIndex * 15}ms`,
+          }
+        : undefined;
+
       return (
-        <span key={index} className="font-semibold">
-          {part}
+        <span
+          key={`word-${partIndex}-${tokenIndex}`}
+          style={style}
+          className={`${isBold ? "font-semibold" : ""} ${
+            isAssistant ? "inline-block animate-grok-fade opacity-0" : ""
+          }`}
+        >
+          {token}
         </span>
       );
-    }
-    return part;
+    });
   });
+}
+
+function parseEmailDraft(text) {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+  let subjectLineIndex = -1;
+  let subjectText = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const match = line.match(/^(?:\*\*|\*|)?Subject(?:\*\*|\*|)?:\s*(.+)$/i);
+    if (match) {
+      subjectLineIndex = i;
+      subjectText = match[1].replace(/[\*\_\#]+/g, "").trim();
+      break;
+    }
+  }
+
+  if (subjectLineIndex === -1) return null;
+
+  const preText = lines.slice(0, subjectLineIndex).join("\n").trim();
+  const bodyLines = lines.slice(subjectLineIndex + 1);
+  let bodyText = bodyLines.join("\n").trim();
+
+  let postText = "";
+  const sourcesIndex = bodyText.search(/\n\s*(?:Sources|Source):\s*/i);
+  if (sourcesIndex !== -1) {
+    postText = bodyText.substring(sourcesIndex).trim();
+    bodyText = bodyText.substring(0, sourcesIndex).trim();
+  }
+
+  return {
+    preText,
+    subject: subjectText,
+    body: bodyText,
+    postText,
+  };
+}
+
+function formatBodyToHtml(rawText) {
+  if (!rawText) return "";
+
+  const paragraphs = rawText.split(/\n\n+/);
+
+  return paragraphs
+    .map((p) => {
+      let escaped = p
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      escaped = escaped.replace(/\[([^\]]+)\]/g, (match) => {
+        return `<span class="text-[#0d0d0d] bg-[#266df0]/10 border border-[#266df0]/20 cursor-text rounded-md px-1 py-0.5 font-medium select-all">${match}</span>`;
+      });
+
+      escaped = escaped.replace(/\n/g, "<br />");
+
+      return `<p class="mb-4 last:mb-0 leading-[26px]">${escaped}</p>`;
+    })
+    .join("");
+}
+
+function EmailDraftBlock({ initialSubject, initialBody }) {
+  const subjectRef = useRef(null);
+  const bodyRef = useRef(null);
+
+  return (
+    <div className="my-4 w-[768px] max-w-full font-sans text-left">
+      <div className="relative isolate w-full overflow-clip rounded-[24px] border border-black/[0.06] bg-white shadow-[0px_4px_80px_rgba(0,0,0,0.02)] h-[559px] flex flex-col">
+        {/* Subject */}
+        <div className="pt-6 pb-3 pr-10 pl-5 shrink-0">
+          <div className="grid">
+            <textarea
+              ref={subjectRef}
+              defaultValue={initialSubject}
+              className="col-start-1 col-end-2 row-start-1 row-end-2 w-full resize-none overflow-hidden p-0 border-none bg-transparent text-[22px] font-semibold text-[#0d0d0d] leading-normal placeholder:text-[#9b9b9b] focus:ring-0 focus:outline-hidden"
+              aria-label="Subject"
+              rows={1}
+              onInput={(e) => {
+                e.target.style.height = "auto";
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Divider */}
+        <hr className="border-t-[0.5px] border-black/[0.08] mx-5 my-0" />
+
+        {/* Body Editor */}
+        <div className="flex-1 overflow-y-auto pt-4 pb-4 pr-10 pl-5 min-h-0">
+          <div
+            ref={bodyRef}
+            contentEditable
+            suppressContentEditableWarning
+            className="ProseMirror w-full break-words focus:outline-none text-[15px] leading-[26px] text-[#0d0d0d] font-sans"
+            dangerouslySetInnerHTML={{ __html: formatBodyToHtml(initialBody) }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CustomerChatMessage({ message }) {
@@ -229,7 +399,49 @@ function CustomerChatMessage({ message }) {
     return (
       <div className="flex justify-end">
         <div className="max-w-[82%] rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[14px] font-normal leading-5 text-[#101112]">
-          {renderMessageText(message.text)}
+          {renderMessageText(message.text, false)}
+        </div>
+      </div>
+    );
+  }
+
+  const parsedDraft = parseEmailDraft(message.text);
+  if (parsedDraft) {
+    const finalPreText = parsedDraft.preText || `Here is the drafted email for this customer:`;
+    return (
+      <div className="group flex flex-col gap-1 w-full items-start">
+        {finalPreText && (
+          <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112] w-full mb-2">
+            {renderMessageText(finalPreText, message.id !== "seed-1")}
+          </div>
+        )}
+
+        <div className="w-[768px] h-[605px] max-w-full flex flex-col">
+          <EmailDraftBlock
+            initialSubject={parsedDraft.subject}
+            initialBody={parsedDraft.body}
+          />
+        </div>
+
+        {parsedDraft.postText && (
+          <div className="mt-2 text-[12px] text-black/45 italic">
+            {parsedDraft.postText}
+          </div>
+        )}
+
+        <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+          <CustomerChatIconButton label="Copy">
+            <Copy className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Helpful">
+            <ThumbsUp className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Not helpful">
+            <ThumbsDown className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Try again">
+            <RotateCcw className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
         </div>
       </div>
     );
@@ -238,7 +450,7 @@ function CustomerChatMessage({ message }) {
   return (
     <div className="group">
       <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
-        {renderMessageText(message.text)}
+        {renderMessageText(message.text, message.id !== "seed-1")}
       </div>
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
@@ -260,9 +472,8 @@ function CustomerChatMessage({ message }) {
 
 function CustomerChatThinkingIndicator() {
   return (
-    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-black/50">
+    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-[#266df0]">
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
-      <span>Searching saved memory...</span>
     </div>
   );
 }
@@ -271,20 +482,27 @@ export function CustomerWorkspace() {
   const { customerId } = useParams();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
+  const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
+  const { data: fetchedArticles } = useApi(() => api.getCustomerArticles(customerId), [customerId]);
   const customer = fetchedCustomer;
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const configSaveTimer = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [articles, setArticles] = useState([]);
+  const [workflowConfig, setWorkflowConfig] = useState(null);
+  const [articleCandidate, setArticleCandidate] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [savingMemory, setSavingMemory] = useState(false);
   const [sending, setSending] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("deepseek-chat");
 
   useEffect(() => {
     if (!customer) return;
@@ -302,7 +520,19 @@ export function CustomerWorkspace() {
   }, [fetchedMemories]);
 
   useEffect(() => {
+    if (fetchedArticles) setArticles(fetchedArticles);
+  }, [fetchedArticles]);
+
+  useEffect(() => {
+    if (fetchedConfig) setWorkflowConfig(fetchedConfig);
+  }, [fetchedConfig]);
+
+  useEffect(() => {
     return () => recognitionRef.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimeout(configSaveTimer.current);
   }, []);
 
   useEffect(() => {
@@ -368,6 +598,7 @@ export function CustomerWorkspace() {
       kind,
       title,
       summary: summarizeText(body, fallback),
+      body,
       sourceName,
       sourceMeta,
       createdAt: new Date().toISOString(),
@@ -386,6 +617,70 @@ export function CustomerWorkspace() {
         text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
       },
     ]);
+    return savedEntry;
+  }
+
+  async function saveCustomerArticle(article) {
+    if (!customer) return null;
+    const now = new Date().toISOString();
+    const optimisticArticle = {
+      ...article,
+      id: article.id ?? `article-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      customerId: customer.id,
+      createdAt: article.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    setArticles((prev) => upsertArticleList(prev, optimisticArticle));
+    const savedArticle = await api.saveCustomerArticle(customer.id, optimisticArticle);
+    setArticles((prev) => upsertArticleList(prev, savedArticle));
+    return savedArticle;
+  }
+
+  async function deleteCustomerArticle(articleId) {
+    if (!customer) return;
+    setArticles((prev) => prev.filter((item) => item.id !== articleId));
+    await api.deleteCustomerArticle(customer.id, articleId);
+  }
+
+  function getArticleSourceMemory() {
+    if (articleCandidate) {
+      return memories.find((memory) => memory.id === articleCandidate.id) ?? articleCandidate;
+    }
+
+    return memories.find((memory) => {
+      const hasSourceText = memory.body || memory.summary;
+      return hasSourceText && ["meeting", "file", "voice", "note"].includes(memory.kind);
+    });
+  }
+
+  async function createArticleFromLatestMinutes(instruction = "") {
+    const sourceMemory = getArticleSourceMemory();
+    if (!sourceMemory) {
+      addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
+      return null;
+    }
+
+    const generatedArticle = await api.generateCustomerArticle({
+      customer,
+      memory: sourceMemory,
+      memories,
+      workflowConfig,
+      model: selectedModel,
+      instruction,
+    });
+
+    if (!generatedArticle) {
+      addAssistantNotice("I could not generate an article from the saved minutes yet. Try uploading a text transcript or note.");
+      return null;
+    }
+
+    const savedArticle = await saveCustomerArticle(generatedArticle);
+    setArticleCandidate(null);
+    addAssistantNotice(
+      `Created internal article: **${savedArticle.title}**\n\nSaved under Details > Knowledge > Source files.`
+    );
+    return savedArticle;
   }
 
   async function addFiles(fileList) {
@@ -414,15 +709,20 @@ export function CustomerWorkspace() {
     try {
       for (const upload of freshFiles) {
         const body = await readFileText(upload.file);
-        await remember(
+        const meetingMinutes = isMeetingMinutesUpload(upload.name, body);
+        const savedEntry = await remember(
           buildMemoryEntry({
-            kind: "file",
+            kind: meetingMinutes ? "meeting" : "file",
             title: upload.name,
             body,
             sourceName: upload.name,
             sourceMeta: `${formatFileSize(upload.size)} | ${isTextLikeFile(upload.file) ? "Summarized" : "Stored reference"}`,
           })
         );
+        if (meetingMinutes) {
+          setArticleCandidate(savedEntry);
+          addAssistantNotice(`I saved ${upload.name} as meeting context. Want me to turn it into an internal article?`);
+        }
       }
     } finally {
       setSavingMemory(false);
@@ -499,19 +799,16 @@ export function CustomerWorkspace() {
     ]);
   }
 
-  function callCustomer() {
-    const phone = compactPhoneNumber(customer.phone);
-    if (phone) {
-      window.location.href = `tel:${phone}`;
-      return;
-    }
 
-    if (customer.email?.includes("@")) {
-      window.location.href = `mailto:${customer.email}?subject=${encodeURIComponent(`Follow-up with ${customer.name}`)}`;
-      return;
-    }
 
-    addAssistantNotice(`No phone or email is saved for ${customer.name}. Add contact details before starting outreach.`);
+  // Update workflow config in state immediately (so the chat uses the latest)
+  // and debounce the persistence so we don't write on every keystroke.
+  function updateWorkflowConfig(next) {
+    setWorkflowConfig(next);
+    clearTimeout(configSaveTimer.current);
+    configSaveTimer.current = setTimeout(() => {
+      api.saveWorkflowConfig(customer.id, next);
+    }, 600);
   }
 
   async function draftFollowUp() {
@@ -522,7 +819,7 @@ export function CustomerWorkspace() {
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
-      const reply = await api.draftCustomerFollowUp({ customer, memories });
+      const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig, model: selectedModel });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -540,7 +837,12 @@ export function CustomerWorkspace() {
     setSending(true);
 
     try {
-      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages });
+      if (isArticleGenerationRequest(text, !!articleCandidate)) {
+        await createArticleFromLatestMinutes(text);
+        return;
+      }
+
+      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig, model: selectedModel });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
@@ -569,34 +871,19 @@ export function CustomerWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon-sm" render={<Link to="/customers" />} aria-label="Back to customers">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <span
-            className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-xs font-semibold text-white"
-            style={{ backgroundColor: customer.accent }}
-          >
-            {customer.avatar}
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold">{customer.name}</h1>
-            <p className="truncate text-[11px] text-muted-foreground">{customer.email}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={callCustomer}>
-            <Phone className="size-4" /> Call
-          </Button>
-          <Button size="sm" render={<a href={getScheduleUrl(customer)} target="_blank" rel="noreferrer" />}>
-            <CalendarDays className="size-4" /> Schedule
-          </Button>
-        </div>
-      </header>
-
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
+          <div className="absolute left-6 top-6 z-10">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              render={<Link to="/customers" />}
+              aria-label="Back to customers"
+              className="border border-border bg-white shadow-sm hover:bg-neutral-50"
+            >
+              <ArrowLeft className="size-4 text-muted-foreground" />
+            </Button>
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex min-h-full flex-col items-center justify-end">
               <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
@@ -608,7 +895,7 @@ export function CustomerWorkspace() {
               </div>
             </div>
           </div>
-          <div className="pointer-events-none absolute bottom-[142px] left-0 right-0 flex h-7 items-center justify-center">
+          <div className="pointer-events-none absolute bottom-[170px] left-0 right-0 flex h-7 items-center justify-center">
             <button
               type="button"
               aria-label="Scroll to latest message"
@@ -628,12 +915,14 @@ export function CustomerWorkspace() {
               onAttach={() => inputRef.current?.click()}
               onDraft={draftFollowUp}
               sending={sending}
+              model={selectedModel}
+              onModelChange={setSelectedModel}
             />
           </div>
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white">
-          <WorkflowHeader />
+          <WorkflowHeader customer={customer} />
 
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
             <TabsList
@@ -642,20 +931,30 @@ export function CustomerWorkspace() {
             >
               <TabsTrigger
                 value="details"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
               >
                 Activity
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
-              <WorkflowDetails />
+              {workflowConfig ? (
+                <WorkflowDetails
+                  config={workflowConfig}
+                  onChange={updateWorkflowConfig}
+                  articles={articles}
+                  onSaveArticle={saveCustomerArticle}
+                  onDeleteArticle={deleteCustomerArticle}
+                />
+              ) : (
+                <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
+              )}
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
@@ -751,14 +1050,6 @@ export function CustomerWorkspace() {
                   <Button className="mt-4" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
                     <Paperclip className="size-4" /> Choose files
                   </Button>
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.md"
-                    onChange={(event) => addFiles(event.target.files)}
-                  />
                 </div>
 
                 {files.length > 0 && (
@@ -787,6 +1078,17 @@ export function CustomerWorkspace() {
           </Tabs>
         </aside>
       </div>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.log"
+        onChange={(event) => {
+          addFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
     </div>
   );
 }

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-react";
-import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { cn } from "@/lib/utils";
+import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
 /* Notion-like workflow configuration panel. Replicates the agent settings layout:
    a pixel app icon, title + status, owner row, action buttons, and a stack of
    collapsible sections (Instructions, Guardrails, Tone, Knowledge, Tools). */
 
-const ACCENT = "#f0641e"; // orange used for active toggles + connect link
+const ACCENT = "#266df0"; // blue used for active toggles + connect link
 
 function Toggle({ checked, onChange, disabled = false, label }) {
   return (
@@ -20,7 +20,7 @@ function Toggle({ checked, onChange, disabled = false, label }) {
       onClick={() => onChange?.(!checked)}
       className={cn(
         "relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full transition-colors duration-150",
-        checked ? "bg-[#f0641e]" : "bg-[#e3e3e6]",
+        checked ? "bg-[#266df0]" : "bg-[#e3e3e6]",
         disabled && "cursor-not-allowed opacity-50"
       )}
       style={checked ? { backgroundColor: ACCENT } : undefined}
@@ -64,6 +64,33 @@ function Section({ label, defaultOpen = true, children }) {
   );
 }
 
+// Borderless auto-growing textarea — reads like plain text, edits like Notion.
+function EditableText({ value, onChange, placeholder, italic = false, ariaLabel }) {
+  const ref = useRef(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value ?? ""}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      onChange={(event) => onChange(event.target.value)}
+      className={cn(
+        "-mx-2 block w-[calc(100%+1rem)] resize-none rounded-md bg-transparent px-2 py-1 text-[15px] leading-[1.55] text-[#2a2a2e] outline-none transition-colors placeholder:text-[#b0b0b6] hover:bg-black/[0.025] focus:bg-black/[0.04]",
+        italic && "placeholder:italic"
+      )}
+    />
+  );
+}
+
 function WorkdayLogo() {
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[#f5a623] text-[11px] font-bold lowercase text-white">
@@ -96,70 +123,121 @@ function SlackLogo() {
   );
 }
 
-export function WorkflowHeader() {
+function initialsFor(value) {
+  return String(value ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+export function WorkflowHeader({ customer }) {
+  const customerName = customer?.name || "Customer";
+  const ownerLabel = customer?.advisorId ? `Managed by ${customer.advisorId}` : "Advisor unassigned";
+  const statusLabel = customer?.task || customer?.nextAction || customer?.kycStatus || "No next action recorded";
+  const tagLabel = customer?.acquisitionChannel || customer?.preferredCommunicationChannel || customer?.kycStatus || "Client";
+  const avatar = customer?.avatar || initialsFor(customerName) || "C";
+  const accent = customer?.accent || "#868e96";
+
   return (
-    <div className="px-6 pt-7">
-      <div className="flex size-[68px] items-center justify-center rounded-[20px] bg-[#b6e84f]">
-        <DotmSquare6 size={42} dotSize={5} dotShape="square" pattern="full" color="#1d4ed8" ariaLabel="Workflow icon" />
+    <div className="px-6 pt-4">
+      <div
+        className="flex size-[48px] items-center justify-center rounded-xl text-[18px] font-semibold text-white"
+        style={{ backgroundColor: accent }}
+      >
+        {avatar}
       </div>
 
-      <h1 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-[#1a1a1a]">
-        Resume Review
+      <h1 className="mt-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#1a1a1a]">
+        {customerName}
       </h1>
-      <p className="mt-1.5 text-[15px] text-[#9a9aa0]">Drafting completed - awaiting approval</p>
+      <p className="mt-1 text-[13px] text-[#9a9aa0]">{statusLabel}</p>
 
-      <div className="mt-3.5 flex items-center gap-2 text-[14px] text-[#3f3f46]">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#d97757] text-[10px] font-semibold text-white">
-          G
+      <div className="mt-2.5 flex min-w-0 items-center gap-2 text-[13px] text-[#3f3f46]">
+        <span
+          className="flex size-[18px] shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+          style={{ backgroundColor: accent }}
+        >
+          {initialsFor(customer?.advisorId) || avatar[0] || "A"}
         </span>
-        <span>Managed by Gregor</span>
-        <span className="ml-0.5 inline-flex items-center gap-1 rounded-md bg-[#f1f1f3] px-2 py-0.5 text-[13px] text-[#6b6b70]">
-          <span className="text-[#a0a0a6]">#</span> HR
+        <span className="min-w-0 truncate">{ownerLabel}</span>
+        <span className="ml-0.5 inline-flex min-w-0 max-w-[150px] items-center gap-1 rounded-md bg-[#f1f1f3] px-1.5 py-0.5 text-[12px] text-[#6b6b70]">
+          <span className="shrink-0 text-[#a0a0a6]">#</span>
+          <span className="min-w-0 truncate">{tagLabel}</span>
         </span>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
-          className="inline-flex h-9 items-center gap-2 rounded-[10px] bg-[#1a1a1a] px-3.5 text-[14px] font-medium text-white transition-colors hover:bg-[#000]"
+          className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#1a1a1a] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#000]"
         >
-          <Waypoints className="size-4" strokeWidth={1.9} />
-          Manage workflow
+          <Waypoints className="size-3.5" strokeWidth={1.9} />
+          Manage client workflow
         </button>
         <button
           type="button"
           aria-label="More options"
-          className="flex size-9 items-center justify-center rounded-[10px] bg-[#f1f1f3] text-[#3f3f46] transition-colors hover:bg-[#e8e8ec]"
+          className="flex size-8 items-center justify-center rounded-[8px] bg-[#f1f1f3] text-[#3f3f46] transition-colors hover:bg-[#e8e8ec]"
         >
-          <MoreHorizontal className="size-4.5" strokeWidth={2} />
+          <MoreHorizontal className="size-4" strokeWidth={2} />
         </button>
       </div>
     </div>
   );
 }
 
-export function WorkflowDetails() {
-  const [knowledge, setKnowledge] = useState({ workday: true, drive: false, slack: true });
-  const [tools, setTools] = useState({ code: true });
+// Controlled: parent owns `config` + `articles` and persists changes.
+export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle, onDeleteArticle }) {
+  const knowledge = config.knowledge ?? {};
+  const tools = config.tools ?? {};
+
+  const setField = (field, value) => onChange({ ...config, [field]: value });
+  const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
+  const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
+  const [editing, setEditing] = useState(null); // { article } | { article: null } for new
+
+  async function saveArticle(article) {
+    await onSaveArticle?.(article);
+    setEditing(null);
+  }
+
+  async function deleteArticle(articleId) {
+    await onDeleteArticle?.(articleId);
+    setEditing(null);
+  }
+
+
 
   return (
     <div className="text-[#2a2a2e]">
       <Section label="Instructions">
-        <div className="space-y-2.5 text-[15px] leading-[1.55]">
-          <p># Data Analysis</p>
-          <p>
-            Analyze and plot this data thoroughly and give me key figures like mean, median and standard
-            deviation.
-          </p>
-        </div>
+        <EditableText
+          ariaLabel="Instructions"
+          value={config.instructions}
+          onChange={(value) => setField("instructions", value)}
+          placeholder="Describe what this workflow should do…"
+        />
       </Section>
 
       <Section label="Guardrails">
-        <p className="text-[15px] leading-[1.55]">You only discuss topics related to tutoring.</p>
+        <EditableText
+          ariaLabel="Guardrails"
+          value={config.guardrails}
+          onChange={(value) => setField("guardrails", value)}
+          placeholder="Add rules the agent must always follow…"
+        />
       </Section>
 
       <Section label="Tone">
-        <p className="text-[15px] italic text-[#b0b0b6]">Type I.e. Casual, Detailed, Humorous, Objective, etc..</p>
+        <EditableText
+          ariaLabel="Tone"
+          italic
+          value={config.tone}
+          onChange={(value) => setField("tone", value)}
+          placeholder="Type I.e. Casual, Detailed, Humorous, Objective, etc.."
+        />
       </Section>
 
       <Section label="Knowledge">
@@ -169,11 +247,7 @@ export function WorkflowDetails() {
               <WorkdayLogo />
               <span className="text-[15px]">Workday</span>
             </div>
-            <Toggle
-              label="Workday"
-              checked={knowledge.workday}
-              onChange={(value) => setKnowledge((state) => ({ ...state, workday: value }))}
-            />
+            <Toggle label="Workday" checked={!!knowledge.workday} onChange={(value) => setKnowledge("workday", value)} />
           </div>
 
           <div className="flex items-center justify-between py-2">
@@ -185,8 +259,8 @@ export function WorkflowDetails() {
                   <span className="text-[#cfcfd4]">•</span>
                   <button
                     type="button"
-                    onClick={() => setKnowledge((state) => ({ ...state, drive: true }))}
-                    className="text-[14px] font-medium text-[#f0641e] hover:underline"
+                    onClick={() => setKnowledge("drive", true)}
+                    className="text-[14px] font-medium text-[#266df0] hover:underline"
                   >
                     Connect Account
                   </button>
@@ -195,9 +269,9 @@ export function WorkflowDetails() {
             </div>
             <Toggle
               label="Google Drive"
-              checked={knowledge.drive}
+              checked={!!knowledge.drive}
               disabled={!knowledge.drive}
-              onChange={(value) => setKnowledge((state) => ({ ...state, drive: value }))}
+              onChange={(value) => setKnowledge("drive", value)}
             />
           </div>
 
@@ -206,11 +280,7 @@ export function WorkflowDetails() {
               <SlackLogo />
               <span className="text-[15px]">Slack</span>
             </div>
-            <Toggle
-              label="Slack"
-              checked={knowledge.slack}
-              onChange={(value) => setKnowledge((state) => ({ ...state, slack: value }))}
-            />
+            <Toggle label="Slack" checked={!!knowledge.slack} onChange={(value) => setKnowledge("slack", value)} />
           </div>
 
           <button
@@ -220,6 +290,35 @@ export function WorkflowDetails() {
             <Plus className="size-4" strokeWidth={2} />
             Add connection
           </button>
+
+          <div className="mt-3 border-t border-[#ededed] pt-1">
+            <p className="py-2 font-mono text-[11px] uppercase tracking-wide text-[#a0a0a6]">Source files</p>
+            {articles.length > 0 ? (
+              articles.map((article) => (
+                <SourceFileRow
+                  key={article.id}
+                  title={article.title || "Untitled internal article"}
+                  subtitle={article.subtitle || article.type || "Internal article"}
+                  onClick={() => setEditing({ article })}
+                />
+              ))
+            ) : (
+              <p className="py-2 text-[13px] leading-5 text-[#8a8a8f]">
+                No internal articles saved yet.
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setEditing({ article: null })}
+              className="mt-1 flex items-center gap-2 py-1.5 text-[15px] text-[#6b6b70] transition-colors hover:text-[#1a1a1a]"
+            >
+              <Plus className="size-4" strokeWidth={2} />
+              New source file
+            </button>
+          </div>
+
+
         </div>
       </Section>
 
@@ -230,14 +329,19 @@ export function WorkflowDetails() {
               <Code className="size-[18px] text-[#3f3f46]" strokeWidth={1.9} />
               <span className="text-[15px]">Code Interpreter</span>
             </div>
-            <Toggle
-              label="Code Interpreter"
-              checked={tools.code}
-              onChange={(value) => setTools((state) => ({ ...state, code: value }))}
-            />
+            <Toggle label="Code Interpreter" checked={!!tools.code} onChange={(value) => setTools("code", value)} />
           </div>
         </div>
       </Section>
+
+      {editing && (
+        <ArticleEditor
+          article={editing.article}
+          onClose={() => setEditing(null)}
+          onSave={saveArticle}
+          onDelete={deleteArticle}
+        />
+      )}
     </div>
   );
 }
