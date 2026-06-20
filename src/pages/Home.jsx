@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   CalendarDays,
   CheckCircle2,
-  CircleAlert,
   Clock3,
   ListChecks,
   MailCheck,
@@ -59,51 +58,7 @@ export function Home() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-        <div className="w-[1179px] px-4 pt-4">
-          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
-            <h2 className="text-[22px] font-semibold text-[#317cff] mb-2.5">
-              Good morning, Daniel.
-            </h2>
-            <p className="max-w-[920px] text-[18px] font-medium leading-7 text-[#101112]">
-              You have <span className="text-[#317cff] font-semibold">three meetings today</span>, with <span className="text-[#317cff] font-semibold">two follow-ups slipping</span>. <span className="text-[#317cff] font-semibold">Mei Lin's portfolio review at 9:30</span> is your first priority.
-            </p>
-          </section>
-        </div>
-
         <AdvisorStatsStrip />
-
-        <div className="grid w-[1179px] grid-cols-[1fr_360px] gap-4 px-4 pt-4 pb-6">
-          <MeetingsCalendar />
-
-          <div className="flex min-w-0 flex-col gap-4">
-            <section className="rounded-[8px] border border-[#eeeeee] bg-white p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">
-                  Follow-ups
-                </h2>
-                <span className="text-[12px] leading-4 text-[#7b7b7b]">2 due</span>
-              </div>
-              <div className="space-y-3">
-                {followUps.map((item) => (
-                  <div key={item.title} className="rounded-[8px] border border-[#eeeeee] p-3">
-                    <div className="flex items-start gap-2">
-                      <CircleAlert className="mt-0.5 size-4 shrink-0 text-[#ef4444]" strokeWidth={1.9} />
-                      <div>
-                        <div className="text-[14px] font-medium leading-5 text-[#101112]">
-                          {item.title}
-                        </div>
-                        <p className="mt-1 text-[12px] leading-5 text-[#7b7b7b]">
-                          {item.reason}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-          </div>
-        </div>
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
           <TodoList
@@ -111,6 +66,10 @@ export function Home() {
             onOpenTask={setEditingTask}
             onNewTask={(status) => setEditingTask(createTodoDraft(status))}
           />
+        </div>
+
+        <div className="w-[1179px] px-4 pb-6 pt-4">
+          <MeetingsCalendar />
         </div>
       </div>
       {editingTask && (
@@ -124,17 +83,6 @@ export function Home() {
     </div>
   );
 }
-
-const followUps = [
-  {
-    title: "Quanta Health",
-    reason: "Executive sponsor has gone quiet for 21 days.",
-  },
-  {
-    title: "Beacon Studios",
-    reason: "Budget qualification is still open before next week's decision window.",
-  },
-];
 
 const initialTodoCards = [
   {

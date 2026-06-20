@@ -46,10 +46,28 @@ const ACTION_WORDS = [
   "want",
 ];
 
+const THINKING_STEPS = [
+  "Pulling from memory...",
+  "Reading internal articles...",
+  "Checking customer context...",
+  "Drafting response...",
+];
+const THINKING_STEP_MS = 950;
+const MIN_THINKING_MS = THINKING_STEPS.length * THINKING_STEP_MS;
+
 function formatFileSize(size) {
   if (!size) return "0 KB";
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function waitForThinkingSequence(startedAt) {
+  const remaining = MIN_THINKING_MS - (Date.now() - startedAt);
+  if (remaining <= 0) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, remaining);
+  });
 }
 
 function formatMemoryDate(value) {
@@ -529,9 +547,25 @@ function CustomerChatMessage({ message, onSuggestion }) {
 }
 
 function CustomerChatThinkingIndicator() {
+  const [stepIndex, setStepIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStepIndex((current) => (current + 1) % THINKING_STEPS.length);
+    }, THINKING_STEP_MS);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   return (
-    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-[#266df0]">
+    <div
+      className="flex h-8 min-w-[210px] items-center gap-2 text-[13px] font-medium leading-6 text-[#266df0]"
+      aria-live="polite"
+    >
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
+      <span key={stepIndex} className="inline-block animate-thinking-status-fade whitespace-nowrap">
+        {THINKING_STEPS[stepIndex]}
+      </span>
     </div>
   );
 }
@@ -665,19 +699,24 @@ export function CustomerWorkspace() {
 
   async function remember(entry, { notify = true } = {}) {
     setMemories((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
-    const savedEntry = await api.saveCustomerMemory(customer.id, entry);
-    setMemories((prev) => [savedEntry, ...prev.filter((item) => item.id !== savedEntry.id)]);
-    if (notify) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `memory-${savedEntry.id}`,
-          role: "assistant",
-          text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
-        },
-      ]);
+    try {
+      const savedEntry = await api.saveCustomerMemory(customer.id, entry);
+      setMemories((prev) => [savedEntry, ...prev.filter((item) => item.id !== savedEntry.id && item.id !== entry.id)]);
+      if (notify) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `memory-${savedEntry.id}`,
+            role: "assistant",
+            text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
+          },
+        ]);
+      }
+      return savedEntry;
+    } catch (error) {
+      setMemories((prev) => prev.filter((item) => item.id !== entry.id));
+      throw error;
     }
-    return savedEntry;
   }
 
   async function saveCustomerArticle(article) {
@@ -881,13 +920,16 @@ export function CustomerWorkspace() {
     if (!customer || sending) return;
 
     const prompt = "Draft a follow-up email from this customer's latest memory.";
+    const thinkingStartedAt = Date.now();
     setSending(true);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
       const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig, model: selectedModel });
+      await waitForThinkingSequence(thinkingStartedAt);
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
+      await waitForThinkingSequence(thinkingStartedAt);
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
     } finally {
       setSending(false);
@@ -899,17 +941,33 @@ export function CustomerWorkspace() {
 
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setValue("");
+    const thinkingStartedAt = Date.now();
     setSending(true);
 
     try {
       if (isArticleGenerationRequest(text, !!articleCandidate)) {
         await createArticleFromLatestMinutes(text);
+        await waitForThinkingSequence(thinkingStartedAt);
         return;
       }
 
       const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig, model: selectedModel });
-      if (reply) setMessages((prev) => [...prev, reply]);
+      await waitForThinkingSequence(thinkingStartedAt);
+      if (reply) {
+        setMessages((prev) => [...prev, reply]);
+        await remember(
+          buildMemoryEntry({
+            kind: "chat",
+            title: "Advisor chat turn",
+            body: `Advisor: ${text}\n\nAssistant: ${reply.text}`,
+            sourceName: "Customer chat",
+            sourceMeta: selectedModel,
+          }),
+          { notify: false }
+        );
+      }
     } catch {
+      await waitForThinkingSequence(thinkingStartedAt);
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
     } finally {
       setSending(false);
@@ -932,10 +990,13 @@ export function CustomerWorkspace() {
         ...prev,
         { id: `u-${Date.now()}`, role: "user", text: suggestion.label },
       ]);
+      const thinkingStartedAt = Date.now();
       setSending(true);
       try {
         await createArticleFromLatestMinutes(suggestion.instruction || "", sourceMemory);
+        await waitForThinkingSequence(thinkingStartedAt);
       } catch {
+        await waitForThinkingSequence(thinkingStartedAt);
         addAssistantNotice("I could not generate the internal article right now. Try again from the uploaded minutes.");
       } finally {
         setSending(false);

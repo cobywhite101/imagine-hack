@@ -93,6 +93,39 @@
   --color-success: var(--success);
   --color-info-foreground: var(--info-foreground);
   --color-info: var(--info);
+  --animate-grok-fade: grok-fade 240ms ease-out forwards;
+  --animate-thinking-status-fade: thinking-status-fade 950ms ease-in-out both;
+}
+
+@keyframes grok-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes thinking-status-fade {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  14%,
+  76% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-grok-fade,
+  .animate-thinking-status-fade {
+    animation-duration: 1ms;
+  }
 }
 
 @layer base {

@@ -55,6 +55,8 @@ const CUSTOMER_CHAT_STOP_WORDS = new Set([
   "what",
   "where",
 ]);
+const localCustomers = mockCustomers;
+const localCustomerMemories = mockCustomerMemories;
 
 async function fromTable(table, mockValue, orderBy) {
   if (!isSupabaseConfigured) {
@@ -86,7 +88,7 @@ async function fromTableOrMock(table, mockValue) {
 }
 
 function normalizeCustomerRecord(customer) {
-  const mockCustomer = mockCustomers.find((item) => String(item.id) === String(customer.id));
+  const mockCustomer = localCustomers.find((item) => String(item.id) === String(customer.id));
   const name = customer.name ?? customer.company ?? "Unnamed customer";
 
   return {
@@ -119,6 +121,7 @@ function normalizeCustomerRecord(customer) {
     policyCount: customer.policyCount ?? customer.policy_count ?? mockCustomer?.policyCount,
     policySummary: customer.policySummary ?? customer.policy_summary ?? mockCustomer?.policySummary ?? "",
     policies: customer.policies ?? mockCustomer?.policies ?? [],
+    familyMembers: customer.familyMembers ?? customer.family_members ?? mockCustomer?.familyMembers ?? [],
     nextRenewal: customer.nextRenewal ?? customer.next_renewal ?? mockCustomer?.nextRenewal ?? "",
     nextRenewalPolicyType:
       customer.nextRenewalPolicyType ?? customer.next_renewal_policy_type ?? mockCustomer?.nextRenewalPolicyType ?? "",
@@ -146,6 +149,8 @@ function normalizeCustomerRecord(customer) {
     clientSince: customer.clientSince ?? customer.client_since_date ?? mockCustomer?.clientSince ?? "",
     acquisitionChannel:
       customer.acquisitionChannel ?? customer.acquisition_channel ?? mockCustomer?.acquisitionChannel ?? "",
+    createdAt: customer.createdAt ?? customer.created_at ?? mockCustomer?.createdAt,
+    updatedAt: customer.updatedAt ?? customer.updated_at ?? mockCustomer?.updatedAt,
   };
 }
 
@@ -372,7 +377,7 @@ function getCustomerSearchTerms(text) {
 }
 
 function getMockCustomerMemories(customerId) {
-  return mockCustomerMemories
+  return localCustomerMemories
     .filter((memory) => String(memory.customerId) === String(customerId))
     .map(normalizeCustomerMemory);
 }
@@ -462,6 +467,50 @@ function buildLocalCustomerChatReply({ customer, text, memories }) {
       sourceLines,
       "",
       `Recommended action: ${customer.task || customer.nextAction || "confirm the next touchpoint and update the client record"}.`,
+    ].join("\n"),
+  };
+}
+
+function buildLocalHomeChatReply(text) {
+  const terms = getCustomerSearchTerms(text);
+  const matches = localCustomers
+    .map((customer) => {
+      const memories = localCustomerMemories.filter((memory) => String(memory.customerId) === String(customer.id));
+      const haystack = [
+        customer.name,
+        customer.occupation,
+        customer.task,
+        customer.preferredCommunicationChannel,
+        customer.kycStatus,
+        ...memories.flatMap((memory) => [memory.summary, memory.body]),
+      ].join(" ").toLowerCase();
+      const score = terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
+      return { customer, memories, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const selected = matches[0] ?? (localCustomers[0] ? {
+    customer: localCustomers[0],
+    memories: localCustomerMemories.filter((memory) => String(memory.customerId) === String(localCustomers[0].id)),
+    score: 0,
+  } : null);
+
+  if (!selected) return mockAssistantReply(text);
+
+  const memory = selected.memories[0];
+  const customer = selected.customer;
+  const source = memory ? `\n\nMemory source: ${memory.sourceName} (${memory.sourceMeta}).` : "";
+
+  return {
+    id: `msg-${Date.now()}`,
+    role: "assistant",
+    text: [
+      `${customer.name}: ${memory?.summary || customer.task || "No saved memory yet."}`,
+      "",
+      `Next action: ${customer.task || customer.nextAction || "Confirm the next customer touchpoint"}.`,
+      `Preferred channel: ${customer.preferredCommunicationChannel || "Not recorded"}.`,
+      source,
     ].join("\n"),
   };
 }
@@ -576,7 +625,7 @@ export const api = {
   // --- Sales workspace ---------------------------------------------------
 
   getCustomers: async () => {
-    const rows = await fromTable("customers", mockCustomers, { column: "name" });
+    const rows = await fromTable("customers", localCustomers, { column: "name" });
     return rows.map(normalizeCustomerRecord);
   },
 
@@ -585,7 +634,7 @@ export const api = {
 
     if (!isSupabaseConfigured) {
       await delay();
-      const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+      const customer = localCustomers.find((item) => String(item.id) === String(customerId));
       return customer ? normalizeCustomerRecord(customer) : null;
     }
 
@@ -645,14 +694,13 @@ export const api = {
           .select("*")
           .single();
 
+        if (error) throw error;
         if (!error && data) return normalizeCustomerMemory(data);
-      } catch {
-        /* fall through to local demo memory */
+      } catch (error) {
+        throw error;
       }
     }
 
-    const existing = getStoredCustomerMemories(customerId).filter((item) => item.id !== entry.id);
-    setStoredCustomerMemories(customerId, [entry, ...existing]);
     await delay(120);
     return entry;
   },
@@ -736,7 +784,7 @@ export const api = {
 
         if (!error) {
           if (data && data.length === 0) {
-            const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+            const customer = localCustomers.find((item) => String(item.id) === String(customerId));
             if (customer) {
               const bodyText = formatCustomerProfileToArticleBody(customer);
               const initialArticle = {
@@ -769,7 +817,7 @@ export const api = {
       }
     }
 
-    const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+    const customer = localCustomers.find((item) => String(item.id) === String(customerId));
     let localArticles = getStoredCustomerArticles(customerId);
     if (localArticles.length === 0 && customer) {
       const bodyText = formatCustomerProfileToArticleBody(customer);
@@ -1085,7 +1133,7 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
     if (apiKey) {
       let crmContext = "";
       try {
-        const customers = mockCustomers || [];
+        const customers = localCustomers || [];
         crmContext = `You are a helpful Client CRM assistant.
 Here are the clients in the workspace:
 ${customers.map((c) => `- ${c.name} (Contact: ${c.contactName || c.contact || "N/A"}, Next Step: ${c.task || c.nextAction || "None"})`).join("\n")}`;
@@ -1122,7 +1170,7 @@ Assist the user with CRM tasks, answering questions about clients, recommending 
       }
     }
     await delay(700);
-    return mockAssistantReply(text);
+    return buildLocalHomeChatReply(text);
   },
 
   // Example write — mock mode just echoes; Supabase mode persists.
