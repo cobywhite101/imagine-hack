@@ -24,21 +24,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
-
-const STATUS_STYLE = {
-  Monitoring: "bg-[#eef0f2] text-[#5b616b]",
-  "Action needed": "bg-[#fdeaea] text-[#d4351c]",
-  Scheduled: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
-  Lead: "bg-[#eef0f2] text-[#5b616b]",
-  Won: "bg-[#eef0f2] text-[#5b616b]",
-  Qualified: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
-  Proposal: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
-  Negotiation: "bg-[#fdeaea] text-[#d4351c]",
-  "Churn-risk": "bg-[#fdeaea] text-[#d4351c]",
-};
 
 const ACTION_WORDS = [
   "action",
@@ -220,12 +209,27 @@ function CustomerChatComposer({
   );
 }
 
+function renderMessageText(text) {
+  if (!text) return "";
+  const parts = text.split("**");
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return (
+        <span key={index} className="font-semibold">
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
 function CustomerChatMessage({ message }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[82%] rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[14px] font-medium leading-5 text-[#101112]">
-          {message.text}
+        <div className="max-w-[82%] rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[14px] font-normal leading-5 text-[#101112]">
+          {renderMessageText(message.text)}
         </div>
       </div>
     );
@@ -233,8 +237,8 @@ function CustomerChatMessage({ message }) {
 
   return (
     <div className="group">
-      <div className="whitespace-pre-wrap text-[14px] font-medium leading-6 text-[#101112]">
-        {message.text}
+      <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
+        {renderMessageText(message.text)}
       </div>
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
@@ -628,34 +632,31 @@ export function CustomerWorkspace() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto bg-[#fbfbfc]">
-          <div className="px-6 pb-4 pt-7">
-            <div className="flex items-start gap-4">
-              <span
-                className="flex size-16 shrink-0 items-center justify-center rounded-2xl text-xl font-semibold text-white"
-                style={{ backgroundColor: customer.accent }}
-              >
-                {customer.avatar}
-              </span>
-              <div className="min-w-0 pt-1">
-                <h2 className="truncate text-2xl font-semibold tracking-[-0.02em]">{customer.name}</h2>
-                <p className="mt-1 truncate text-sm text-muted-foreground">{customer.contact || customer.email}</p>
-                <span className={cn("mt-3 inline-flex rounded-md px-2 py-0.5 text-xs font-medium", STATUS_STYLE[customer.status])}>
-                  {customer.status}
-                </span>
-              </div>
-            </div>
-          </div>
+        <aside className="min-h-0 overflow-y-auto bg-white">
+          <WorkflowHeader />
 
-          <Tabs defaultValue="activity" className="gap-0 px-6 pb-6">
-            <TabsList variant="ghost" className="border-b bg-transparent p-0">
+          <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
+            <TabsList
+              variant="ghost"
+              className="w-full justify-start gap-6 border-b border-[#ededed] bg-transparent p-0 [&_[data-slot=tab-indicator]]:hidden"
+            >
+              <TabsTrigger
+                value="details"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
+              >
+                Details
+              </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-primary data-active:bg-transparent"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#1a1a1a] data-active:bg-transparent data-active:text-[#1a1a1a]"
               >
-                Activity log
+                Activity
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="details" className="pt-1">
+              <WorkflowDetails />
+            </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
               <div className="grid grid-cols-2 gap-2">

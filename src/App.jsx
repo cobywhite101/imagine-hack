@@ -104,20 +104,20 @@ function Sidebar() {
     <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
       <button
         type="button"
-        className="flex h-16 w-full items-center gap-2.5 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
+        className="flex h-12 w-full items-center gap-2 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
       >
-        <Avatar className="size-9 shrink-0 rounded-[10px]">
-          <AvatarFallback className="rounded-[10px] bg-[#e9a62a] text-[20px] font-medium text-white">
+        <Avatar className="size-6 shrink-0 rounded-md">
+          <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
             C
           </AvatarFallback>
         </Avatar>
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-[18px] font-semibold leading-6 tracking-[-0.02em]">
+          <span className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
             Client OS
           </span>
-          <ChevronDown className="size-3.5 shrink-0 text-[#101112]" strokeWidth={1.9} />
+          <ChevronDown className="size-3 shrink-0 text-[#101112]" strokeWidth={1.9} />
         </span>
-        <PanelLeft className="size-5 shrink-0 text-black/60" strokeWidth={1.7} />
+        <PanelLeft className="size-4 shrink-0 text-black/60" strokeWidth={1.7} />
       </button>
 
       <div className="flex h-11 w-[247px] items-center px-2.5 pb-2.5 pt-2">
