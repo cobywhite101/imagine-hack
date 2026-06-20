@@ -49,7 +49,7 @@ const ACTION_WORDS = [
 const THINKING_STEP_MS = 950;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS =
-  "h-9 flex-1 rounded-lg px-4 text-[14px] font-semibold text-[#8a7f80] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:!bg-[#fff8ff] data-[selected]:!text-[#1f1220] data-[selected]:!shadow-[0_1px_5px_rgba(60,38,55,0.12)] aria-selected:!bg-[#fff8ff] aria-selected:!text-[#1f1220] aria-selected:!shadow-[0_1px_5px_rgba(60,38,55,0.12)]";
+  "h-9 flex-1 rounded-lg px-4 text-[14px] font-semibold text-[#8a7f80] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:!bg-[#317cff] data-[selected]:!text-white aria-selected:!bg-[#317cff] aria-selected:!text-white";
 const THINKING_STEPS_BY_INTENT = {
   memory_update: [
     "Updating customer memory...",
@@ -1836,7 +1836,7 @@ function CustomerPromptStart({ customer, onSendPrompt, sending }) {
       <h2 className="max-w-[600px] text-[27px] font-semibold leading-[1.14] text-[#101112] sm:text-[31px] xl:text-[34px]">
         What would you like to know about {promptName}?
       </h2>
-      <p className="mt-4 text-[14px] font-medium leading-6 text-black/38 xl:text-[15px]">
+      <p className="mt-4 text-[14px] leading-6 text-black/38 xl:text-[15px]">
         Ask in your own words, or pick something I already remember.
       </p>
 
@@ -1858,14 +1858,14 @@ function CustomerMomentCards({ customer, onSendPrompt, sending }) {
             type="button"
             onClick={() => onSendPrompt?.(card.prompt)}
             disabled={sending}
-            className="group flex min-h-24 w-full flex-col rounded-lg border border-border bg-card px-3.5 py-3 text-left text-card-foreground transition hover:brightness-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60"
+            className="group flex min-h-24 w-full flex-col rounded-lg border border-border bg-card px-3.5 py-3 text-left text-card-foreground transition hover:brightness-90 hover:filter focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60"
           >
             <span className="flex min-w-0 items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2 font-mono text-xs font-medium uppercase leading-none text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-2 font-mono text-xs font-medium leading-none text-muted-foreground">
                 <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                 <span className="truncate">{card.label}</span>
               </span>
-              <Badge variant="secondary" size="sm" className="shrink-0 font-mono uppercase">
+              <Badge variant="secondary" size="sm" className="shrink-0 font-mono">
                 {card.badge}
               </Badge>
             </span>
@@ -1881,7 +1881,7 @@ function CustomerMomentCards({ customer, onSendPrompt, sending }) {
 // one repeated template: metric (big number), note (quoted insight), task
 // (checklist item), or countdown/default (event line).
 function MomentCardBody({ card }) {
-  const action = <span className="font-medium text-primary">{card.actionLabel} -&gt;</span>;
+  const action = <span className="font-medium text-primary">{card.actionLabel}</span>;
 
   if (card.variant === "metric") {
     return (
@@ -1890,9 +1890,8 @@ function MomentCardBody({ card }) {
           <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">{card.metric}</span>
           <span className="min-w-0 text-xs leading-4 text-muted-foreground">{card.metricCaption}</span>
         </span>
-        <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
-          {card.detail} {action}
-        </span>
+        <span className="block pt-2 text-xs leading-5 text-muted-foreground">{card.detail}</span>
+        <span className="mt-auto block pt-1 text-xs leading-5">{action}</span>
       </>
     );
   }
@@ -1901,7 +1900,7 @@ function MomentCardBody({ card }) {
     return (
       <>
         {card.title ? (
-          <span className="mt-1.5 block font-mono text-[11px] uppercase tracking-wide text-muted-foreground/80">
+          <span className="mt-1.5 block font-mono text-[11px] tracking-wide text-muted-foreground/80">
             {card.title}
           </span>
         ) : null}
@@ -1917,12 +1916,10 @@ function MomentCardBody({ card }) {
     return (
       <>
         <span className="mt-1.5 flex items-start gap-2">
-          <span className="mt-0.5 size-3.5 shrink-0 rounded-sm border border-primary/50 bg-primary/5" aria-hidden="true" />
           <span className="min-w-0 text-sm font-medium leading-5 text-foreground">{card.title}</span>
         </span>
-        <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
-          {card.detail} {action}
-        </span>
+        <span className="block pt-2 text-xs leading-5 text-muted-foreground">{card.detail}</span>
+        <span className="mt-auto block pt-1 text-xs leading-5">{action}</span>
       </>
     );
   }
@@ -1931,9 +1928,8 @@ function MomentCardBody({ card }) {
   return (
     <>
       <span className="mt-1.5 block text-sm font-medium leading-5 text-foreground">{card.title}</span>
-      <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
-        {card.detail} {action}
-      </span>
+      <span className="block pt-2 text-xs leading-5 text-muted-foreground">{card.detail}</span>
+      <span className="mt-auto block pt-1 text-xs leading-5">{action}</span>
     </>
   );
 }
@@ -1967,7 +1963,7 @@ function CustomerChatComposer({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={`Ask about ${customer.name}...`}
-          className="w-full flex-1 resize-none bg-transparent px-5 py-4 text-[15px] font-medium leading-5 text-[#101112] outline-none placeholder:text-black/45"
+          className="w-full flex-1 resize-none bg-transparent px-5 py-4 text-[15px] font-normal leading-5 text-[#101112] outline-none placeholder:text-black/45"
         />
         <div className="flex h-11 items-end justify-between gap-3 p-2">
           <div className="flex min-w-0 items-center gap-1">
@@ -2060,6 +2056,7 @@ function getRenderableMessageText(text, isAssistant = false) {
   return rawText
     .split("\n")
     .filter((line) => !MARKDOWN_DIVIDER_LINE_PATTERN.test(line))
+    .map((line) => line.replace(/^\s*>+\s?/, ""))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/^\n+|\n+$/g, "");
@@ -2241,6 +2238,7 @@ function MessageSuggestions({ suggestions = [], onSuggestion }) {
 
 function CustomerChatMessage({ message, onSuggestion }) {
   if (!message || typeof message !== "object") return null;
+  if (message.id === "seed-1") return null;
   const animateText = shouldAnimateMessageText(message);
 
   if (message.role === "user") {
@@ -3061,7 +3059,10 @@ export function CustomerWorkspace() {
         model: apiModel,
       });
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
-      if (reply) setMessages((prev) => [...prev, { createdAt: new Date().toISOString(), ...reply, animateText: true }]);
+      if (reply) {
+        reply.createdAt = new Date().toISOString();
+        setMessages((prev) => [...prev, { ...reply, animateText: true }]);
+      }
     } catch {
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -3141,7 +3142,8 @@ export function CustomerWorkspace() {
       });
       await waitForThinkingSequence(thinkingStartedAt, intent);
       if (reply) {
-        setMessages((prev) => [...prev, { createdAt: new Date().toISOString(), ...reply, animateText: true }]);
+        reply.createdAt = new Date().toISOString();
+        setMessages((prev) => [...prev, { ...reply, animateText: true }]);
         try {
           await remember(
             buildMemoryEntry({
@@ -3324,7 +3326,7 @@ export function CustomerWorkspace() {
           <Tabs defaultValue="details" className="gap-0 pb-8 pt-4">
             <TabsList
               variant="ghost"
-              className="flex w-full items-center gap-1 rounded-xl bg-[#eee4e3] p-1 [&_[data-slot=tab-indicator]]:hidden"
+              className="flex w-full items-center gap-1 rounded-xl bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"
             >
               <TabsTrigger
                 value="details"

@@ -266,15 +266,25 @@ function Sidebar({ open, onCollapse }) {
   const [recentChatsLoading, setRecentChatsLoading] = useState(true);
   const recentChatItems = useMemo(
     () =>
-      recentCustomerChats.map((chat) => ({
-        to: `/customers/${chat.customerId}`,
-        label: chat.customerName,
-        description: chat.summary,
-        avatar: chat.avatar || getInitials(chat.customerName),
-        avatarUrl: chat.avatarUrl,
-        accent: chat.accent || getCustomerAccent(chat.customerId || chat.customerName),
-        showActive: true,
-      })),
+      recentCustomerChats
+        .map((chat) => {
+          const desc = String(chat.summary || "").toLowerCase();
+          const shouldClearDesc =
+            desc.includes("thank you") ||
+            desc.includes("trusting") ||
+            desc.includes("aiman hakim") ||
+            desc.includes("summarize");
+
+          return {
+            to: `/customers/${chat.customerId}`,
+            label: chat.customerName,
+            description: shouldClearDesc ? "" : chat.summary,
+            avatar: chat.avatar || getInitials(chat.customerName),
+            avatarUrl: chat.avatarUrl,
+            accent: chat.accent || getCustomerAccent(chat.customerId || chat.customerName),
+            showActive: true,
+          };
+        }),
     [recentCustomerChats]
   );
 

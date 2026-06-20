@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ChevronUp, Code, Info, Plus } from "lucide-react";
+import { ChevronUp, Info, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
@@ -275,11 +275,9 @@ export function CustomerProfileCard({ customer }) {
 // Controlled: parent owns `config` + `articles` and persists changes.
 export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle, onDeleteArticle }) {
   const knowledge = config.knowledge ?? {};
-  const tools = config.tools ?? {};
 
   const setField = (field, value) => onChange({ ...config, [field]: value });
   const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
-  const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
   const [editing, setEditing] = useState(null); // { article } | { article: null } for new
 
   async function saveArticle(article) {
@@ -336,18 +334,6 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
           New source file
         </button>
       </div>
-
-      <Section label="Workflow capabilities">
-        <div className="-mt-1">
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2.5">
-              <Code className="size-[18px] text-[#3f3f46]" strokeWidth={1.9} />
-              <span className="text-[15px]">Code Interpreter</span>
-            </div>
-            <Toggle label="Code Interpreter" checked={!!tools.code} onChange={(value) => setTools("code", value)} />
-          </div>
-        </div>
-      </Section>
 
       {editing && (
         <ArticleEditor

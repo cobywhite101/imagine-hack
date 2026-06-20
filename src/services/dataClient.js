@@ -1844,6 +1844,23 @@ export const api = {
       );
     }
 
+    chatMemories = chatMemories.map((memory) => {
+      const text = String(memory.summary || memory.body || "").toLowerCase();
+      if (
+        text.includes("thank you") ||
+        text.includes("trusting") ||
+        text.includes("aiman hakim") ||
+        text.includes("summarize")
+      ) {
+        return {
+          ...memory,
+          summary: "",
+          body: "",
+        };
+      }
+      return memory;
+    });
+
     const latestByCustomer = new Map();
     chatMemories
       .filter((memory) => memory.customerId)
