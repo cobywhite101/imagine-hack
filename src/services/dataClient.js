@@ -32,6 +32,8 @@ const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
 const CUSTOMER_RECORD_STORAGE_KEY = "client-os-customer-overrides-v1";
 const CUSTOMER_MEMORY_STORAGE_KEY = "client-os-customer-memories-v1";
 const CUSTOMER_CHAT_UPDATED_EVENT = "client-os-customer-chat-updated";
+const ADVISOR_CHAT_STORAGE_KEY = "client-os-advisor-chat-threads-v1";
+const ADVISOR_CHAT_UPDATED_EVENT = "client-os-advisor-chat-updated";
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
@@ -983,6 +985,86 @@ function formatSidebarChatSummary(text) {
   }
 
   return truncateCustomerText(summary || "Recent AI chat", 56);
+}
+
+function normalizeAdvisorChatMessage(message = {}) {
+  return {
+    ...message,
+    id: String(message.id ?? `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    role: message.role === "user" ? "user" : "assistant",
+    text: message.text ?? message.content ?? "",
+  };
+}
+
+function getAdvisorChatTitle(messages = [], fallback = "Untitled chat") {
+  const firstUserText = messages.find((message) => message?.role === "user" && cleanCustomerText(message.text))?.text;
+  const title = truncateCustomerText(stripInlineMarkdown(firstUserText || fallback), 48);
+  return title || fallback;
+}
+
+function getAdvisorChatSummary(messages = []) {
+  const latestUseful = [...messages]
+    .reverse()
+    .find((message) => cleanCustomerText(message?.text) && message?.role !== "system");
+  return truncateCustomerText(stripInlineMarkdown(latestUseful?.text || "No messages yet"), 72);
+}
+
+function normalizeAdvisorChatThread(thread = {}) {
+  const messages = Array.isArray(thread.messages)
+    ? thread.messages.map(normalizeAdvisorChatMessage)
+    : [];
+  const createdAt = thread.createdAt ?? thread.created_at ?? new Date().toISOString();
+  const updatedAt = thread.updatedAt ?? thread.updated_at ?? createdAt;
+
+  return {
+    id: String(thread.id ?? `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    title: cleanCustomerText(thread.title) || getAdvisorChatTitle(messages),
+    summary: cleanCustomerText(thread.summary) || getAdvisorChatSummary(messages),
+    messages,
+    messageCount: Number(thread.messageCount ?? thread.message_count ?? messages.length),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function sortAdvisorChatThreads(threads = []) {
+  return [...threads].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function dispatchAdvisorChatUpdated(thread) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(ADVISOR_CHAT_UPDATED_EVENT, { detail: { threadId: thread?.id } })
+  );
+}
+
+function getStoredAdvisorChatThreads() {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(ADVISOR_CHAT_STORAGE_KEY) ?? "[]");
+    return sortAdvisorChatThreads((Array.isArray(stored) ? stored : []).map(normalizeAdvisorChatThread));
+  } catch {
+    return [];
+  }
+}
+
+function setStoredAdvisorChatThread(thread) {
+  const entry = normalizeAdvisorChatThread(thread);
+  if (typeof window === "undefined") return entry;
+
+  try {
+    const current = getStoredAdvisorChatThreads();
+    const next = sortAdvisorChatThreads([
+      entry,
+      ...current.filter((item) => String(item.id) !== String(entry.id)),
+    ]);
+    window.localStorage.setItem(ADVISOR_CHAT_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    /* local persistence is best-effort for the demo */
+  }
+
+  dispatchAdvisorChatUpdated(entry);
+  return entry;
 }
 
 function decodeBasicHtmlEntities(text) {
@@ -2460,6 +2542,92 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
     return () => {
       supabase.removeChannel(channel);
     };
+  },
+
+  getAdvisorChatThreads: async ({ limit = 20 } = {}) => {
+    if (!isSupabaseConfigured) {
+      await delay();
+      return getStoredAdvisorChatThreads().slice(0, limit);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_chat_threads")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data ?? []).map(normalizeAdvisorChatThread);
+    } catch {
+      return getStoredAdvisorChatThreads().slice(0, limit);
+    }
+  },
+
+  getAdvisorChatThread: async (threadId) => {
+    if (!threadId) return null;
+
+    if (!isSupabaseConfigured) {
+      await delay(120);
+      return getStoredAdvisorChatThreads().find((thread) => String(thread.id) === String(threadId)) ?? null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_chat_threads")
+        .select("*")
+        .eq("id", threadId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data ? normalizeAdvisorChatThread(data) : null;
+    } catch {
+      return getStoredAdvisorChatThreads().find((thread) => String(thread.id) === String(threadId)) ?? null;
+    }
+  },
+
+  saveAdvisorChatThread: async (thread) => {
+    const now = new Date().toISOString();
+    const messages = Array.isArray(thread?.messages)
+      ? thread.messages.map(normalizeAdvisorChatMessage)
+      : [];
+    const entry = normalizeAdvisorChatThread({
+      ...thread,
+      id: thread?.id ?? `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      title: thread?.title || getAdvisorChatTitle(messages),
+      summary: thread?.summary || getAdvisorChatSummary(messages),
+      messages,
+      createdAt: thread?.createdAt ?? now,
+      updatedAt: now,
+      messageCount: messages.length,
+    });
+
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      return setStoredAdvisorChatThread(entry);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_chat_threads")
+        .upsert({
+          id: entry.id,
+          title: entry.title,
+          summary: entry.summary,
+          messages: entry.messages,
+          created_at: entry.createdAt,
+          updated_at: entry.updatedAt,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      const savedThread = normalizeAdvisorChatThread(data);
+      dispatchAdvisorChatUpdated(savedThread);
+      return savedThread;
+    } catch {
+      return setStoredAdvisorChatThread(entry);
+    }
   },
 
   // Home chat seed + suggested prompts (presentational — always mock).

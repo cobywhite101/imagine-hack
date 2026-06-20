@@ -201,6 +201,18 @@ create index if not exists advisor_meetings_customer_id_idx
 create index if not exists advisor_meetings_starts_at_idx
   on advisor_meetings (starts_at);
 
+create table if not exists advisor_chat_threads (
+  id text primary key default gen_random_uuid()::text,
+  title text not null default 'Untitled chat',
+  summary text not null default '',
+  messages jsonb not null default '[]'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists advisor_chat_threads_updated_at_idx
+  on advisor_chat_threads (updated_at desc);
+
 -- Customer seed data lives in supabase/aag_clients.sql.
 -- Run supabase/aag_seed.sql after this schema to ingest the AAG dataset.
 
@@ -221,6 +233,7 @@ alter table agent_runs enable row level security;
 alter table customers enable row level security;
 alter table advisor_tasks enable row level security;
 alter table advisor_meetings enable row level security;
+alter table advisor_chat_threads enable row level security;
 
 drop policy if exists "public read" on users;
 drop policy if exists "public read" on badges;
@@ -238,6 +251,10 @@ drop policy if exists "public read" on advisor_meetings;
 drop policy if exists "public insert" on advisor_meetings;
 drop policy if exists "public update" on advisor_meetings;
 drop policy if exists "public delete" on advisor_meetings;
+drop policy if exists "public read" on advisor_chat_threads;
+drop policy if exists "public insert" on advisor_chat_threads;
+drop policy if exists "public update" on advisor_chat_threads;
+drop policy if exists "public delete" on advisor_chat_threads;
 
 create policy "public read" on users for select using (true);
 create policy "public read" on badges for select using (true);
@@ -255,3 +272,7 @@ create policy "public read" on advisor_meetings for select using (true);
 create policy "public insert" on advisor_meetings for insert with check (true);
 create policy "public update" on advisor_meetings for update using (true) with check (true);
 create policy "public delete" on advisor_meetings for delete using (true);
+create policy "public read" on advisor_chat_threads for select using (true);
+create policy "public insert" on advisor_chat_threads for insert with check (true);
+create policy "public update" on advisor_chat_threads for update using (true) with check (true);
+create policy "public delete" on advisor_chat_threads for delete using (true);

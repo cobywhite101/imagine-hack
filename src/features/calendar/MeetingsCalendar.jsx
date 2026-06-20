@@ -352,11 +352,13 @@ function EventList({ events, onSelect }) {
             {isNextUp ? (
               <button
                 type="button"
-                aria-label="Next up"
-                title="Next up"
+                aria-label="Coming up"
+                title="Coming up"
                 onClick={() => onSelect(e)}
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#101112] transition-colors hover:bg-[#2c2c2b] min-[300px]:my-auto"
-              />
+                className="inline-flex h-8 shrink-0 items-center justify-center self-start rounded-[6px] border border-[#bfd7ff] bg-[#eaf3ff] px-3 text-[12px] font-medium text-[#1f63d3] transition-colors hover:bg-[#dceaff] min-[300px]:my-auto"
+              >
+                Coming up...
+              </button>
             ) : null}
           </li>
         );

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
@@ -18,6 +19,9 @@ import {
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { ChatMessage } from "@/features/chat/ChatMessage";
 import { api } from "@/services/dataClient";
+
+const ADVISOR_CHAT_STORAGE_KEY = "client-os-advisor-chat-threads-v1";
+const ADVISOR_CHAT_UPDATED_EVENT = "client-os-advisor-chat-updated";
 
 const assistantSections = [
   {
@@ -75,18 +79,26 @@ function IconButton({ label, children, className = "" }) {
   );
 }
 
-function TopBar({ mode }) {
+function TopBar({ mode, title = "Untitled chat", onNewChat }) {
   if (mode === "chat") {
     return (
       <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
         <div className="flex items-center gap-3">
           <h1 className="text-[14px] font-semibold leading-5 tracking-[-0.14px]">
-            Untitled chat
+            {title}
           </h1>
           <Star className="size-3.5 text-black/55" strokeWidth={2} />
         </div>
         <div className="flex items-center gap-3 text-black/55">
-          <Plus className="size-4" strokeWidth={1.8} />
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="flex size-7 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.04]"
+            aria-label="Start new chat"
+            title="Start new chat"
+          >
+            <Plus className="size-4" strokeWidth={1.8} />
+          </button>
           <Clock3 className="size-4" strokeWidth={1.8} />
           <MoreVertical className="size-4" strokeWidth={1.8} />
         </div>
@@ -169,17 +181,21 @@ function Composer({ onSend, compact = false, disabled = false }) {
   );
 }
 
-function RecentChatComposer({ onSend, disabled = false }) {
+function RecentChatComposer({ onSend, disabled = false, recentThread = null, onOpenRecent }) {
   return (
     <div className="flex h-[186px] w-[716px] flex-col items-stretch justify-start">
-      <a
-        href="#chat"
+      <button
+        type="button"
+        onClick={() => recentThread && onOpenRecent?.(recentThread)}
+        disabled={!recentThread}
         className="mb-[-12px] flex h-11 w-[716px] items-center gap-2 rounded-t-xl bg-[rgba(251,251,251,0.8)] px-3 pb-5 pt-2 text-[14px] font-medium leading-5 tracking-[-0.14px] text-black/55 transition-colors"
       >
         <Clock3 className="size-3.5 shrink-0" strokeWidth={1.8} />
         <span>Recent chat · </span>
-        <span className="text-black/65">Untitled chat</span>
-      </a>
+        <span className="min-w-0 truncate text-black/65">
+          {recentThread?.title || "No saved chats yet"}
+        </span>
+      </button>
       <Composer onSend={onSend} disabled={disabled} />
     </div>
   );
@@ -281,7 +297,7 @@ function TasksBlock() {
   );
 }
 
-function HomeState({ onSend, disabled = false }) {
+function HomeState({ onSend, disabled = false, recentThread = null, onOpenRecent }) {
   return (
     <div className="h-[763px] w-[1165px] overflow-hidden overflow-y-auto text-[#101112]">
       <div className="table h-[686px] w-[1165px]">
@@ -293,7 +309,12 @@ function HomeState({ onSend, disabled = false }) {
           </div>
           <div className="flex h-[534px] w-[716px] max-w-[716px] flex-col items-stretch justify-start gap-10">
             <div className="flex h-[186px] w-[716px] flex-col items-stretch justify-start">
-              <RecentChatComposer onSend={onSend} disabled={disabled} />
+              <RecentChatComposer
+                onSend={onSend}
+                disabled={disabled}
+                recentThread={recentThread}
+                onOpenRecent={onOpenRecent}
+              />
             </div>
             <div className="flex h-[308px] w-[716px] flex-col items-stretch justify-start gap-10">
               <MeetingsBlock />
@@ -379,9 +400,91 @@ function ChatState({ messages, onSend, isThinking }) {
 }
 
 export function ChatPanel() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const threadIdParam = searchParams.get("thread");
   const [started, setStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [activeThreadId, setActiveThreadId] = useState(null);
+  const [threadTitle, setThreadTitle] = useState("Untitled chat");
+  const [recentThread, setRecentThread] = useState(null);
+
+  async function refreshRecentThread() {
+    try {
+      const threads = await api.getAdvisorChatThreads({ limit: 1 });
+      setRecentThread(threads[0] ?? null);
+    } catch {
+      setRecentThread(null);
+    }
+  }
+
+  useEffect(() => {
+    refreshRecentThread();
+
+    function onStorage(event) {
+      if (event.key === ADVISOR_CHAT_STORAGE_KEY) refreshRecentThread();
+    }
+
+    window.addEventListener(ADVISOR_CHAT_UPDATED_EVENT, refreshRecentThread);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(ADVISOR_CHAT_UPDATED_EVENT, refreshRecentThread);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!threadIdParam) return undefined;
+
+    let alive = true;
+    async function loadThread() {
+      const thread = await api.getAdvisorChatThread(threadIdParam);
+      if (!alive || !thread) return;
+      setActiveThreadId(thread.id);
+      setThreadTitle(thread.title || "Untitled chat");
+      setMessages(thread.messages ?? []);
+      setStarted(Boolean(thread.messages?.length));
+    }
+
+    loadThread();
+    return () => {
+      alive = false;
+    };
+  }, [threadIdParam]);
+
+  function startNewChat() {
+    setActiveThreadId(null);
+    setThreadTitle("Untitled chat");
+    setMessages([]);
+    setStarted(false);
+    setIsThinking(false);
+    navigate("/chat");
+  }
+
+  function openThread(thread) {
+    if (!thread?.id) return;
+    navigate(`/chat?thread=${encodeURIComponent(thread.id)}`);
+  }
+
+  async function persistThread(nextMessages) {
+    const savedThread = await api.saveAdvisorChatThread({
+      id: activeThreadId,
+      title: activeThreadId ? threadTitle : undefined,
+      messages: nextMessages,
+    });
+
+    setActiveThreadId(savedThread.id);
+    setThreadTitle(savedThread.title || "Untitled chat");
+    setRecentThread(savedThread);
+
+    if (!activeThreadId) {
+      navigate(`/chat?thread=${encodeURIComponent(savedThread.id)}`, { replace: true });
+    }
+
+    return savedThread;
+  }
 
   async function handleSend(text) {
     if (!text.trim() || isThinking) return;
@@ -394,18 +497,25 @@ export function ChatPanel() {
 
     try {
       const response = await api.sendChatMessage({ text, history: updatedMessages });
+      let finalMessages = updatedMessages;
       if (response) {
-        setMessages((prev) => [...prev, response]);
+        finalMessages = [...updatedMessages, response];
+        setMessages(finalMessages);
       }
+      await persistThread(finalMessages);
     } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `err-${Date.now()}`,
-          role: "assistant",
-          text: "Sorry, I had trouble processing that request. Please try again.",
-        },
-      ]);
+      const errorMessage = {
+        id: `err-${Date.now()}`,
+        role: "assistant",
+        text: "Sorry, I had trouble processing that request. Please try again.",
+      };
+      const finalMessages = [...updatedMessages, errorMessage];
+      setMessages(finalMessages);
+      try {
+        await persistThread(finalMessages);
+      } catch {
+        /* Thread persistence is best-effort; keep the visible response. */
+      }
     } finally {
       setIsThinking(false);
     }
@@ -413,12 +523,17 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-white font-sans text-[#101112]">
-      <TopBar mode={started ? "chat" : "home"} />
+      <TopBar mode={started ? "chat" : "home"} title={threadTitle} onNewChat={startNewChat} />
       <div className="min-h-0 flex-1 overflow-hidden">
         {started ? (
           <ChatState messages={messages} onSend={handleSend} isThinking={isThinking} />
         ) : (
-          <HomeState onSend={handleSend} disabled={isThinking} />
+          <HomeState
+            onSend={handleSend}
+            disabled={isThinking}
+            recentThread={recentThread}
+            onOpenRecent={openThread}
+          />
         )}
       </div>
       <div className="fixed bottom-3 right-4 flex h-7 w-10 items-center rounded-full bg-[#47556d] p-0.5">

@@ -139,7 +139,7 @@ export function Home() {
           </section>
         </div>
 
-        <div className="mx-auto grid w-full max-w-[1440px] gap-4 px-4 pb-6 pt-3 lg:grid-cols-[minmax(420px,1fr)_390px]">
+        <div className="mx-auto grid w-full max-w-[1440px] gap-4 px-4 pb-6 pt-3 lg:grid-cols-[minmax(420px,1fr)_340px]">
           <div className="min-w-0">
             {initialLoading ? (
               <HomeCalendarSkeleton />

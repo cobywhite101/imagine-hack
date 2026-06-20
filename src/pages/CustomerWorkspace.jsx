@@ -4,16 +4,14 @@ import {
   ArrowLeft,
   ArrowDown,
   ArrowUp,
-  Brain,
-  CalendarClock,
   CalendarDays,
   CalendarPlus,
   ChevronDown,
   CircleCheck,
-  Command,
   Copy,
   FileText,
   Mail,
+  MessageCircle,
   Paperclip,
   Plus,
   ShieldCheck,
@@ -23,7 +21,6 @@ import {
   Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ActionSearchBar } from "@/components/ui/action-search-bar";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerProfileCard, WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
@@ -87,6 +84,8 @@ const MIN_THINKING_MS_BY_INTENT = Object.fromEntries(
   Object.entries(THINKING_STEPS_BY_INTENT).map(([intent, steps]) => [intent, steps.length * THINKING_STEP_MS])
 );
 const DEFAULT_THINKING_INTENT = "general";
+const ADVISOR_CHAT_STORAGE_KEY = "client-os-advisor-chat-threads-v1";
+const ADVISOR_CHAT_UPDATED_EVENT = "client-os-advisor-chat-updated";
 
 function getThinkingStepsForIntent(intent) {
   return THINKING_STEPS_BY_INTENT[intent] ?? THINKING_STEPS_BY_INTENT.general;
@@ -1130,109 +1129,11 @@ function CustomerChatComposer({
   onModelChange,
 }) {
   const [open, setOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
 
   const modelLabels = {
     base: "Base",
     reasoning: "Reasoning",
   };
-
-  const firstName = (customer.contactName || customer.name || "this customer").split(" ")[0];
-
-  const quickActions = [
-    {
-      id: "schedule-meeting",
-      label: "Schedule a meeting",
-      description: `Suggest times & draft an invite for ${firstName}`,
-      end: "Agent",
-      icon: CalendarPlus,
-      keywords: ["meeting", "schedule", "book", "call", "appointment", "invite"],
-      onSelect: () =>
-        onSendPrompt?.(
-          `Help me schedule a meeting with ${customer.name}. Suggest a few good time slots and draft a short scheduling message I can send.`
-        ),
-    },
-    {
-      id: "draft-follow-up",
-      label: "Draft follow-up email",
-      description: "From the latest saved knowledge",
-      end: "Email",
-      icon: Mail,
-      iconClassName: "text-[#7c5cff]",
-      keywords: ["email", "follow up", "followup", "write", "message"],
-      onSelect: () => onDraft?.(),
-    },
-    {
-      id: "summarize-relationship",
-      label: "Summarize relationship",
-      description: "Key facts, open items & rapport",
-      end: "Agent",
-      icon: Sparkles,
-      iconClassName: "text-[#e0992a]",
-      keywords: ["summary", "summarize", "recap", "overview", "brief"],
-      onSelect: () =>
-        onSendPrompt?.(
-          `Summarize my relationship with ${customer.name}: key facts, last contact, open action items, and rapport notes.`
-        ),
-    },
-    {
-      id: "renewal-review",
-      label: "Prep renewal review",
-      description: "Policies due & talking points",
-      end: "Agent",
-      icon: CalendarClock,
-      iconClassName: "text-[#16a06a]",
-      keywords: ["renewal", "policy", "review", "prep", "talking points"],
-      onSelect: () =>
-        onSendPrompt?.(
-          `Prepare a renewal review for ${customer.name}: which policies are coming up for renewal, recommended talking points, and next steps.`
-        ),
-    },
-    {
-      id: "risk-check",
-      label: "Risk & coverage check",
-      description: "Gaps and protection summary",
-      end: "Agent",
-      icon: ShieldCheck,
-      iconClassName: "text-[#d9534f]",
-      keywords: ["risk", "coverage", "protection", "gaps", "insurance"],
-      onSelect: () =>
-        onSendPrompt?.(
-          `Give me a risk and coverage summary for ${customer.name}: current protection, gaps, and recommendations.`
-        ),
-    },
-    {
-      id: "upload-minutes",
-      label: "Upload meeting minutes",
-      description: "Save notes as client context",
-      end: "Upload",
-      icon: Paperclip,
-      iconClassName: "text-black/55",
-      keywords: ["upload", "minutes", "notes", "attach", "file", "transcript"],
-      onSelect: () => onAttach?.(),
-    },
-    {
-      id: "open-calendar",
-      label: "Open calendar",
-      description: "View linked meetings",
-      end: "App",
-      icon: CalendarDays,
-      iconClassName: "text-black/55",
-      keywords: ["calendar", "meetings", "agenda", "open"],
-      onSelect: () => onOpenCalendar?.(),
-    },
-  ];
-
-  useEffect(() => {
-    function handleShortcut(event) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setActionsOpen((prev) => !prev);
-      }
-    }
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
-  }, []);
 
   return (
     <div className="flex h-[140px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[24px]">
@@ -1246,31 +1147,6 @@ function CustomerChatComposer({
         />
         <div className="flex h-11 items-end justify-between gap-3 p-2">
           <div className="flex min-w-0 items-center gap-1">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setActionsOpen((prev) => !prev)}
-                className={cn(
-                  "flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 transition-colors hover:bg-black/[0.04]",
-                  actionsOpen ? "text-[#266df0] bg-[#266df0]/[0.06]" : "text-black/55"
-                )}
-              >
-                <Command className="size-3.5" strokeWidth={1.9} />
-                Actions
-              </button>
-
-              {actionsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} />
-                  <ActionSearchBar
-                    actions={quickActions}
-                    placeholder={`Help with ${firstName}...`}
-                    onClose={() => setActionsOpen(false)}
-                    className="absolute bottom-full left-0 z-50 mb-2 w-[460px] max-w-[calc(100vw-2rem)]"
-                  />
-                </>
-              )}
-            </div>
             <div className="relative">
               <button
                 type="button"
@@ -1784,6 +1660,8 @@ export function CustomerWorkspace() {
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
   const [selectedModel, setSelectedModel] = useState("base");
+  const [advisorChatThreads, setAdvisorChatThreads] = useState([]);
+  const [advisorChatsLoading, setAdvisorChatsLoading] = useState(true);
   const customer = customerOverride ?? fetchedCustomer;
   const apiModel = selectedModel === "reasoning" ? "deepseek-reasoner" : "deepseek-chat";
   const customerMeetings = useMemo(() => {
@@ -1832,6 +1710,36 @@ export function CustomerWorkspace() {
   useEffect(() => {
     if (fetchedConfig) setWorkflowConfig(fetchedConfig);
   }, [fetchedConfig]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadAdvisorChatThreads() {
+      setAdvisorChatsLoading(true);
+      try {
+        const threads = await api.getAdvisorChatThreads({ limit: 8 });
+        if (alive) setAdvisorChatThreads(threads);
+      } catch {
+        if (alive) setAdvisorChatThreads([]);
+      } finally {
+        if (alive) setAdvisorChatsLoading(false);
+      }
+    }
+
+    function onStorage(event) {
+      if (event.key === ADVISOR_CHAT_STORAGE_KEY) loadAdvisorChatThreads();
+    }
+
+    loadAdvisorChatThreads();
+    window.addEventListener(ADVISOR_CHAT_UPDATED_EVENT, loadAdvisorChatThreads);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      alive = false;
+      window.removeEventListener(ADVISOR_CHAT_UPDATED_EVENT, loadAdvisorChatThreads);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (!customer?.id || !workflowConfig || !fetchedConfig || !fetchedMemories || !fetchedArticles || !fetchedMeetings) return;
@@ -2498,16 +2406,7 @@ export function CustomerWorkspace() {
     }
   }
 
-  const activityItems = safeMemories.slice(0, 6).map((memory) => {
-    const ActivityIcon = memory.kind === "file" ? FileText : memory.kind === "meeting" ? CalendarDays : Brain;
-    const typeLabel = memory.kind === "file" ? "Document" : memory.kind === "meeting" ? "Meeting" : "Note";
-
-    return {
-      ...memory,
-      ActivityIcon,
-      typeLabel,
-    };
-  });
+  const chatHistoryItems = advisorChatThreads.slice(0, 6);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -2610,53 +2509,56 @@ export function CustomerWorkspace() {
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
-              <section aria-labelledby="recent-interactions-heading">
+              <section aria-labelledby="chat-history-heading">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 id="recent-interactions-heading" className="text-sm font-semibold">
-                    Recent interactions
+                  <h3 id="chat-history-heading" className="text-sm font-semibold">
+                    Chat history
                   </h3>
                   <span
                     className="text-xs text-muted-foreground"
-                    aria-label={`${activityItems.length} saved interactions`}
+                    aria-label={`${chatHistoryItems.length} saved advisor chats`}
                   >
-                    {activityItems.length} saved
+                    {advisorChatsLoading ? "Loading" : `${chatHistoryItems.length} saved`}
                   </span>
                 </div>
 
-                {activityItems.length ? (
-                  <ul className="space-y-3" aria-label="Saved recent interactions">
-                    {activityItems.map(({ ActivityIcon, typeLabel, ...memory }) => (
-                      <li key={memory.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
-                        <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                          <ActivityIcon className="size-4" aria-hidden="true" />
-                        </span>
-                        <div className="border-b pb-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{memory.title}</p>
-                              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                <span>{typeLabel}</span>
-                                <span aria-hidden="true"> | </span>
-                                <span>{memory.sourceName}</span>
-                                <span aria-hidden="true"> | </span>
-                                <time dateTime={memory.createdAt}>{formatMemoryDate(memory.createdAt)}</time>
-                              </p>
-                            </div>
-                            <span
-                              className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                              aria-label={`Source status: ${memory.sourceMeta || "Saved"}`}
-                            >
-                              {memory.sourceMeta || "Saved"}
+                {chatHistoryItems.length ? (
+                  <ul className="space-y-2" aria-label="Saved advisor chatbot history">
+                    {chatHistoryItems.map((thread) => (
+                      <li key={thread.id}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/chat?thread=${encodeURIComponent(thread.id)}`)}
+                          className="grid w-full grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-md py-2 text-left transition-colors hover:bg-black/[0.03] focus-visible:bg-black/[0.03] focus-visible:outline-none"
+                        >
+                          <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                            <MessageCircle className="size-4" aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 border-b pb-3 pr-1">
+                            <span className="flex items-start justify-between gap-3">
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium">{thread.title}</span>
+                                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                                  <span>{thread.messageCount} messages</span>
+                                  <span aria-hidden="true"> | </span>
+                                  <time dateTime={thread.updatedAt}>{formatMemoryDate(thread.updatedAt)}</time>
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                Open
+                              </span>
                             </span>
-                          </div>
-                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
-                        </div>
+                            <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+                              {thread.summary}
+                            </span>
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
                 ) : (
                   <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground" role="status">
-                    No client interactions saved yet.
+                    {advisorChatsLoading ? "Loading advisor chatbot history..." : "No advisor chatbot history saved yet."}
                   </div>
                 )}
               </section>
