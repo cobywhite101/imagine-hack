@@ -1,4 +1,4 @@
-# Hackathon Starter
+# Aether
 
 React + Vite + Tailwind v4 + shadcn/ui + Supabase. Runs on **mock data out of
 the box** — no backend needed — and switches to Supabase automatically once you

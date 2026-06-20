@@ -180,7 +180,7 @@ export function Expenses() {
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <ExpenseMetric label="Total Quota" value={formatRm(quota)} />
               <ExpenseMetric label="Total Expenses" value={formatRm(totalExpenses)} tone="spent" />
-              <ExpenseMetric label="Remaining Quota" value={formatRm(remainingQuota)} tone="remaining" />
+              <ExpenseMetric label="Remaining expense quota" value={formatRm(remainingQuota)} tone="remaining" />
             </div>
           </section>
 
@@ -193,7 +193,7 @@ export function Expenses() {
               <button
                 type="button"
                 onClick={() => setEditingExpense("new")}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#317cff] px-4 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-[#286de5]"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#317cff] px-4 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-[#286de5]"
               >
                 <Plus className="size-4" strokeWidth={2.2} />
                 Add New Expenses
@@ -251,7 +251,7 @@ export function Expenses() {
                 <button
                   type="button"
                   onClick={() => setEditingExpense("new")}
-                  className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#317cff] px-3 text-[13px] font-semibold text-white hover:bg-[#286de5]"
+                  className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[#317cff] px-3 text-[13px] font-semibold text-white hover:bg-[#286de5]"
                 >
                   <Plus className="size-3.5" /> Add New Expenses
                 </button>

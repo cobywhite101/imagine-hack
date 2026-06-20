@@ -1,4 +1,4 @@
-# Project: Hackathon Starter
+# Project: Aether
 
 React 19 · Vite · Tailwind v4 · shadcn/ui · Supabase · React Router 7.
 

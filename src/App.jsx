@@ -136,9 +136,8 @@ function SidebarSection({ label, items, emptyText, onSearch, searchValue }) {
       </button>
       <div
         id={contentId}
-        className={cn("relative flex-col gap-px px-2 pb-0.5", expanded ? "flex" : "hidden")}
+        className={cn("flex-col px-2 pb-0.5", expanded ? "flex" : "hidden")}
       >
-        <div className="absolute left-[27px] top-0 h-full w-px bg-[#d9dade]/60" />
         {onSearch && (
           <div className="relative z-10 ml-5 mr-2 mb-1.5 mt-0.5 flex h-6 items-center gap-1.5 rounded-md border border-[#e6e7ea] bg-white px-1.5 focus-within:border-[#317cff] focus-within:ring-1 focus-within:ring-[#317cff]">
             <Search className="size-3 text-black/40" />
@@ -151,14 +150,17 @@ function SidebarSection({ label, items, emptyText, onSearch, searchValue }) {
           </div>
         )}
         {items.length ? (
-          items.map((item) => (
-            <SidebarLink
-              key={`${label}-${item.to}-${item.label}`}
-              {...item}
-              inset
-              showActive={item.showActive ?? false}
-            />
-          ))
+          <div className="relative flex flex-col gap-px">
+            <div className="absolute bottom-3 left-[17px] top-3 w-px bg-[#d9dade]/60" />
+            {items.map((item) => (
+              <SidebarLink
+                key={`${label}-${item.to}-${item.label}`}
+                {...item}
+                inset
+                showActive={item.showActive ?? false}
+              />
+            ))}
+          </div>
         ) : (
           <div className="ml-5 w-[212px] px-2 py-1.5 text-[12px] font-medium leading-4 text-black/40">
             {emptyText}

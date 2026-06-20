@@ -625,7 +625,7 @@ function RemainingQuota() {
       className="flex shrink-0 flex-col items-end justify-center rounded-[12px] border border-[#e4ede8] bg-white px-5 py-4 text-right transition-colors hover:border-[#cfe0d6]"
     >
       <span className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-black/45">
-        Remaining Quota
+        Remaining expense quota
       </span>
       <span className="mt-1.5 whitespace-nowrap text-[28px] font-semibold tabular-nums leading-none text-[#16794c]">
         {remaining === null ? (
