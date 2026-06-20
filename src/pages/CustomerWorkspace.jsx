@@ -160,7 +160,8 @@ function truncateMeetingNotes(notes) {
 
 function sortMeetingsUpcomingFirst(meetings = []) {
   const now = Date.now();
-  const withTime = meetings.map((meeting) => ({
+  const safeMeetings = Array.isArray(meetings) ? meetings.filter(Boolean) : [];
+  const withTime = safeMeetings.map((meeting) => ({
     meeting,
     time: new Date(meeting.start).getTime(),
   }));
@@ -1511,6 +1512,8 @@ function MessageSuggestions({ suggestions = [], onSuggestion }) {
 }
 
 function CustomerChatMessage({ message, onSuggestion }) {
+  if (!message || typeof message !== "object") return null;
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -1780,6 +1783,8 @@ export function CustomerWorkspace() {
   }, [customer, fetchedMeetings]);
 
   const openMeetingInCalendar = (meeting) => navigate(`/home?meeting=${meeting.id}`);
+  const safeMemories = Array.isArray(memories) ? memories.filter(Boolean) : [];
+  const visibleMessages = Array.isArray(messages) ? messages.filter((message) => message && message.id) : [];
 
   useEffect(() => {
     setCustomerOverride(null);
@@ -2402,7 +2407,7 @@ export function CustomerWorkspace() {
     }
   }
 
-  const activityItems = memories.slice(0, 6).map((memory) => {
+  const activityItems = safeMemories.slice(0, 6).map((memory) => {
     const ActivityIcon = memory.kind === "file" ? FileText : memory.kind === "meeting" ? CalendarDays : Brain;
     const typeLabel = memory.kind === "file" ? "Document" : memory.kind === "meeting" ? "Meeting" : "Note";
 
@@ -2431,7 +2436,7 @@ export function CustomerWorkspace() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex min-h-full flex-col items-center justify-end">
               <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
-                {messages.map((message) => (
+                {visibleMessages.map((message) => (
                   <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
                 ))}
                 {sending && <CustomerChatThinkingIndicator intent={thinkingIntent} />}
@@ -2611,15 +2616,17 @@ function MeetingRow({ meeting, onOpen }) {
 }
 
 function CustomerMeetingsTab({ meetings, onOpen }) {
+  const safeMeetings = Array.isArray(meetings) ? meetings.filter(Boolean) : [];
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">Linked meetings</h3>
-        <span className="text-xs text-muted-foreground">{meetings.length} scheduled</span>
+        <span className="text-xs text-muted-foreground">{safeMeetings.length} scheduled</span>
       </div>
-      {meetings.length ? (
+      {safeMeetings.length ? (
         <div className="space-y-2">
-          {meetings.map((meeting) => (
+          {safeMeetings.map((meeting) => (
             <MeetingRow key={meeting.id} meeting={meeting} onOpen={onOpen} />
           ))}
         </div>
