@@ -6,6 +6,7 @@ import {
   ListChecks,
   MailCheck,
 } from "lucide-react";
+import { MeetingsCalendar } from "../features/calendar/MeetingsCalendar";
 
 export function Home() {
   return (
@@ -37,31 +38,7 @@ export function Home() {
         <AdvisorStatsStrip />
 
         <div className="grid w-[1179px] grid-cols-[1fr_360px] gap-4 px-4 pt-4 pb-6">
-          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">
-                Today's meetings
-              </h2>
-              <span className="text-[12px] leading-4 text-[#7b7b7b]">3 scheduled</span>
-            </div>
-            <div className="divide-y divide-[#eeeeee]">
-              {meetings.map((meeting) => (
-                <div key={meeting.time} className="grid grid-cols-[72px_1fr] gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="text-[12px] font-medium leading-4 text-[#7b7b7b]">
-                    {meeting.time}
-                  </div>
-                  <div>
-                    <div className="text-[14px] font-medium leading-5 text-[#101112]">
-                      {meeting.title}
-                    </div>
-                    <p className="mt-1 text-[12px] leading-5 text-[#7b7b7b]">
-                      {meeting.brief}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          <MeetingsCalendar />
 
           <section className="rounded-[8px] border border-[#eeeeee] bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -93,24 +70,6 @@ export function Home() {
     </div>
   );
 }
-
-const meetings = [
-  {
-    time: "9:00",
-    title: "Greenleaf renewal review",
-    brief: "Confirm beneficiary sequence, premium sensitivity, and the security review timeline.",
-  },
-  {
-    time: "11:30",
-    title: "Northwind ROI walkthrough",
-    brief: "Use saved RevOps hours as the anchor and keep migration effort explicit.",
-  },
-  {
-    time: "2:00",
-    title: "Quanta sponsor re-engagement",
-    brief: "Lead with the 21-day quiet period and propose one concrete renewal checkpoint.",
-  },
-];
 
 const followUps = [
   {
