@@ -329,22 +329,6 @@ function amendMemoryWithCorrection(memory, correction) {
   return { memory: nextMemory, changedFields };
 }
 
-function amendArticleWithCorrection(article, correction) {
-  const nextArticle = { ...article };
-  const changedFields = [];
-
-  for (const key of ["title", "subtitle", "body", "sourceName"]) {
-    const result = replaceCorrectionValue(nextArticle[key], correction.oldValue, correction.nextValue);
-    if (result.changed) {
-      nextArticle[key] = result.text;
-      changedFields.push(key);
-    }
-  }
-
-  if (!changedFields.length) return null;
-  return { article: nextArticle, changedFields };
-}
-
 function buildMemoryUpdatedMessage({ correction, memory }) {
   return {
     type: "memory-updated",
@@ -412,16 +396,13 @@ function describeMeetingUpload(fileName, body) {
   return "Advisor meeting notes";
 }
 
-function buildMeetingUploadMessage({ customer, memory, article }) {
+function buildMeetingUploadMessage({ customer, memory }) {
   const documentType = describeMeetingUpload(memory.sourceName || memory.title, memory.body || memory.summary);
   const contactName = customer.contactName || customer.name;
 
   return {
     text: [
       `I saved **${memory.sourceName || memory.title}** as meeting context for ${customer.name}.`,
-      article
-        ? `I also pushed **${article.title}** to the internal articles database and indexed it for future chatbot answers.`
-        : "I saved the meeting context, but could not generate the internal article automatically from this file.",
       "",
       `**What it is**`,
       `${documentType} with client context, commitments, and follow-up signals for ${contactName}.`,
@@ -1016,17 +997,9 @@ export function CustomerWorkspace() {
 
     const savedArticle = await api.saveCustomerArticle(customer.id, articleForSave);
     setArticles((prev) => upsertArticleList(prev, savedArticle));
-    if (savedArticle?.indexedMemory) {
-      setMemories((prev) => [
-        savedArticle.indexedMemory,
-        ...prev.filter((item) => item.id !== savedArticle.indexedMemory.id),
-      ]);
-    }
     if (notify) {
       addAssistantNotice(
-        savedArticle?.memoryIndexError
-          ? `Saved internal article: **${savedArticle.title}**\n\nPushed to the internal articles database. I could not mirror it into client memory, but this chat can still read it from Source files.`
-          : `Saved internal article: **${savedArticle.title}**\n\nPushed to the database and indexed for future chatbot answers.`
+        `Saved internal article: **${savedArticle.title}**\n\nSaved to the articles database. Customer memory was not changed.`
       );
     }
     return savedArticle;
@@ -1039,7 +1012,8 @@ export function CustomerWorkspace() {
   }
 
   async function refreshCustomerKnowledge() {
-    const [nextMemories, nextArticles] = await Promise.all([
+    const [nextCustomer, nextMemories, nextArticles] = await Promise.all([
+      api.getCustomerById(customer.id),
       api.getCustomerMemories(customer.id),
       api.getCustomerArticles(customer.id),
     ]);
@@ -1047,7 +1021,7 @@ export function CustomerWorkspace() {
     setMemories(nextMemories);
     setArticles(nextArticles);
 
-    return { memories: nextMemories, articles: nextArticles };
+    return { customer: nextCustomer ?? customer, memories: nextMemories, articles: nextArticles };
   }
 
   function getArticleIdFromMemory(memory) {
@@ -1089,54 +1063,71 @@ export function CustomerWorkspace() {
       .map((source) => ({ source, score: scoreSourceForCorrection(source, correction) }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || new Date(b.source.createdAt) - new Date(a.source.createdAt));
-    const target = rankedSources[0]?.source;
-    if (!target) return { status: "not-found", correction };
+    const target = rankedSources.find((item) => item.source.sourceType === "memory")?.source;
 
-    if (target.sourceType === "article") {
-      const amendedArticle = amendArticleWithCorrection(target.article, correction);
-      if (!amendedArticle) return { status: "not-found", correction };
+    if (target) {
+      const amendedMemory = amendMemoryWithCorrection(target.memory, correction);
+      if (!amendedMemory) return { status: "not-found", correction };
 
-      const savedArticle = await saveCustomerArticle(amendedArticle.article, { notify: false });
+      const savedMemory = await api.updateCustomerMemory(customer.id, amendedMemory.memory);
+      setMemories((prev) => {
+        if (!prev.some((memory) => memory.id === savedMemory.id)) return [savedMemory, ...prev];
+        return prev.map((memory) => (memory.id === savedMemory.id ? savedMemory : memory));
+      });
+
       return {
         status: "updated",
         correction,
-        memory: {
-          title: savedArticle.title,
-        },
-        changedFields: amendedArticle.changedFields,
+        memory: savedMemory,
+        changedFields: amendedMemory.changedFields,
       };
     }
 
-    const amendedMemory = amendMemoryWithCorrection(target.memory, correction);
-    if (!amendedMemory) return { status: "not-found", correction };
+    const articleEvidence = rankedSources.find((item) => item.source.sourceType === "article")?.source;
+    if (!articleEvidence) return { status: "not-found", correction };
 
-    const savedMemory = await api.updateCustomerMemory(customer.id, amendedMemory.memory);
-    setMemories((prev) => {
-      if (!prev.some((memory) => memory.id === savedMemory.id)) return [savedMemory, ...prev];
-      return prev.map((memory) => (memory.id === savedMemory.id ? savedMemory : memory));
-    });
+    const savedMemory = await remember(
+      buildMemoryEntry({
+        kind: "profile",
+        title: `${correction.fieldLabel} correction`,
+        body: [
+          `${correction.fieldLabel} was corrected by the advisor.`,
+          `Previous value found in article "${articleEvidence.title}": ${correction.oldValue}.`,
+          `Correct value: ${correction.nextValue}.`,
+        ].join("\n"),
+        sourceName: "Advisor chat correction",
+        sourceMeta: `Article evidence: ${articleEvidence.title || articleEvidence.id || "saved article"}`,
+      }),
+      { notify: false }
+    );
 
     return {
       status: "updated",
       correction,
       memory: savedMemory,
-      changedFields: amendedMemory.changedFields,
+      changedFields: ["body"],
     };
   }
 
-  function getArticleSourceMemory() {
+  function getArticleSourceMemory(sourceMemories = memories) {
     if (articleCandidate) {
-      return memories.find((memory) => memory.id === articleCandidate.id) ?? articleCandidate;
+      return sourceMemories.find((memory) => memory.id === articleCandidate.id) ?? articleCandidate;
     }
 
-    return memories.find((memory) => {
+    return sourceMemories.find((memory) => {
       const hasSourceText = memory.body || memory.summary;
       return hasSourceText && ["meeting", "file", "voice", "note"].includes(memory.kind);
     });
   }
 
-  async function createArticleFromLatestMinutes(instruction = "", sourceOverride = null, { notify = true } = {}) {
-    const sourceMemory = sourceOverride ?? getArticleSourceMemory();
+  async function createArticleFromLatestMinutes(
+    instruction = "",
+    sourceOverride = null,
+    { notify = true, customerOverride = null, memoriesOverride = null } = {}
+  ) {
+    const activeCustomer = customerOverride ?? customer;
+    const activeMemories = memoriesOverride ?? memories;
+    const sourceMemory = sourceOverride ?? getArticleSourceMemory(activeMemories);
     if (!sourceMemory) {
       if (notify) {
         addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
@@ -1145,9 +1136,9 @@ export function CustomerWorkspace() {
     }
 
     const generatedArticle = await api.generateCustomerArticle({
-      customer,
+      customer: activeCustomer,
       memory: sourceMemory,
-      memories,
+      memories: activeMemories,
       workflowConfig,
       model: selectedModel,
       instruction,
@@ -1164,7 +1155,7 @@ export function CustomerWorkspace() {
     setArticleCandidate(null);
     if (notify) {
       addAssistantNotice(
-        `Created internal article: **${savedArticle.title}**\n\nPushed to the database, saved under Details > Knowledge > Source files, and indexed for future chatbot answers.`
+        `Created internal article: **${savedArticle.title}**\n\nSaved under Details > Knowledge > Source files. Customer memory was not changed.`
       );
     }
     return savedArticle;
@@ -1209,12 +1200,7 @@ export function CustomerWorkspace() {
         );
         if (meetingMinutes) {
           setArticleCandidate(savedEntry);
-          const savedArticle = await createArticleFromLatestMinutes(
-            "Turn these uploaded meeting minutes into an internal article for the advisor knowledge base.",
-            savedEntry,
-            { notify: false }
-          );
-          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry, article: savedArticle }));
+          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry }));
         }
       }
     } finally {
@@ -1321,7 +1307,7 @@ export function CustomerWorkspace() {
     try {
       const latestKnowledge = await refreshCustomerKnowledge();
       const reply = await api.draftCustomerFollowUp({
-        customer,
+        customer: latestKnowledge.customer,
         memories: latestKnowledge.memories,
         articles: latestKnowledge.articles,
         workflowConfig,
@@ -1364,21 +1350,25 @@ export function CustomerWorkspace() {
           addAssistantNotice(buildMemoryUpdatedMessage(updateResult));
         } else {
           addAssistantNotice(
-            `I could not find "${memoryUpdateRequest.oldValue}" in ${customer.name}'s saved memories or articles, so I did not change anything.`
+            `I could not find "${memoryUpdateRequest.oldValue}" in ${latestKnowledge.customer.name}'s saved memories or articles, so I did not change anything.`
           );
         }
         return;
       }
 
       if (isArticleGenerationRequest(text, !!articleCandidate)) {
-        await createArticleFromLatestMinutes(text);
+        const latestKnowledge = await refreshCustomerKnowledge();
+        await createArticleFromLatestMinutes(text, null, {
+          customerOverride: latestKnowledge.customer,
+          memoriesOverride: latestKnowledge.memories,
+        });
         await waitForThinkingSequence(thinkingStartedAt, intent);
         return;
       }
 
       const latestKnowledge = await refreshCustomerKnowledge();
       const reply = await api.sendCustomerMessage({
-        customer,
+        customer: latestKnowledge.customer,
         text,
         memories: latestKnowledge.memories,
         articles: latestKnowledge.articles,
@@ -1424,10 +1414,6 @@ export function CustomerWorkspace() {
     if (!suggestion || sending) return;
 
     if (suggestion.action === "create-article") {
-      const sourceMemory =
-        memories.find((memory) => memory.id === suggestion.memoryId) ||
-        (articleCandidate?.id === suggestion.memoryId ? articleCandidate : null);
-
       setMessages((prev) => [
         ...prev,
         { id: `u-${Date.now()}`, role: "user", text: suggestion.label },
@@ -1436,7 +1422,14 @@ export function CustomerWorkspace() {
       setSending(true);
       setThinkingIntent("article_generation");
       try {
-        await createArticleFromLatestMinutes(suggestion.instruction || "", sourceMemory);
+        const latestKnowledge = await refreshCustomerKnowledge();
+        const sourceMemory =
+          latestKnowledge.memories.find((memory) => memory.id === suggestion.memoryId) ||
+          (articleCandidate?.id === suggestion.memoryId ? articleCandidate : null);
+        await createArticleFromLatestMinutes(suggestion.instruction || "", sourceMemory, {
+          customerOverride: latestKnowledge.customer,
+          memoriesOverride: latestKnowledge.memories,
+        });
         await waitForThinkingSequence(thinkingStartedAt, "article_generation");
       } catch {
         await waitForThinkingSequence(thinkingStartedAt, "article_generation");

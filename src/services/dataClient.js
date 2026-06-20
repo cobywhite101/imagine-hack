@@ -29,7 +29,6 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
-const useSupabaseCustomerMemory = isSupabaseConfigured;
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
@@ -543,6 +542,51 @@ function normalizeCustomerRecord(customer) {
   };
 }
 
+function humanizeCustomerRecordKey(key) {
+  return String(key)
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\b(Of|At|Id|Kyc)\b/g, (word) => {
+      if (word === "Id") return "ID";
+      if (word === "Kyc") return "KYC";
+      return word.toLowerCase();
+    });
+}
+
+function formatCustomerRecordValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (Array.isArray(value)) {
+    if (!value.length) return "";
+    return value
+      .map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)))
+      .join("; ");
+  }
+  if (typeof value === "object") {
+    if (!Object.keys(value).length) return "";
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function formatCustomerRecordForPrompt(customer) {
+  const seenLabels = new Set();
+  const lines = Object.entries(customer ?? {})
+    .map(([key, value]) => {
+      const label = humanizeCustomerRecordKey(key);
+      const normalizedLabel = label.toLowerCase();
+      const formattedValue = formatCustomerRecordValue(value);
+      if (!formattedValue || seenLabels.has(normalizedLabel)) return null;
+      seenLabels.add(normalizedLabel);
+      return `- ${label}: ${formattedValue}`;
+    })
+    .filter(Boolean);
+
+  return lines.length ? lines.join("\n") : "- No populated client record fields.";
+}
+
 function normalizeWorkflowConfig(config) {
   return {
     instructions: config?.instructions ?? mockWorkflowConfig.instructions,
@@ -667,6 +711,14 @@ function getArticleMemoryId(articleId) {
   return `article-memory-${articleId}`;
 }
 
+function isArticleBackedMemory(memory) {
+  return (
+    memory?.kind === "article" ||
+    String(memory?.id ?? "").startsWith("article-memory-") ||
+    /\barticle:[^|\s]+/i.test(String(memory?.sourceMeta ?? memory?.source_meta ?? ""))
+  );
+}
+
 function customerArticleToMemory(article) {
   const entry = normalizeCustomerArticle(article);
   if (!entry.id) return null;
@@ -705,7 +757,9 @@ function buildCustomerKnowledgeSources(memories = [], articles = []) {
   const articleSources = articles
     .map(customerArticleToMemory)
     .filter(Boolean);
-  const memorySources = memories.map(normalizeCustomerMemory);
+  const memorySources = memories
+    .map(normalizeCustomerMemory)
+    .filter((memory) => !isArticleBackedMemory(memory) && memory.kind !== "chat");
 
   return dedupeCustomerKnowledgeSources([...memorySources, ...articleSources]);
 }
@@ -1036,70 +1090,6 @@ async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat
   }
 }
 
-async function syncCustomerArticleMemory(customerId, article) {
-  const entry = customerArticleToMemory({ ...article, customerId });
-  if (!entry) return null;
-
-  if (!useSupabaseCustomerMemory) {
-    throw new Error("Article memory indexing requires Supabase configuration.");
-  }
-
-  const row = {
-    id: entry.id,
-    customer_id: customerId,
-    kind: entry.kind,
-    title: entry.title,
-    summary: entry.summary,
-    body: entry.body,
-    source_name: entry.sourceName,
-    source_meta: entry.sourceMeta,
-    created_at: entry.createdAt,
-  };
-
-  try {
-    const { data, error } = await supabase
-      .from("customer_memories")
-      .upsert(row, { onConflict: "id" })
-      .select("*")
-      .single();
-
-    if (!error && data) return normalizeCustomerMemory(data);
-    if (error) throw error;
-  } catch {
-    const fallbackRow = {
-      ...row,
-      id: `${entry.id}-${Date.now()}`,
-      created_at: new Date().toISOString(),
-    };
-    const { data, error } = await supabase
-      .from("customer_memories")
-      .insert(fallbackRow)
-      .select("*")
-      .single();
-
-    if (error) throw error;
-    return normalizeCustomerMemory(data);
-  }
-
-  return entry;
-}
-
-async function deleteCustomerArticleMemory(customerId, articleId) {
-  if (!useSupabaseCustomerMemory || !customerId || !articleId) return false;
-
-  try {
-    const { error } = await supabase
-      .from("customer_memories")
-      .delete()
-      .eq("customer_id", customerId)
-      .eq("id", getArticleMemoryId(articleId));
-
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -1187,7 +1177,9 @@ export const api = {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return (data ?? []).map(normalizeCustomerMemory);
+      return (data ?? [])
+        .map(normalizeCustomerMemory)
+        .filter((memory) => !isArticleBackedMemory(memory));
     } catch (error) {
       throw error;
     }
@@ -1259,72 +1251,6 @@ export const api = {
     if (!customerId) return [];
     requireSupabase("Customer articles");
 
-    const formatCustomerProfileToArticleBody = (customer) => {
-      if (!customer) return "";
-      const lines = [];
-      lines.push(`# Client Profile: ${customer.name}`);
-      lines.push("");
-
-      lines.push("## Demographics");
-      if (customer.dateOfBirth) {
-        const dob = new Date(customer.dateOfBirth);
-        const age = new Date().getFullYear() - dob.getFullYear();
-        lines.push(`- **Age**: ${age}`);
-      }
-      if (customer.maritalStatus) lines.push(`- **Marital Status**: ${customer.maritalStatus}`);
-      if (customer.occupation) lines.push(`- **Occupation**: ${customer.occupation}`);
-      lines.push("");
-
-      lines.push("## Financial Profile");
-      if (customer.annualIncomeBracket) lines.push(`- **Income**: ${customer.annualIncomeBracket}`);
-      if (customer.netWorthBracket) lines.push(`- **Net Worth**: ${customer.netWorthBracket}`);
-      if (customer.riskTolerance) lines.push(`- **Risk Tolerance**: ${customer.riskTolerance}`);
-      if (customer.investmentHorizonYears) lines.push(`- **Investment Horizon**: ${customer.investmentHorizonYears} years`);
-      lines.push("");
-
-      lines.push("## Policies");
-      const policies = Array.isArray(customer.policies) ? customer.policies : [];
-      if (policies.length > 0) {
-        policies.forEach((policy) => {
-          const type = policy.policy_type ?? policy.policyType ?? policy.type ?? "Policy";
-          const sum = policy.sum_assured ?? policy.sumAssured;
-          const renewal = policy.renewal_date ?? policy.renewalDate;
-          lines.push(`- **${type}**: Sum Assured: RM${sum ? Number(sum).toLocaleString() : "—"}, Renewal: ${renewal ?? "—"}`);
-        });
-      } else {
-        lines.push("No active policies recorded.");
-      }
-      lines.push("");
-
-      lines.push("## Life Events");
-      const lifeEvents = Array.isArray(customer.lifeEvents) ? customer.lifeEvents : [];
-      if (lifeEvents.length > 0) {
-        lifeEvents.forEach((event) => {
-          const title = event.description ?? event.title ?? event.event;
-          const target = event.target_date ?? event.expectedDate ?? event.expected_date;
-          lines.push(`- **${title}**: Expected: ${target ? new Date(target).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}`);
-        });
-      } else {
-        lines.push("No upcoming life events recorded.");
-      }
-      lines.push("");
-
-      lines.push("## Relationship & Preferences");
-      if (customer.rapportNotes) lines.push(`- **Rapport Notes**: ${customer.rapportNotes}`);
-      if (customer.preferredCommunicationChannel) lines.push(`- **Preferred Channel**: ${customer.preferredCommunicationChannel}`);
-      if (customer.referredBy) lines.push(`- **Referred By**: ${customer.referredBy}`);
-      if (customer.businessOwnership) lines.push("- **Business Owner**: Yes");
-      lines.push("");
-
-      lines.push("## Compliance");
-      if (customer.kycStatus) lines.push(`- **KYC Status**: ${customer.kycStatus}`);
-      if (customer.lastFactFindDate) lines.push(`- **Last Fact-Find**: ${customer.lastFactFindDate}`);
-      if (customer.hasWill != null) lines.push(`- **Will in Place**: ${customer.hasWill ? "Yes" : "No"}`);
-      if (customer.estatePlanStatus) lines.push(`- **Estate Plan Status**: ${customer.estatePlanStatus}`);
-
-      return lines.join("\n");
-    };
-
     try {
       const { data, error } = await supabase
         .from("customer_articles")
@@ -1333,40 +1259,6 @@ export const api = {
         .order("updated_at", { ascending: false });
 
       if (error) throw error;
-      if (data && data.length === 0) {
-        const { data: customerRow, error: customerError } = await supabase
-          .from("customers")
-          .select("*")
-          .eq("id", customerId)
-          .maybeSingle();
-        if (customerError) throw customerError;
-
-        const customer = customerRow ? normalizeCustomerRecord(customerRow) : null;
-        if (customer) {
-          const bodyText = formatCustomerProfileToArticleBody(customer);
-          const initialArticle = {
-            id: `profile-article-${customerId}`,
-            customer_id: customerId,
-            title: `${customer.name}'s Profile`,
-            subtitle: "Client Profile & Financial Summary",
-            article_type: "Internal article",
-            body: bodyText,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          await supabase.from("customer_articles").insert({
-            id: initialArticle.id,
-            customer_id: customerId,
-            title: initialArticle.title,
-            subtitle: initialArticle.subtitle,
-            article_type: initialArticle.article_type,
-            body: initialArticle.body,
-            created_at: initialArticle.created_at,
-            updated_at: initialArticle.updated_at,
-          });
-          return [normalizeCustomerArticle(initialArticle)];
-        }
-      }
       return (data ?? []).map(normalizeCustomerArticle);
     } catch (error) {
       throw error;
@@ -1405,13 +1297,7 @@ export const api = {
 
       if (error) throw error;
       if (data) {
-        const savedArticle = normalizeCustomerArticle(data);
-        try {
-          const indexedMemory = await syncCustomerArticleMemory(customerId, savedArticle);
-          return { ...savedArticle, indexedMemory };
-        } catch (memoryError) {
-          return { ...savedArticle, memoryIndexError: memoryError };
-        }
+        return normalizeCustomerArticle(data);
       }
     } catch (error) {
       throw error;
@@ -1432,7 +1318,6 @@ export const api = {
         .eq("customer_id", customerId);
 
       if (error) throw error;
-      await deleteCustomerArticleMemory(customerId, articleId);
       return true;
     } catch (error) {
       throw error;
@@ -1483,9 +1368,29 @@ export const api = {
   sendCustomerMessage: async ({ customer, text, memories = [], articles = [], history = [], workflowConfig = null, model = "deepseek-chat" }) => {
     if (!customer || !text?.trim()) return null;
 
+    let activeCustomer = customer;
+    let activeMemories = memories;
+    let activeArticles = articles;
+
+    if (isSupabaseConfigured && customer.id) {
+      try {
+        const [freshCustomer, freshMemories, freshArticles] = await Promise.all([
+          api.getCustomerById(customer.id),
+          api.getCustomerMemories(customer.id),
+          api.getCustomerArticles(customer.id),
+        ]);
+        activeCustomer = freshCustomer ?? activeCustomer;
+        activeMemories = freshMemories;
+        activeArticles = freshArticles;
+      } catch (error) {
+        throw error;
+      }
+    }
+
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
-    const knowledgeSources = buildCustomerKnowledgeSources(memories, articles);
+    const knowledgeSources = buildCustomerKnowledgeSources(activeMemories, activeArticles);
     if (apiKey) {
+      const customerRecordString = formatCustomerRecordForPrompt(activeCustomer);
       const memoryString = knowledgeSources.length > 0
         ? knowledgeSources
             .map((m, idx) => {
@@ -1515,18 +1420,13 @@ ${cfg.instructions ? `\nWorkflow brief:\n${cfg.instructions}` : ""}${cfg.notes ?
       const customerSystem = `You are a helpful, precise, and professional Client CRM Companion (Client OS Advisor).
 You are helping the advisor work from a client record.${workflowBlock}
 
-Current Client Context:
-- Name: ${customer.name}
-- Email: ${customer.email || "N/A"}
-- Contact Person: ${customer.contactName || customer.name}
-- Next Action/Task: ${customer.task || customer.nextAction || "None"}
-- KYC Status: ${customer.kycStatus || "N/A"}
-- Client Since: ${customer.clientSince || "N/A"}
+Current Client Record:
+${customerRecordString}
 
 Saved Customer Knowledge Sources (client memories, meeting summaries, files, and saved articles):
 ${memoryString}
 
-Respond to the Advisor's inquiry. Use both client memories and saved articles when they are relevant. Do not default to articles; prefer the most recent directly relevant source, whether it is a memory, meeting note, file, or article. If sources conflict, say which source/date you used. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
+Respond to the Advisor's inquiry. Use the current client record, client memories, and saved articles when they are relevant. Treat Current Client Record as canonical for structured CRM fields such as date of birth, KYC status, policy dates, contact preferences, and renewal dates. Never say a structured field is missing if Current Client Record includes a value for it. Do not default to articles; prefer the most recent directly relevant source, whether it is a client record field, memory, meeting note, file, or article. If sources conflict, say which source/date you used. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${activeCustomer.name}:" or similar boilerplate unless explicitly asked.`;
 
       const chatHistory = [...history];
       if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
@@ -1546,7 +1446,7 @@ Respond to the Advisor's inquiry. Use both client memories and saved articles wh
     if (useSupabaseCustomerChat) {
       try {
         const { data, error } = await supabase.functions.invoke("customer-chat", {
-          body: { customer, text, memories, articles },
+          body: { customer: activeCustomer, text, memories: activeMemories, articles: activeArticles },
         });
         if (!error && data?.message) return data.message;
         if (!error && data?.text) return data;
@@ -1556,7 +1456,7 @@ Respond to the Advisor's inquiry. Use both client memories and saved articles wh
     }
 
     await delay(450);
-    return buildLocalCustomerChatReply({ customer, text, memories, articles });
+    return buildLocalCustomerChatReply({ customer: activeCustomer, text, memories: activeMemories, articles: activeArticles });
   },
 
   draftCustomerFollowUp: async ({ customer, memories = [], articles = [], workflowConfig = null, model }) => {

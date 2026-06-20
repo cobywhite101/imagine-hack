@@ -305,9 +305,9 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
 
 function BoardHeader({ group, count }) {
   return (
-    <div className={`mr-3 flex h-10 w-[276px] shrink-0 items-center rounded-t-[10px] px-2 text-[14px] ${group.background}`}>
+    <div className={`mr-3 flex h-10 w-[276px] shrink-0 items-center rounded-t-[10px] px-2 text-[13px] ${group.background}`}>
       <div className="flex items-center rounded-[6px] p-[3px]">
-        <div className={`inline-flex h-5 max-w-full items-center rounded-[10px] px-[7px] pr-[9px] text-[14px] leading-[20px] ${group.headerBg} ${group.text}`}>
+        <div className={`inline-flex h-5 max-w-full items-center rounded-[10px] px-[7px] pr-[9px] text-[13px] leading-[20px] ${group.headerBg} ${group.text}`}>
           <span className={`mr-[5px] size-2 shrink-0 rounded-full ${group.accent}`} />
           <span className="truncate whitespace-nowrap">{group.status}</span>
         </div>
@@ -331,7 +331,7 @@ function BoardGroup({ group, cards, onOpenTask, onNewTask }) {
         type="button"
         onClick={() => onNewTask(group.status)}
         className={[
-          "inline-flex h-10 w-[260px] items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[15px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
+          "inline-flex h-10 w-[260px] items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[13px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
           group.addColor,
           group.addShadow,
         ].join(" ")}
@@ -361,7 +361,7 @@ function TodoCard({ card, onClick }) {
       <div className="min-w-0 flex-1">
         <div
           className={[
-            "truncate text-[16px] font-semibold leading-6",
+            "truncate text-[14px] font-semibold leading-5",
             card.muted ? "text-[#a19e99]" : "text-[#2c2c2b]",
           ].join(" ")}
         >
@@ -370,12 +370,12 @@ function TodoCard({ card, onClick }) {
         {hasTags ? (
           <div className="mt-2.5 flex flex-col items-start gap-1">
             {card.priority ? (
-              <span className="rounded-[4px] bg-[rgba(3,87,31,0.11)] px-1.5 py-0.5 text-[13px] font-medium leading-[18px] text-[#2a533c]">
+              <span className="rounded-[4px] bg-[rgba(3,87,31,0.11)] px-1.5 py-0.5 text-[12px] font-medium leading-4 text-[#2a533c]">
                 {card.priority}
               </span>
             ) : null}
             {card.category ? (
-              <span className="rounded-[4px] bg-[rgba(3,87,31,0.11)] px-1.5 py-0.5 text-[13px] font-medium leading-[18px] text-[#2a533c]">
+              <span className="rounded-[4px] bg-[rgba(3,87,31,0.11)] px-1.5 py-0.5 text-[12px] font-medium leading-4 text-[#2a533c]">
                 <span className="mr-1">💬</span>
                 {card.category}
               </span>
