@@ -173,7 +173,6 @@ function formatMemoryDate(value) {
   }).format(new Date(value));
 }
 
-// --- Meeting display helpers (mirror the calendar's local-string format) ---
 function formatMeetingDate(iso) {
   const [y, m, d] = String(iso ?? "").slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return "";
@@ -192,8 +191,14 @@ function formatMeetingTime(meeting) {
   return `${hr}:${String(min).padStart(2, "0")} ${ampm}`;
 }
 
-// Upcoming meetings ascending, then past meetings most-recent first.
-function sortMeetingsUpcomingFirst(meetings) {
+function truncateMeetingNotes(notes) {
+  const text = String(notes ?? "").trim();
+  if (text.length <= 120) return text;
+  return `${text.slice(0, 120).replace(/\s+\S*$/, "")}...`;
+}
+
+// Upcoming meetings (start >= now) ascending, then past meetings descending.
+function sortMeetingsUpcomingFirst(meetings = []) {
   const now = Date.now();
   const withTime = meetings.map((meeting) => ({
     meeting,
@@ -1719,6 +1724,7 @@ export function CustomerWorkspace() {
 }
 
 function MeetingRow({ meeting, onOpen }) {
+  const notes = truncateMeetingNotes(meeting.notes);
   return (
     <button
       type="button"
@@ -1736,8 +1742,8 @@ function MeetingRow({ meeting, onOpen }) {
         <span>{formatMeetingDate(meeting.start)}</span>
         {meeting.location ? <span className="truncate">| {meeting.location}</span> : null}
       </div>
-      {meeting.notes ? (
-        <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{meeting.notes}</p>
+      {notes ? (
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{notes}</p>
       ) : null}
     </button>
   );
