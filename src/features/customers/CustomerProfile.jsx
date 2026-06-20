@@ -183,7 +183,7 @@ export function CustomerProfile({ customer }) {
   const hasCompliance = customer.kycStatus || customer.lastFactFindDate || customer.hasWill != null || customer.estatePlanStatus;
 
   return (
-    <div className="border-b border-[#ededed] px-6 pb-2 pt-5">
+    <div className="pb-2">
       <div className="flex items-start gap-2.5">
         {customer.avatar && (
           <span

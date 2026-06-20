@@ -6,12 +6,12 @@ import {
   ArrowUp,
   Brain,
   CalendarDays,
+  ChevronDown,
   Copy,
   FileText,
   Mail,
   Mic,
   Paperclip,
-  Phone,
   Plus,
   RotateCcw,
   Sparkles,
@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerProfile } from "@/features/customers/CustomerProfile";
-import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
+import { WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
@@ -66,31 +66,7 @@ function cleanText(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
 }
 
-function compactPhoneNumber(value) {
-  return String(value ?? "").replace(/[^\d+]/g, "");
-}
 
-function formatCalendarDate(date) {
-  return date.toISOString().replace(/[-:]|\.\d{3}/g, "");
-}
-
-function getScheduleUrl(customer) {
-  const start = new Date();
-  start.setDate(start.getDate() + 1);
-  start.setHours(9, 0, 0, 0);
-  const end = new Date(start);
-  end.setMinutes(end.getMinutes() + 30);
-
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: `${customer.name} follow-up`,
-    details: `Next step: ${customer.task || customer.nextAction || "Confirm next action"}`,
-    dates: `${formatCalendarDate(start)}/${formatCalendarDate(end)}`,
-  });
-
-  if (customer.email?.includes("@")) params.set("add", customer.email);
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
 
 function summarizeText(rawText, fallback) {
   const text = cleanText(rawText);
@@ -155,7 +131,16 @@ function CustomerChatComposer({
   onAttach,
   onDraft,
   sending,
+  model,
+  onModelChange,
 }) {
+  const [open, setOpen] = useState(false);
+
+  const modelLabels = {
+    "deepseek-chat": "DeepSeek Chat",
+    "deepseek-reasoner": "DeepSeek Reasoner",
+  };
+
   return (
     <div className="flex h-[126px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[10px]">
       <div className="relative flex h-[116px] w-full flex-col rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] focus-within:shadow-[inset_0_0_0_1px_rgba(38,109,240,0.28),0_8px_24px_rgba(28,40,64,0.08)]">
@@ -168,12 +153,50 @@ function CustomerChatComposer({
         />
         <div className="flex h-11 items-end justify-between gap-3 p-2">
           <div className="flex min-w-0 items-center gap-1">
-            <button
-              type="button"
-              className="flex h-7 items-center justify-center rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55"
-            >
-              Auto
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                className="flex h-7 items-center gap-1 rounded-lg px-2 text-[13px] font-medium leading-5 text-[#266df0] hover:bg-black/[0.04] transition-colors"
+              >
+                <span>{modelLabels[model] || "Auto"}</span>
+                <ChevronDown className="size-3 text-[#266df0]/70" />
+              </button>
+
+              {open && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                  <div className="absolute bottom-full left-0 mb-1.5 z-50 w-48 rounded-lg bg-white p-1 shadow-[0_4px_12px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.05)] flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onModelChange("deepseek-chat");
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
+                        model === "deepseek-chat" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                      )}
+                    >
+                      DeepSeek Chat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onModelChange("deepseek-reasoner");
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors hover:bg-black/[0.04]",
+                        model === "deepseek-reasoner" ? "text-[#266df0] bg-[#266df0]/[0.04]" : "text-black/75"
+                      )}
+                    >
+                      DeepSeek Reasoner
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <CustomerChatIconButton label="Attach file" onClick={onAttach}>
               <Plus className="size-3.5" strokeWidth={1.9} />
             </CustomerChatIconButton>
@@ -210,18 +233,42 @@ function CustomerChatComposer({
   );
 }
 
-function renderMessageText(text) {
+function renderMessageText(text, isAssistant = false) {
   if (!text) return "";
   const parts = text.split("**");
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
+  let wordIndex = 0;
+
+  return parts.flatMap((part, partIndex) => {
+    const isBold = partIndex % 2 === 1;
+    const tokens = part.split(/(\s+)/);
+
+    return tokens.map((token, tokenIndex) => {
+      if (!token) return null;
+      if (/^\s+$/.test(token)) {
+        return <span key={`space-${partIndex}-${tokenIndex}`}>{token}</span>;
+      }
+
+      const currentWordIndex = wordIndex;
+      wordIndex += 1;
+
+      const style = isAssistant
+        ? {
+            animationDelay: `${currentWordIndex * 15}ms`,
+          }
+        : undefined;
+
       return (
-        <span key={index} className="font-semibold">
-          {part}
+        <span
+          key={`word-${partIndex}-${tokenIndex}`}
+          style={style}
+          className={`${isBold ? "font-semibold" : ""} ${
+            isAssistant ? "inline-block animate-grok-fade opacity-0" : ""
+          }`}
+        >
+          {token}
         </span>
       );
-    }
-    return part;
+    });
   });
 }
 
@@ -230,7 +277,7 @@ function CustomerChatMessage({ message }) {
     return (
       <div className="flex justify-end">
         <div className="max-w-[82%] rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[14px] font-normal leading-5 text-[#101112]">
-          {renderMessageText(message.text)}
+          {renderMessageText(message.text, false)}
         </div>
       </div>
     );
@@ -239,7 +286,7 @@ function CustomerChatMessage({ message }) {
   return (
     <div className="group">
       <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
-        {renderMessageText(message.text)}
+        {renderMessageText(message.text, true)}
       </div>
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
@@ -277,7 +324,6 @@ export function CustomerWorkspace() {
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
-  const configSaveTimer = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
@@ -289,6 +335,7 @@ export function CustomerWorkspace() {
   const [voiceError, setVoiceError] = useState("");
   const [savingMemory, setSavingMemory] = useState(false);
   const [sending, setSending] = useState(false);
+  const [selectedModel, setSelectedModel] = useState("deepseek-chat");
 
   useEffect(() => {
     if (!customer) return;
@@ -311,10 +358,6 @@ export function CustomerWorkspace() {
 
   useEffect(() => {
     return () => recognitionRef.current?.stop();
-  }, []);
-
-  useEffect(() => {
-    return () => clearTimeout(configSaveTimer.current);
   }, []);
 
   useEffect(() => {
@@ -511,30 +554,7 @@ export function CustomerWorkspace() {
     ]);
   }
 
-  // Update workflow config in state immediately (so the chat uses the latest)
-  // and debounce the persistence so we don't write on every keystroke.
-  function updateWorkflowConfig(next) {
-    setWorkflowConfig(next);
-    clearTimeout(configSaveTimer.current);
-    configSaveTimer.current = setTimeout(() => {
-      api.saveWorkflowConfig(customer.id, next);
-    }, 600);
-  }
 
-  function callCustomer() {
-    const phone = compactPhoneNumber(customer.phone);
-    if (phone) {
-      window.location.href = `tel:${phone}`;
-      return;
-    }
-
-    if (customer.email?.includes("@")) {
-      window.location.href = `mailto:${customer.email}?subject=${encodeURIComponent(`Follow-up with ${customer.name}`)}`;
-      return;
-    }
-
-    addAssistantNotice(`No phone or email is saved for ${customer.name}. Add contact details before starting outreach.`);
-  }
 
   async function draftFollowUp() {
     if (!customer || sending) return;
@@ -544,7 +564,7 @@ export function CustomerWorkspace() {
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
-      const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig });
+      const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig, model: selectedModel });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -562,7 +582,7 @@ export function CustomerWorkspace() {
     setSending(true);
 
     try {
-      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig });
+      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig, model: selectedModel });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
@@ -607,14 +627,7 @@ export function CustomerWorkspace() {
             <p className="truncate text-[11px] text-muted-foreground">{customer.email}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={callCustomer}>
-            <Phone className="size-4" /> Call
-          </Button>
-          <Button size="sm" render={<a href={getScheduleUrl(customer)} target="_blank" rel="noreferrer" />}>
-            <CalendarDays className="size-4" /> Schedule
-          </Button>
-        </div>
+
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
@@ -650,12 +663,13 @@ export function CustomerWorkspace() {
               onAttach={() => inputRef.current?.click()}
               onDraft={draftFollowUp}
               sending={sending}
+              model={selectedModel}
+              onModelChange={setSelectedModel}
             />
           </div>
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white">
-          <CustomerProfile customer={customer} />
           <WorkflowHeader />
 
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
@@ -678,11 +692,7 @@ export function CustomerWorkspace() {
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
-              {workflowConfig ? (
-                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} />
-              ) : (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
-              )}
+              <CustomerProfile customer={customer} />
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">

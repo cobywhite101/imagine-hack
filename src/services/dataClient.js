@@ -331,7 +331,7 @@ function getInitials(name) {
   return initials || "NC";
 }
 
-async function queryDeepSeek(messages, systemPrompt = "") {
+async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat") {
   const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     console.warn("DeepSeek API key is not configured.");
@@ -358,7 +358,7 @@ async function queryDeepSeek(messages, systemPrompt = "") {
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: model,
         messages: formattedMessages,
         temperature: 0.7,
       }),
@@ -550,7 +550,7 @@ export const api = {
     return next;
   },
 
-  sendCustomerMessage: async ({ customer, text, memories = [], history = [], workflowConfig = null }) => {
+  sendCustomerMessage: async ({ customer, text, memories = [], history = [], workflowConfig = null, model = "deepseek-chat" }) => {
     if (!customer || !text?.trim()) return null;
 
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
@@ -592,7 +592,7 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
         chatHistory.push({ role: "user", text });
       }
 
-      const deepseekReply = await queryDeepSeek(chatHistory, customerSystem);
+      const deepseekReply = await queryDeepSeek(chatHistory, customerSystem, model);
       if (deepseekReply) {
         return {
           id: `a-${Date.now()}`,
@@ -618,10 +618,10 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
     return buildLocalCustomerChatReply({ customer, text, memories });
   },
 
-  draftCustomerFollowUp: async ({ customer, memories = [], workflowConfig = null }) => {
+  draftCustomerFollowUp: async ({ customer, memories = [], workflowConfig = null, model }) => {
     if (!customer) return null;
     const text = `Draft a follow-up email for ${customer.name} using the latest saved memory and next step.`;
-    return api.sendCustomerMessage({ customer, text, memories, history: [], workflowConfig });
+    return api.sendCustomerMessage({ customer, text, memories, history: [], workflowConfig, model });
   },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
@@ -637,7 +637,7 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
   // The assistant. The live home is a Supabase Edge Function (where the
   // DeepSeek key lives server-side). Until it exists, fall back to a
   // context-aware canned reply so the demo always responds.
-  sendChatMessage: async ({ text, history = [] }) => {
+  sendChatMessage: async ({ text, history = [], model = "deepseek-chat" }) => {
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
     if (apiKey) {
       let crmContext = "";
@@ -658,7 +658,7 @@ Assist the user with CRM tasks, answering questions about clients, recommending 
         chatHistory.push({ role: "user", text });
       }
 
-      const deepseekReply = await queryDeepSeek(chatHistory, systemPrompt);
+      const deepseekReply = await queryDeepSeek(chatHistory, systemPrompt, model);
       if (deepseekReply) {
         return {
           id: `msg-${Date.now()}`,
