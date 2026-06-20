@@ -659,6 +659,72 @@ export const api = {
   getCustomerArticles: async (customerId) => {
     if (!customerId) return [];
 
+    const formatCustomerProfileToArticleBody = (customer) => {
+      if (!customer) return "";
+      const lines = [];
+      lines.push(`# Client Profile: ${customer.name}`);
+      lines.push("");
+
+      lines.push("## Demographics");
+      if (customer.dateOfBirth) {
+        const dob = new Date(customer.dateOfBirth);
+        const age = new Date().getFullYear() - dob.getFullYear();
+        lines.push(`- **Age**: ${age}`);
+      }
+      if (customer.maritalStatus) lines.push(`- **Marital Status**: ${customer.maritalStatus}`);
+      if (customer.occupation) lines.push(`- **Occupation**: ${customer.occupation}`);
+      lines.push("");
+
+      lines.push("## Financial Profile");
+      if (customer.annualIncomeBracket) lines.push(`- **Income**: ${customer.annualIncomeBracket}`);
+      if (customer.netWorthBracket) lines.push(`- **Net Worth**: ${customer.netWorthBracket}`);
+      if (customer.riskTolerance) lines.push(`- **Risk Tolerance**: ${customer.riskTolerance}`);
+      if (customer.investmentHorizonYears) lines.push(`- **Investment Horizon**: ${customer.investmentHorizonYears} years`);
+      lines.push("");
+
+      lines.push("## Policies");
+      const policies = Array.isArray(customer.policies) ? customer.policies : [];
+      if (policies.length > 0) {
+        policies.forEach((policy) => {
+          const type = policy.policy_type ?? policy.policyType ?? policy.type ?? "Policy";
+          const sum = policy.sum_assured ?? policy.sumAssured;
+          const renewal = policy.renewal_date ?? policy.renewalDate;
+          lines.push(`- **${type}**: Sum Assured: RM${sum ? Number(sum).toLocaleString() : "—"}, Renewal: ${renewal ?? "—"}`);
+        });
+      } else {
+        lines.push("No active policies recorded.");
+      }
+      lines.push("");
+
+      lines.push("## Life Events");
+      const lifeEvents = Array.isArray(customer.lifeEvents) ? customer.lifeEvents : [];
+      if (lifeEvents.length > 0) {
+        lifeEvents.forEach((event) => {
+          const title = event.description ?? event.title ?? event.event;
+          const target = event.target_date ?? event.expectedDate ?? event.expected_date;
+          lines.push(`- **${title}**: Expected: ${target ? new Date(target).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}`);
+        });
+      } else {
+        lines.push("No upcoming life events recorded.");
+      }
+      lines.push("");
+
+      lines.push("## Relationship & Preferences");
+      if (customer.rapportNotes) lines.push(`- **Rapport Notes**: ${customer.rapportNotes}`);
+      if (customer.preferredCommunicationChannel) lines.push(`- **Preferred Channel**: ${customer.preferredCommunicationChannel}`);
+      if (customer.referredBy) lines.push(`- **Referred By**: ${customer.referredBy}`);
+      if (customer.businessOwnership) lines.push("- **Business Owner**: Yes");
+      lines.push("");
+
+      lines.push("## Compliance");
+      if (customer.kycStatus) lines.push(`- **KYC Status**: ${customer.kycStatus}`);
+      if (customer.lastFactFindDate) lines.push(`- **Last Fact-Find**: ${customer.lastFactFindDate}`);
+      if (customer.hasWill != null) lines.push(`- **Will in Place**: ${customer.hasWill ? "Yes" : "No"}`);
+      if (customer.estatePlanStatus) lines.push(`- **Estate Plan Status**: ${customer.estatePlanStatus}`);
+
+      return lines.join("\n");
+    };
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -667,14 +733,61 @@ export const api = {
           .eq("customer_id", customerId)
           .order("updated_at", { ascending: false });
 
-        if (!error) return (data ?? []).map(normalizeCustomerArticle);
+        if (!error) {
+          if (data && data.length === 0) {
+            const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+            if (customer) {
+              const bodyText = formatCustomerProfileToArticleBody(customer);
+              const initialArticle = {
+                id: `profile-article-${customerId}`,
+                customer_id: customerId,
+                title: `${customer.name}'s Profile`,
+                subtitle: "Client Profile & Financial Summary",
+                article_type: "Internal article",
+                body: bodyText,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              await supabase.from("customer_articles").insert({
+                id: initialArticle.id,
+                customer_id: customerId,
+                title: initialArticle.title,
+                subtitle: initialArticle.subtitle,
+                article_type: initialArticle.article_type,
+                body: initialArticle.body,
+                created_at: initialArticle.created_at,
+                updated_at: initialArticle.updated_at
+              });
+              return [normalizeCustomerArticle(initialArticle)];
+            }
+          }
+          return (data ?? []).map(normalizeCustomerArticle);
+        }
       } catch {
         /* fall through to local demo articles */
       }
     }
 
+    const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+    let localArticles = getStoredCustomerArticles(customerId);
+    if (localArticles.length === 0 && customer) {
+      const bodyText = formatCustomerProfileToArticleBody(customer);
+      const initialArticle = {
+        id: `profile-article-${customerId}`,
+        customerId,
+        title: `${customer.name}'s Profile`,
+        subtitle: "Client Profile & Financial Summary",
+        type: "Internal article",
+        body: bodyText,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      localArticles = [initialArticle];
+      setStoredCustomerArticles(customerId, localArticles);
+    }
+
     await delay(120);
-    return getStoredCustomerArticles(customerId)
+    return localArticles
       .map(normalizeCustomerArticle)
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   },
@@ -722,6 +835,31 @@ export const api = {
     setStoredCustomerArticles(customerId, next);
     await delay(120);
     return entry;
+  },
+
+  deleteCustomerArticle: async (customerId, articleId) => {
+    if (!customerId || !articleId) return false;
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from("customer_articles")
+          .delete()
+          .eq("id", articleId)
+          .eq("customer_id", customerId);
+
+        if (!error) return true;
+      } catch {
+        /* fall through to local demo articles */
+      }
+    }
+
+    const existing = getStoredCustomerArticles(customerId)
+      .map(normalizeCustomerArticle)
+      .filter((item) => item.id !== articleId);
+    setStoredCustomerArticles(customerId, existing);
+    await delay(120);
+    return true;
   },
 
   getWorkflowConfig: async (customerId) => {

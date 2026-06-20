@@ -189,20 +189,26 @@ export function WorkflowHeader({ customer }) {
 }
 
 // Controlled: parent owns `config` + `articles` and persists changes.
-export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle }) {
+export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle, onDeleteArticle }) {
   const knowledge = config.knowledge ?? {};
   const tools = config.tools ?? {};
 
   const setField = (field, value) => onChange({ ...config, [field]: value });
   const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
   const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
-
   const [editing, setEditing] = useState(null); // { article } | { article: null } for new
 
   async function saveArticle(article) {
     await onSaveArticle?.(article);
     setEditing(null);
   }
+
+  async function deleteArticle(articleId) {
+    await onDeleteArticle?.(articleId);
+    setEditing(null);
+  }
+
+
 
   return (
     <div className="text-[#2a2a2e]">
@@ -311,6 +317,8 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
               New source file
             </button>
           </div>
+
+
         </div>
       </Section>
 
@@ -331,6 +339,7 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
           article={editing.article}
           onClose={() => setEditing(null)}
           onSave={saveArticle}
+          onDelete={deleteArticle}
         />
       )}
     </div>

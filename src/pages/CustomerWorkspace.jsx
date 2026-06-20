@@ -27,7 +27,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CustomerProfile } from "@/features/customers/CustomerProfile";
 import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
@@ -639,6 +638,12 @@ export function CustomerWorkspace() {
     return savedArticle;
   }
 
+  async function deleteCustomerArticle(articleId) {
+    if (!customer) return;
+    setArticles((prev) => prev.filter((item) => item.id !== articleId));
+    await api.deleteCustomerArticle(customer.id, articleId);
+  }
+
   function getArticleSourceMemory() {
     if (articleCandidate) {
       return memories.find((memory) => memory.id === articleCandidate.id) ?? articleCandidate;
@@ -869,6 +874,17 @@ export function CustomerWorkspace() {
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
+          <div className="absolute left-6 top-6 z-10">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              render={<Link to="/customers" />}
+              aria-label="Back to customers"
+              className="border border-border bg-white shadow-sm hover:bg-neutral-50"
+            >
+              <ArrowLeft className="size-4 text-muted-foreground" />
+            </Button>
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex min-h-full flex-col items-center justify-end">
               <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
@@ -908,7 +924,6 @@ export function CustomerWorkspace() {
 
         <aside className="min-h-0 overflow-y-auto bg-white">
           <WorkflowHeader customer={customer} />
-          <CustomerProfile customer={customer} />
 
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
             <TabsList
@@ -936,6 +951,7 @@ export function CustomerWorkspace() {
                   onChange={updateWorkflowConfig}
                   articles={articles}
                   onSaveArticle={saveCustomerArticle}
+                  onDeleteArticle={deleteCustomerArticle}
                 />
               ) : (
                 <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>

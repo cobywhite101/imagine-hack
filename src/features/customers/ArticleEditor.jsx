@@ -119,6 +119,33 @@ const TOOL_ICONS = [
   },
 ];
 
+const ACTIVE_TOOLS = new Set(["Image", "Bulleted list", "Numbered list"]);
+
+function isEditorEmpty(element) {
+  if (!element) return true;
+  return !element.textContent.trim() && !element.querySelector("img");
+}
+
+function isHtmlEmpty(html) {
+  const value = String(html ?? "").trim();
+  if (!value) return true;
+  if (/<img\b/i.test(value)) return false;
+
+  return !value
+    .replace(/<br\s*\/?>/gi, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .trim();
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function TitleArea({ value, onChange }) {
   const ref = useRef(null);
   useLayoutEffect(() => {
@@ -143,15 +170,41 @@ function TitleArea({ value, onChange }) {
   );
 }
 
-export function ArticleEditor({ article, onClose, onSave }) {
+export function ArticleEditor({ article, onClose, onSave, onDelete }) {
   const [title, setTitle] = useState(article?.title ?? "");
   const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const savedSelectionRef = useRef(null);
   const initialBody = useRef(article?.body ?? "");
-  const [bodyEmpty, setBodyEmpty] = useState(!String(article?.body ?? "").trim());
+  const [bodyEmpty, setBodyEmpty] = useState(isHtmlEmpty(article?.body));
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteTimeoutRef = useRef(null);
 
   const canSave = title.trim().length > 0;
   const kindLabel = article?.type || "Internal article";
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimeoutRef.current) {
+        clearTimeout(deleteTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function handleDeleteClick() {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      deleteTimeoutRef.current = setTimeout(() => {
+        setConfirmDelete(false);
+      }, 3000);
+    } else {
+      if (deleteTimeoutRef.current) {
+        clearTimeout(deleteTimeoutRef.current);
+      }
+      onDelete?.(article.id);
+    }
+  }
 
   useEffect(() => {
     const onKey = (event) => event.key === "Escape" && onClose();
@@ -164,6 +217,13 @@ export function ArticleEditor({ article, onClose, onSave }) {
     };
   }, [onClose]);
 
+  useLayoutEffect(() => {
+    const editor = bodyRef.current;
+    if (!editor) return;
+    editor.innerHTML = initialBody.current;
+    syncBodyEmpty(editor);
+  }, []);
+
   function handleSave() {
     if (!canSave) return;
     onSave({
@@ -172,6 +232,93 @@ export function ArticleEditor({ article, onClose, onSave }) {
       type: kindLabel,
       body: bodyRef.current?.innerHTML ?? initialBody.current,
     });
+  }
+
+  function syncBodyEmpty(element = bodyRef.current) {
+    setBodyEmpty(isEditorEmpty(element));
+  }
+
+  function rememberSelection() {
+    const editor = bodyRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      savedSelectionRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const editor = bodyRef.current;
+    if (!editor) return;
+
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    selection.removeAllRanges();
+    if (
+      savedSelectionRef.current &&
+      editor.contains(savedSelectionRef.current.commonAncestorContainer)
+    ) {
+      selection.addRange(savedSelectionRef.current);
+      return;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.addRange(range);
+  }
+
+  function runEditorCommand(command) {
+    restoreSelection();
+    document.execCommand(command, false);
+    syncBodyEmpty();
+    rememberSelection();
+  }
+
+  function insertEditorHtml(html) {
+    restoreSelection();
+    document.execCommand("insertHTML", false, html);
+    syncBodyEmpty();
+    rememberSelection();
+  }
+
+  function handleToolbarAction(name) {
+    if (name === "Bulleted list") {
+      runEditorCommand("insertUnorderedList");
+      return;
+    }
+
+    if (name === "Numbered list") {
+      runEditorCommand("insertOrderedList");
+      return;
+    }
+
+    if (name === "Image") {
+      restoreSelection();
+      imageInputRef.current?.click();
+    }
+  }
+
+  function handleImageChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : "";
+      if (!src) return;
+
+      const baseName = file.name.replace(/\.[^.]+$/, "") || "Inserted image";
+      insertEditorHtml(
+        `<figure><img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(baseName)}" /><figcaption><br></figcaption></figure><p><br></p>`
+      );
+    };
+    reader.readAsDataURL(file);
   }
 
   return createPortal(
@@ -191,6 +338,20 @@ export function ArticleEditor({ article, onClose, onSave }) {
             {kindLabel}
           </h1>
           <div className="flex items-center gap-x-2">
+            {article?.id && onDelete && (
+              <button
+                type="button"
+                onClick={handleDeleteClick}
+                className={cn(
+                  "h-8 rounded-full px-3 text-[14px] font-semibold leading-4 transition-all duration-200",
+                  confirmDelete
+                    ? "bg-[#e11d48] text-white hover:bg-[#be123c]"
+                    : "bg-[#fff5f5] text-[#fa5252] hover:bg-[#ffe3e3]"
+                )}
+              >
+                {confirmDelete ? "Confirm delete?" : "Delete"}
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -254,21 +415,35 @@ export function ArticleEditor({ article, onClose, onSave }) {
                 contentEditable
                 suppressContentEditableWarning
                 dir="ltr"
-                onInput={(event) => setBodyEmpty(!event.currentTarget.textContent.trim())}
-                className="min-h-[120px] whitespace-pre-wrap outline-none"
-                dangerouslySetInnerHTML={{ __html: initialBody.current }}
+                onInput={(event) => syncBodyEmpty(event.currentTarget)}
+                onKeyUp={rememberSelection}
+                onMouseUp={rememberSelection}
+                onBlur={rememberSelection}
+                className="min-h-[120px] whitespace-pre-wrap outline-none [&_figure]:my-4 [&_figcaption]:min-h-5 [&_figcaption]:text-[13px] [&_figcaption]:leading-5 [&_figcaption]:text-[#646462] [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
               />
             </div>
           </div>
 
           {/* Floating media toolbar */}
           <div className="pointer-events-none sticky bottom-6 flex justify-center px-10">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageChange}
+            />
             <div className="pointer-events-auto flex items-center gap-1 rounded-md bg-[#222222] px-2 py-1 shadow-[0_8px_16px_rgba(20,20,20,0.15)]">
-              {TOOL_ICONS.map((icon) => (
+              {TOOL_ICONS.filter((icon) => ACTIVE_TOOLS.has(icon.name)).map((icon) => (
                 <button
                   key={icon.name}
                   type="button"
                   aria-label={icon.name}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    rememberSelection();
+                  }}
+                  onClick={() => handleToolbarAction(icon.name)}
                   className="flex size-7 items-center justify-center rounded text-white/85 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
