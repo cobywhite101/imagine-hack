@@ -72,8 +72,6 @@ export function Home() {
   );
 }
 
-<<<<<<< HEAD
-=======
 const meetings = [
   {
     time: "9:30",
@@ -92,7 +90,6 @@ const meetings = [
   },
 ];
 
->>>>>>> 05b9f71e7330ac07b3a05eb6b61eedd667f89357
 const followUps = [
   {
     title: "Quanta Health",
