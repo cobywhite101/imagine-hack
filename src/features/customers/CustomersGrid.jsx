@@ -18,7 +18,7 @@ import { useApi } from "@/hooks/useApi";
  * Functional CRM grid styled as a faithful replica of Attio's spreadsheet view.
  *
  * Uses Attio's light palette and pixel metrics on purpose (rgb(238,239,241)
- * borders, rgb(16,17,18) ink, rgb(38,109,240) links, rgba(155,105,255,0.04)
+ * borders, rgb(16,17,18) ink, rgb(38,109,240) links, rgba(38,109,240,0.04)
  * row hover) rather than the app's dark tokens — the goal is visual accuracy
  * to the source design.
  */
@@ -98,7 +98,15 @@ function CellInput({ value, onCommit, onCancel }) {
         if (e.key === "Enter") onCommit(v);
         else if (e.key === "Escape") onCancel();
       }}
-      className="h-6 w-full rounded-[5px] border border-[rgb(38,109,240)] bg-white px-1.5 text-sm text-black outline-none"
+      className="w-full text-sm outline-none border-none focus:outline-none focus:ring-0"
+      style={{
+        color: INK,
+        background: "transparent",
+        padding: 0,
+        border: "none",
+        boxShadow: "none",
+        outline: "none",
+      }}
     />
   );
 }
@@ -374,7 +382,7 @@ export function CustomersGrid() {
 
             {rows.map((c) => {
               const isSel = selected.has(c.id);
-              const rowBg = isSel ? "bg-[rgba(38,109,240,0.06)]" : "bg-white group-hover/r:bg-[rgba(155,105,255,0.04)]";
+              const rowBg = isSel ? "bg-[rgba(38,109,240,0.06)]" : "bg-white group-hover/r:bg-[rgba(38,109,240,0.04)]";
               return (
                 <tr key={c.id} className="group/r cursor-default">
                   {/* Customer — sticky */}
@@ -394,7 +402,6 @@ export function CustomersGrid() {
                       </span>
                       <Link
                         to={`/customers/${c.id}`}
-                        state={{ customer: c }}
                         className="block min-w-0 flex-1 truncate rounded-[5px] font-medium outline outline-1 outline-transparent transition-colors hover:underline focus-visible:outline-[rgb(38,109,240)]"
                         style={{ color: INK }}
                       >
@@ -446,7 +453,7 @@ export function CustomersGrid() {
                           <button
                             type="button"
                             onClick={() => setEditing({ id: c.id, key: col.key })}
-                            className={`block w-full truncate text-left ${EDIT_CLASSES}`}
+                            className="block w-full truncate text-left cursor-text outline-none"
                             style={{ color: INK }}
                           >
                             {c[col.key] || "—"}

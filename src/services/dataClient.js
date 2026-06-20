@@ -53,12 +53,31 @@ async function fromTableOrMock(table, mockValue) {
 }
 
 function normalizeCustomerRecord(customer) {
+  const name = customer.name ?? customer.company ?? "Unnamed customer";
+
   return {
     ...customer,
+    name,
     lastTouch: customer.lastTouch ?? customer.last_touch,
     nextAction: customer.nextAction ?? customer.next_action,
+    task: customer.task ?? customer.nextAction ?? customer.next_action ?? "",
+    avatar: customer.avatar ?? getInitials(name),
+    accent: customer.accent ?? "#868e96",
+    email: customer.email ?? customer.contact ?? "",
     tags: customer.tags ?? [],
   };
+}
+
+function getInitials(name) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || "NC";
 }
 
 export const api = {
@@ -92,6 +111,25 @@ export const api = {
   getCustomers: async () => {
     const rows = await fromTable("customers", mockCustomers, { column: "name" });
     return rows.map(normalizeCustomerRecord);
+  },
+
+  getCustomerById: async (customerId) => {
+    if (!customerId) return null;
+
+    if (!isSupabaseConfigured) {
+      await delay();
+      const customer = mockCustomers.find((item) => String(item.id) === String(customerId));
+      return customer ? normalizeCustomerRecord(customer) : null;
+    }
+
+    const { data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("id", customerId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? normalizeCustomerRecord(data) : null;
   },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),

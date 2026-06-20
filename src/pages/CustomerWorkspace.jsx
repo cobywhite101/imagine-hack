@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowUp,
@@ -18,12 +18,19 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getCustomerById } from "@/data/customers";
+import { api } from "@/services/dataClient";
+import { useApi } from "@/hooks/useApi";
 
 const STATUS_STYLE = {
   Monitoring: "bg-[#eef0f2] text-[#5b616b]",
   "Action needed": "bg-[#fdeaea] text-[#d4351c]",
   Scheduled: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
+  Lead: "bg-[#eef0f2] text-[#5b616b]",
+  Won: "bg-[#eef0f2] text-[#5b616b]",
+  Qualified: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
+  Proposal: "bg-[rgba(38,109,240,0.1)] text-[rgb(38,109,240)]",
+  Negotiation: "bg-[#fdeaea] text-[#d4351c]",
+  "Churn-risk": "bg-[#fdeaea] text-[#d4351c]",
 };
 
 const CONTEXT_SUMMARIES = [
@@ -52,24 +59,24 @@ function buildAssistantReply(customer, text, files) {
 
 export function CustomerWorkspace() {
   const { customerId } = useParams();
-  const location = useLocation();
-  const routedCustomer = location.state?.customer;
-  const customer = routedCustomer?.id && String(routedCustomer.id) === String(customerId)
-    ? routedCustomer
-    : getCustomerById(customerId);
+  const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
+  const customer = fetchedCustomer;
   const inputRef = useRef(null);
-  const [messages, setMessages] = useState(() => [
-    {
-      id: "seed-1",
-      role: "assistant",
-      text: customer
-        ? `I have ${customer.name}'s account context ready. Ask for a recap, renewal plan, risk summary, or follow-up email.`
-        : "I could not find that customer.",
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!customer) return;
+    setMessages([
+      {
+        id: "seed-1",
+        role: "assistant",
+        text: `I have ${customer.name}'s account context ready. Ask for a recap, renewal plan, risk summary, or follow-up email.`,
+      },
+    ]);
+  }, [customer?.id]);
 
   const discussions = useMemo(() => {
     if (!customer) return [];
@@ -80,6 +87,38 @@ export function CustomerWorkspace() {
       text,
     }));
   }, [customer]);
+
+  if (loading && !customer) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="flex h-14 items-center gap-3 border-b px-5">
+          <Button variant="ghost" size="icon-sm" render={<Link to="/customers" />} aria-label="Back to customers">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold">Loading customer</h1>
+            <p className="text-[11px] text-muted-foreground">Fetching live customer data...</p>
+          </div>
+        </header>
+      </div>
+    );
+  }
+
+  if (error && !customer) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="flex h-14 items-center gap-3 border-b px-5">
+          <Button variant="ghost" size="icon-sm" render={<Link to="/customers" />} aria-label="Back to customers">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold">Could not load customer</h1>
+            <p className="text-[11px] text-muted-foreground">Supabase returned an error for this customer.</p>
+          </div>
+        </header>
+      </div>
+    );
+  }
 
   if (!customer) {
     return (
