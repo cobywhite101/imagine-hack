@@ -10,6 +10,8 @@ import {
   ChevronDown,
   Trash2,
   X,
+  Rows3,
+  Columns3,
   BriefcaseBusiness,
   CalendarDays,
   FileCheck2,
@@ -51,9 +53,10 @@ const DEAL_STATUS_TO_GRID_STATUS = {
 const ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
 const FALLBACK_ACCENT = "#868e96";
 const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
+const EMPTY_COLUMN = { label: "", key: "" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
-const COLS = [
+const DEFAULT_COLS = [
   { key: "task", label: "Task", icon: User, width: 360, type: "text", sortValue: (c) => c.task },
   { key: "status", label: "Status", icon: CircleDot, width: 160, type: "select", options: STATUSES, sortValue: (c) => c.status },
   { key: "occupation", label: "Occupation", icon: BriefcaseBusiness, width: 190, type: "text", sortValue: (c) => c.occupation },
@@ -97,7 +100,6 @@ const COLS = [
 ];
 
 const NAME_COL_WIDTH = 260;
-const GRID_MIN_WIDTH = NAME_COL_WIDTH + COLS.reduce((total, col) => total + col.width, 0);
 
 const NAME_COL = { key: "name", sortValue: (c) => c.name };
 
@@ -160,9 +162,6 @@ function CellInput({ value, onCommit, onCancel }) {
   );
 }
 
-const EDIT_CLASSES =
-  "cursor-text rounded-[5px] outline outline-1 outline-transparent hover:outline-black/15";
-
 function getInitials(name) {
   const initials = name
     .trim()
@@ -190,6 +189,25 @@ function getCellValue(row, col) {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return value ?? "";
+}
+
+function slugifyColumnKey(label, columns) {
+  const base =
+    label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "column";
+  const existing = new Set(["name", ...columns.map((col) => col.key)]);
+  let key = base;
+  let index = 2;
+
+  while (existing.has(key)) {
+    key = `${base}_${index}`;
+    index += 1;
+  }
+
+  return key;
 }
 
 function normalizeCustomer(customer) {
@@ -227,13 +245,21 @@ function normalizeCustomer(customer) {
 export function CustomersGrid() {
   const { data: customers, loading, error } = useApi(() => api.getCustomers());
   const [data, setData] = useState([]);
+  const [columns, setColumns] = useState(DEFAULT_COLS);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [selected, setSelected] = useState(() => new Set());
   const [editing, setEditing] = useState(null); // { id, key }
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newClient, setNewClient] = useState(EMPTY_CLIENT);
+  const [newColumnOpen, setNewColumnOpen] = useState(false);
+  const [newColumn, setNewColumn] = useState(EMPTY_COLUMN);
   const nextId = useRef(1000);
+
+  const gridMinWidth = useMemo(
+    () => NAME_COL_WIDTH + columns.reduce((total, col) => total + col.width, 0),
+    [columns]
+  );
 
   useEffect(() => {
     if (customers) setData(customers.map(normalizeCustomer));
@@ -243,22 +269,22 @@ export function CustomersGrid() {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? data.filter((c) =>
-          [c.name, c.task, c.status, ...COLS.map((col) => getCellValue(c, col)), ...(c.tags ?? [])]
+          [c.name, c.task, c.status, ...columns.map((col) => getCellValue(c, col)), ...(c.tags ?? [])]
             .join(" ")
             .toLowerCase()
             .includes(q)
         )
       : data;
 
-    const col = sort.key === "name" ? NAME_COL : COLS.find((c) => c.key === sort.key);
+    const col = sort.key === "name" ? NAME_COL : columns.find((c) => c.key === sort.key);
     const sorted = [...filtered].sort((a, b) => {
-      const av = col.sortValue(a);
-      const bv = col.sortValue(b);
+      const av = col?.sortValue(a) ?? "";
+      const bv = col?.sortValue(b) ?? "";
       const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [data, query, sort]);
+  }, [columns, data, query, sort]);
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -302,9 +328,80 @@ export function CustomersGrid() {
     setNewClientOpen(false);
   }
 
+  function addBlankRow() {
+    const id = nextId.current++;
+    const name = `New client ${id - 999}`;
+    setData((prev) => [
+      {
+        id,
+        name,
+        task: "",
+        avatar: getInitials(name),
+        accent: ACCENTS[id % ACCENTS.length],
+        status: "Monitoring",
+        email: "",
+      },
+      ...prev,
+    ]);
+    setEditing({ id, key: "task" });
+  }
+
+  function deleteRow(id) {
+    setData((prev) => prev.filter((r) => r.id !== id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   function deleteSelected() {
     setData((prev) => prev.filter((r) => !selected.has(r.id)));
     setSelected(new Set());
+  }
+
+  function openNewColumnModal() {
+    setNewColumn(EMPTY_COLUMN);
+    setNewColumnOpen(true);
+  }
+
+  function updateNewColumn(key, value) {
+    setNewColumn((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function addColumn(e) {
+    e.preventDefault();
+    const label = newColumn.label.trim();
+    if (!label) return;
+
+    const key = newColumn.key.trim() || slugifyColumnKey(label, columns);
+    if (key === "name" || columns.some((col) => col.key === key)) return;
+
+    const column = {
+      key,
+      label,
+      icon: Columns3,
+      width: Math.max(140, Math.min(260, label.length * 12 + 92)),
+      type: "text",
+      sortValue: (c) => c[key] ?? "",
+    };
+
+    setColumns((prev) => [...prev, column]);
+    setData((prev) => prev.map((row) => ({ ...row, [key]: "" })));
+    setNewColumn(EMPTY_COLUMN);
+    setNewColumnOpen(false);
+  }
+
+  function removeColumn(key) {
+    setColumns((prev) => prev.filter((col) => col.key !== key));
+    setData((prev) =>
+      prev.map((row) => {
+        const { [key]: _removed, ...rest } = row;
+        return rest;
+      })
+    );
+    setEditing((cell) => (cell?.key === key ? null : cell));
+    setSort((current) => (current.key === key ? { key: "name", dir: "asc" } : current));
   }
 
   function toggleRow(id) {
@@ -331,9 +428,9 @@ export function CustomersGrid() {
   return (
     <div className="flex h-full flex-col gap-3">
       {/* Toolbar */}
-      <div className="flex items-center gap-3" style={{ color: INK }}>
+      <div className="flex flex-wrap items-center gap-3" style={{ color: INK }}>
         <div
-          className="flex h-8 flex-1 items-center gap-2 rounded-lg border bg-white px-2.5"
+          className="flex h-8 w-full max-w-[360px] items-center gap-2 rounded-lg border bg-white px-2.5 sm:w-[320px]"
           style={{ borderColor: BORDER }}
         >
           <Search className="size-3.5 text-black/40" />
@@ -344,6 +441,32 @@ export function CustomersGrid() {
             className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40"
           />
         </div>
+        <button
+          type="button"
+          onClick={addBlankRow}
+          className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+          style={{ borderColor: BORDER }}
+        >
+          <Rows3 className="size-3.5" /> Add row
+        </button>
+        <NewColumnDialog
+          column={newColumn}
+          open={newColumnOpen}
+          onOpenChange={setNewColumnOpen}
+          onChange={updateNewColumn}
+          onSubmit={addColumn}
+          existingKeys={new Set(["name", ...columns.map((col) => col.key)])}
+          trigger={
+            <button
+              type="button"
+              onClick={openNewColumnModal}
+              className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+              style={{ borderColor: BORDER }}
+            >
+              <Columns3 className="size-3.5" /> Add column
+            </button>
+          }
+        />
         {selected.size > 0 && (
           <>
             <span className="text-xs text-black/55">{selected.size} selected</span>
@@ -382,11 +505,11 @@ export function CustomersGrid() {
       >
         <table
           className="border-separate border-spacing-0"
-          style={{ tableLayout: "fixed", width: GRID_MIN_WIDTH, minWidth: GRID_MIN_WIDTH }}
+          style={{ tableLayout: "fixed", width: gridMinWidth, minWidth: gridMinWidth }}
         >
           <colgroup>
             <col style={{ width: NAME_COL_WIDTH }} />
-            {COLS.map((col) => (
+            {columns.map((col) => (
               <col key={col.key} style={{ width: col.width }} />
             ))}
           </colgroup>
@@ -418,26 +541,39 @@ export function CustomersGrid() {
                 </div>
               </th>
 
-              {COLS.map((c, index) => {
+              {columns.map((c, index) => {
                 const Icon = c.icon;
                 const active = sort.key === c.key;
-                const isLast = index === COLS.length - 1;
+                const isLast = index === columns.length - 1;
                 return (
                   <th
                     key={c.key}
                     style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
                     className={`h-10 overflow-hidden border-b bg-white px-3 align-middle font-medium ${isLast ? "" : "border-r"}`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(c.key)}
-                      className={`group/h flex w-full min-w-0 items-center gap-1.5 ${c.numeric ? "justify-end" : ""}`}
-                      style={{ color: active ? INK : "rgba(0,0,0,0.63)" }}
-                    >
-                      <Icon className="size-3.5 shrink-0" strokeWidth={2} />
-                      <span className="truncate">{c.label}</span>
-                      <SortIcon active={active} dir={sort.dir} />
-                    </button>
+                    <div className="group/col flex min-w-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(c.key)}
+                        className={`group/h flex min-w-0 flex-1 items-center gap-1.5 ${c.numeric ? "justify-end" : ""}`}
+                        style={{ color: active ? INK : "rgba(0,0,0,0.63)" }}
+                      >
+                        <Icon className="size-3.5 shrink-0" strokeWidth={2} />
+                        <span className="truncate">{c.label}</span>
+                        <SortIcon active={active} dir={sort.dir} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${c.label} column`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeColumn(c.key);
+                        }}
+                        className="flex size-6 shrink-0 items-center justify-center rounded-md text-black/35 opacity-0 transition-colors hover:bg-[#fdeaea] hover:text-[#d4351c] group-hover/col:opacity-100 focus-visible:opacity-100"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
                   </th>
                 );
               })}
@@ -447,13 +583,13 @@ export function CustomersGrid() {
           <tbody>
             {loading &&
               Array.from({ length: 9 }).map((_, index) => (
-                <CustomerGridSkeletonRow key={index} index={index} />
+                <CustomerGridSkeletonRow key={index} index={index} columns={columns} />
               ))}
 
             {!loading && error && (
               <tr>
                 <td
-                  colSpan={COLS.length + 1}
+                  colSpan={columns.length + 1}
                   className="h-24 px-3 text-center text-sm text-[#d4351c]"
                   style={{ borderColor: BORDER }}
                 >
@@ -490,12 +626,20 @@ export function CustomersGrid() {
                       >
                         {c.name}
                       </Link>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${c.name}`}
+                        onClick={() => deleteRow(c.id)}
+                        className="flex size-7 shrink-0 items-center justify-center rounded-lg text-black/30 opacity-0 transition-colors hover:bg-[#fdeaea] hover:text-[#d4351c] group-hover/r:opacity-100 focus-visible:opacity-100"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
                     </div>
                   </td>
 
-                  {COLS.map((col, index) => {
+                  {columns.map((col, index) => {
                     const isEditing = editing && editing.id === c.id && editing.key === col.key;
-                    const isLast = index === COLS.length - 1;
+                    const isLast = index === columns.length - 1;
                     return (
                       <td
                         key={col.key}
@@ -503,29 +647,11 @@ export function CustomersGrid() {
                         className={`h-9 overflow-hidden border-b px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg} ${isLast ? "" : "border-r"}`}
                       >
                         {col.type === "select" ? (
-                          isEditing ? (
-                            <select
-                              autoFocus
-                              defaultValue={c[col.key]}
-                              onChange={(e) => commitEdit(c.id, col.key, e.target.value)}
-                              onBlur={() => setEditing(null)}
-                              className="h-6 w-full rounded-[5px] border border-[rgb(38,109,240)] bg-white px-1 text-sm text-black outline-none"
-                            >
-                              {col.options.map((o) => (
-                                <option key={o} value={o}>
-                                  {o}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setEditing({ id: c.id, key: col.key })}
-                              className={`block max-w-full overflow-hidden text-left ${EDIT_CLASSES}`}
-                            >
-                              <StatusPill status={c.status} />
-                            </button>
-                          )
+                          <StatusSelect
+                            status={c[col.key]}
+                            options={col.options}
+                            onChange={(value) => commitEdit(c.id, col.key, value)}
+                          />
                         ) : isEditing && col.editable !== false ? (
                           <CellInput
                             value={c[col.key]}
@@ -562,8 +688,8 @@ export function CustomersGrid() {
                   </span>{" "}
                   count
                 </td>
-                {COLS.map((c, index) => {
-                  const isLast = index === COLS.length - 1;
+                {columns.map((c, index) => {
+                  const isLast = index === columns.length - 1;
                   return (
                     <td
                       key={c.key}
@@ -581,7 +707,7 @@ export function CustomersGrid() {
   );
 }
 
-function CustomerGridSkeletonRow({ index }) {
+function CustomerGridSkeletonRow({ index, columns }) {
   const widths = ["74%", "58%", "68%", "52%"];
 
   return (
@@ -596,8 +722,8 @@ function CustomerGridSkeletonRow({ index }) {
           <SkeletonBlock width={widths[index % widths.length]} height={16} />
         </div>
       </td>
-      {COLS.map((col, colIndex) => {
-        const isLast = colIndex === COLS.length - 1;
+      {columns.map((col, colIndex) => {
+        const isLast = colIndex === columns.length - 1;
         const width = col.key === "status" ? 96 : widths[(index + colIndex) % widths.length];
 
         return (
@@ -614,15 +740,110 @@ function CustomerGridSkeletonRow({ index }) {
   );
 }
 
-function StatusPill({ status }) {
+function StatusSelect({ status, options, onChange }) {
   const s = STATUS_STYLE[status] ?? STATUS_STYLE.Monitoring;
   return (
-    <span
-      className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
-      style={{ backgroundColor: s.bg, color: s.fg }}
-    >
-      {status}
-    </span>
+    <label className="relative inline-flex max-w-full items-center">
+      <select
+        aria-label="Mark status"
+        value={status}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 max-w-full appearance-none rounded-md border border-transparent py-0.5 pl-2 pr-6 text-xs font-medium outline-none transition-colors hover:border-black/15 focus:border-[rgb(38,109,240)]"
+        style={{ backgroundColor: s.bg, color: s.fg }}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 size-3" style={{ color: s.fg }} />
+    </label>
+  );
+}
+
+function NewColumnDialog({ column, open, onOpenChange, onChange, onSubmit, trigger, existingKeys }) {
+  const trimmedLabel = column.label.trim();
+  const trimmedKey = column.key.trim();
+  const keyTaken = trimmedKey.length > 0 && existingKeys.has(trimmedKey);
+  const canSubmit = trimmedLabel.length > 0 && !keyTaken;
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <Dialog.Content
+          className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white p-0 text-[rgb(16,17,18)] shadow-2xl outline-none"
+          style={{ borderColor: BORDER }}
+        >
+          <form onSubmit={onSubmit}>
+            <div className="flex items-start justify-between gap-4 border-b px-5 py-4" style={{ borderColor: BORDER }}>
+              <div>
+                <Dialog.Title className="text-base font-semibold">Add column</Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-black/55">
+                  Create an editable text field for every client row.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-black/45 transition-colors hover:bg-black/5 hover:text-black/70"
+                >
+                  <X className="size-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <div className="grid gap-4 px-5 py-5">
+              <label className="grid gap-1.5 text-sm font-medium">
+                Column name
+                <input
+                  autoFocus
+                  value={column.label}
+                  onChange={(e) => onChange("label", e.target.value)}
+                  placeholder="Renewal owner"
+                  className="h-9 rounded-lg border bg-white px-3 text-sm font-normal text-black outline-none transition-colors placeholder:text-black/35 focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: BORDER }}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                Field key
+                <input
+                  value={column.key}
+                  onChange={(e) => onChange("key", e.target.value.trim().replace(/[^A-Za-z0-9_]/g, ""))}
+                  placeholder="Optional, auto-generated"
+                  className="h-9 rounded-lg border bg-white px-3 font-mono text-sm font-normal text-black outline-none transition-colors placeholder:font-sans placeholder:text-black/35 focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: keyTaken ? "#d4351c" : BORDER }}
+                />
+                {keyTaken && <span className="text-xs font-normal text-[#d4351c]">That key is already in use.</span>}
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t px-5 py-4" style={{ borderColor: BORDER }}>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="h-8 rounded-lg border bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+                  style={{ borderColor: BORDER }}
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="h-8 rounded-lg bg-[rgb(38,109,240)] px-3 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)] disabled:cursor-not-allowed disabled:bg-black/20"
+              >
+                Add column
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
