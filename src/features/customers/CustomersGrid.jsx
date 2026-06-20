@@ -555,12 +555,8 @@ export function CustomersGrid() {
                     <td
                       key={c.key}
                       style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
-                      className={`group/calc h-9 bg-white px-3 ${isLast ? "" : "border-r"}`}
-                    >
-                      <span className="flex items-center gap-1.5 text-black/30 transition-colors group-hover/calc:text-black/55">
-                        <Plus className="size-3.5" /> Add calculation
-                      </span>
-                    </td>
+                      className={`h-9 bg-white px-3 ${isLast ? "" : "border-r"}`}
+                    />
                   );
                 })}
               </tr>
@@ -569,6 +565,39 @@ export function CustomersGrid() {
         </table>
       </div>
     </div>
+  );
+}
+
+function CustomerGridSkeletonRow({ index }) {
+  const widths = ["74%", "58%", "68%", "52%"];
+
+  return (
+    <tr>
+      <td
+        style={{ width: 260, minWidth: 260, borderColor: BORDER }}
+        className="sticky left-0 z-20 h-9 border-b border-r bg-white px-3"
+      >
+        <div className="flex items-center gap-2.5">
+          <SkeletonBlock width={16} height={16} />
+          <SkeletonBlock width={20} height={20} />
+          <SkeletonBlock width={widths[index % widths.length]} height={16} />
+        </div>
+      </td>
+      {COLS.map((col, colIndex) => {
+        const isLast = colIndex === COLS.length - 1;
+        const width = col.key === "status" ? 96 : widths[(index + colIndex) % widths.length];
+
+        return (
+          <td
+            key={col.key}
+            style={{ width: col.width, minWidth: col.width, borderColor: BORDER }}
+            className={`h-9 border-b bg-white px-2 align-middle ${isLast ? "" : "border-r"}`}
+          >
+            <SkeletonBlock height={col.key === "status" ? 22 : 15} width={width} />
+          </td>
+        );
+      })}
+    </tr>
   );
 }
 

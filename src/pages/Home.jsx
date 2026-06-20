@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Clock3,
@@ -49,6 +49,14 @@ export function Home() {
     } catch (error) {
       setHomeError(error);
     }
+  }
+
+  async function moveTodoTask(task, status) {
+    if (!task || task.status === status) return;
+    await saveTodoTask({
+      ...task,
+      status,
+    });
   }
 
   async function deleteTodoTask(taskId) {
@@ -121,6 +129,7 @@ export function Home() {
             loading={initialLoading}
             onOpenTask={setEditingTask}
             onNewTask={(status) => setEditingTask(createTodoDraft(status))}
+            onMoveTask={moveTodoTask}
           />
         </div>
 
@@ -250,7 +259,18 @@ const boardGroups = [
   },
 ];
 
-function TodoList({ cards, loading, onOpenTask, onNewTask }) {
+function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
+  const [draggedCardId, setDraggedCardId] = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState(null);
+  const draggedCard = cards.find((card) => card.id === draggedCardId);
+
+  function handleDrop(status) {
+    if (!draggedCard) return;
+    onMoveTask(draggedCard, status);
+    setDraggedCardId(null);
+    setDragOverStatus(null);
+  }
+
   return (
     <div
       data-testid="home-todo-list"
@@ -284,6 +304,14 @@ function TodoList({ cards, loading, onOpenTask, onNewTask }) {
                 loading={loading}
                 onOpenTask={onOpenTask}
                 onNewTask={onNewTask}
+                onDropTask={handleDrop}
+                onDragStart={setDraggedCardId}
+                onDragEnd={() => {
+                  setDraggedCardId(null);
+                  setDragOverStatus(null);
+                }}
+                onDragOver={setDragOverStatus}
+                isDragTarget={dragOverStatus === group.status && draggedCard?.status !== group.status}
               />
             );
           })}
@@ -310,9 +338,37 @@ function BoardHeader({ group, count, loading }) {
   );
 }
 
-function BoardGroup({ group, cards, loading, onOpenTask, onNewTask }) {
+function BoardGroup({
+  group,
+  cards,
+  loading,
+  onOpenTask,
+  onNewTask,
+  onDropTask,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  isDragTarget,
+}) {
   return (
-    <div className={`mr-3 box-content h-max w-[260px] shrink-0 rounded-b-[10px] px-2 pb-2 ${group.background}`}>
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        onDragOver(group.status);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onDragOver(null);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDropTask(group.status);
+      }}
+      className={[
+        "mr-3 box-content h-max min-h-[132px] w-[260px] shrink-0 rounded-b-[10px] px-2 pb-2 transition-shadow",
+        group.background,
+        isDragTarget ? "shadow-[inset_0_0_0_2px_rgba(70,161,113,0.35)]" : "",
+      ].join(" ")}
+    >
       <div className="h-[3px] w-[260px]" />
       {loading ? (
         <>
@@ -325,7 +381,13 @@ function BoardGroup({ group, cards, loading, onOpenTask, onNewTask }) {
       ) : (
         <>
           {cards.map((card) => (
-            <TodoCard key={card.id} card={card} onClick={() => onOpenTask(card)} />
+            <TodoCard
+              key={card.id}
+              card={card}
+              onClick={() => onOpenTask(card)}
+              onDragStart={() => onDragStart(card.id)}
+              onDragEnd={onDragEnd}
+            />
           ))}
           <button
             type="button"
@@ -408,14 +470,31 @@ function HomeCalendarSkeleton() {
   );
 }
 
-function TodoCard({ card, onClick }) {
+function TodoCard({ card, onClick, onDragStart, onDragEnd }) {
   const hasTags = hasCardTags(card);
+  const didDragRef = useRef(false);
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      draggable
+      onClick={(event) => {
+        if (didDragRef.current) {
+          event.preventDefault();
+          didDragRef.current = false;
+          return;
+        }
+        onClick();
+      }}
+      onDragStart={(event) => {
+        didDragRef.current = true;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", card.id);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
       className={[
-        "mb-2 flex w-[260px] rounded-[10px] bg-white text-left transition-colors hover:bg-[#f8f8f7]",
+        "mb-2 flex w-[260px] cursor-grab rounded-[10px] bg-white text-left transition-colors hover:bg-[#f8f8f7] active:cursor-grabbing",
         hasTags ? "h-[102px] items-start px-4 py-2.5" : "h-10 items-center px-4",
         "shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)]",
       ].join(" ")}

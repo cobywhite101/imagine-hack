@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
+import { SkeletonBlock } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
@@ -1459,6 +1460,117 @@ function CustomerChatThinkingIndicator({ intent = DEFAULT_THINKING_INTENT }) {
   );
 }
 
+function CustomerWorkspaceSkeleton() {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
+        <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
+          <div className="absolute left-6 top-6 z-10">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              render={<Link to="/customers" />}
+              aria-label="Back to customers"
+              className="border border-border bg-white shadow-sm hover:bg-neutral-50"
+            >
+              <ArrowLeft className="size-4 text-muted-foreground" />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex min-h-full flex-col items-center justify-end">
+              <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-8 px-6 py-8">
+                <div className="max-w-[520px] rounded-2xl border bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center gap-3">
+                    <SkeletonBlock width={36} height={36} />
+                    <div className="space-y-1.5">
+                      <SkeletonBlock width={162} height={16} />
+                      <SkeletonBlock width={118} height={12} />
+                    </div>
+                  </div>
+                  <SkeletonBlock height={16} width="94%" />
+                  <SkeletonBlock height={16} width="78%" />
+                  <div className="mt-4 flex gap-2">
+                    <SkeletonBlock width={108} height={28} />
+                    <SkeletonBlock width={132} height={28} />
+                  </div>
+                </div>
+                <div className="ml-auto w-[440px] max-w-[80%] rounded-2xl bg-[#f5f7fb] p-4">
+                  <SkeletonBlock height={16} width="84%" />
+                  <SkeletonBlock height={16} width="62%" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex shrink-0 justify-center bg-white">
+            <div className="mb-4 w-[720px] max-w-[calc(100%-48px)] rounded-2xl border bg-white p-4 shadow-sm">
+              <SkeletonBlock height={18} width="64%" />
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <SkeletonBlock height={34} className="flex-1" containerClassName="flex-1" />
+                <SkeletonBlock width={84} height={34} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="min-h-0 overflow-y-auto bg-white">
+          <div className="border-b px-6 py-5">
+            <div className="flex items-center gap-3">
+              <SkeletonBlock width={44} height={44} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <SkeletonBlock width={174} height={20} />
+                <SkeletonBlock width={132} height={14} />
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="rounded-lg border bg-white p-3">
+                  <SkeletonBlock width={74} height={12} />
+                  <div className="mt-2">
+                    <SkeletonBlock width="86%" height={16} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="px-6 pb-8 pt-4">
+            <div className="mb-5 flex w-fit gap-1 rounded-lg bg-[#f1f1f3] p-1">
+              <SkeletonBlock width={84} height={32} />
+              <SkeletonBlock width={84} height={32} />
+            </div>
+            <WorkflowDetailsSkeleton />
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowDetailsSkeleton() {
+  return (
+    <div className="space-y-4 pt-4">
+      {Array.from({ length: 3 }).map((_, sectionIndex) => (
+        <section key={sectionIndex} className="rounded-xl border bg-white p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="space-y-1.5">
+              <SkeletonBlock width={sectionIndex === 0 ? 142 : 118} height={16} />
+              <SkeletonBlock width={190} height={12} />
+            </div>
+            <SkeletonBlock width={34} height={28} />
+          </div>
+          <div className="space-y-3">
+            {Array.from({ length: sectionIndex === 0 ? 4 : 3 }).map((_, rowIndex) => (
+              <div key={rowIndex} className="grid grid-cols-[110px_1fr] gap-3">
+                <SkeletonBlock height={14} width={82} />
+                <SkeletonBlock height={16} width={rowIndex % 2 ? "72%" : "94%"} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function CustomerWorkspace() {
   const { customerId } = useParams();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
@@ -1558,19 +1670,7 @@ export function CustomerWorkspace() {
   }, [messages, sending]);
 
   if (loading && !customer) {
-    return (
-      <div className="flex h-full flex-col">
-        <header className="flex h-14 items-center gap-3 border-b px-5">
-          <Button variant="ghost" size="icon-sm" render={<Link to="/customers" />} aria-label="Back to customers">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div className="min-w-0">
-            <h1 className="text-sm font-semibold">Loading customer</h1>
-            <p className="text-[11px] text-muted-foreground">Fetching live customer data...</p>
-          </div>
-        </header>
-      </div>
-    );
+    return <CustomerWorkspaceSkeleton />;
   }
 
   if (error && !customer) {
@@ -2282,7 +2382,7 @@ export function CustomerWorkspace() {
                   onDeleteArticle={deleteCustomerArticle}
                 />
               ) : (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
+                <WorkflowDetailsSkeleton />
               )}
             </TabsContent>
 
