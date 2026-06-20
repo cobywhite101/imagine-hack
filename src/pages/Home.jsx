@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  CalendarDays,
-  CheckCircle2,
   Clock3,
-  ListChecks,
   MailCheck,
   Tag,
 } from "lucide-react";
@@ -18,7 +15,6 @@ export function Home() {
   const todoCards = dashboard?.tasks ?? [];
   const meetings = dashboard?.meetings ?? [];
   const brief = dashboard?.brief ?? defaultBrief;
-  const statItems = mergeHomeStats(dashboard?.stats ?? defaultStats);
 
   const refreshHomeDashboard = useCallback(async () => {
     try {
@@ -108,8 +104,6 @@ export function Home() {
             ) : null}
           </section>
         </div>
-
-        <AdvisorStatsStrip stats={statItems} />
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
           <TodoList
@@ -202,83 +196,6 @@ function getBriefBodyParts(body = "", highlights = []) {
   }
 
   return parts.length ? parts : [{ text: body }];
-}
-
-const defaultStats = [
-  {
-    id: "todo",
-    label: "To-do Tasks",
-    value: "0",
-    helper: "No tasks due today",
-    icon: ListChecks,
-    tone: "bg-[#f0fdf4] text-[#22c55e]",
-  },
-  {
-    id: "meetings",
-    label: "Meetings",
-    value: "0",
-    helper: "No meetings today",
-    icon: CalendarDays,
-    tone: "bg-[#eff6ff] text-[#3b82f6]",
-  },
-  {
-    id: "followups",
-    label: "Follow-ups",
-    value: "0",
-    helper: "No follow-ups due",
-    icon: MailCheck,
-    tone: "bg-[#faf5ff] text-[#a855f7]",
-  },
-  {
-    id: "completed",
-    label: "Completed",
-    value: "0",
-    helper: "No tasks done yet",
-    icon: CheckCircle2,
-    tone: "bg-[#fef2f2] text-[#ef4444]",
-  },
-];
-
-function mergeHomeStats(items) {
-  return defaultStats.map((fallback) => ({
-    ...fallback,
-    ...(items.find((item) => item.id === fallback.id || item.label === fallback.label) ?? {}),
-  }));
-}
-
-function AdvisorStatsStrip({ stats = defaultStats }) {
-  return (
-    <div className="flex h-[126px] w-[1179px] px-4 pt-4 text-black transition-all">
-      <div className="h-[110px] w-[1147px] flex-1 bg-white transition-all">
-        <div className="flex h-[110px] w-[1147px] justify-between space-x-3 transition-all">
-          {stats.map((item) => (
-            <MetricCard key={item.label} {...item} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, helper, icon: Icon, tone }) {
-  return (
-    <div className="h-[110px] flex-1 rounded-[8px] border border-[#eeeeee] px-4 pb-3 pt-4 text-[#4a4a4a] transition-all">
-      <div className="mb-4 flex h-8 items-center transition-all">
-        <div
-          className={`mr-3 flex size-8 items-center justify-center rounded-[6px] transition-all ${tone}`}
-        >
-          <Icon className="size-4" strokeWidth={1.9} />
-        </div>
-        <p className="text-[14px] font-medium leading-5 transition-all">{label}</p>
-      </div>
-      <div className="flex h-8 items-baseline transition-all">
-        <p className="mr-1 text-[24px] font-semibold leading-8 transition-all">{value}</p>
-        <div className="ml-2 mt-1 text-[12px] leading-4 text-[#7b7b7b] transition-all">
-          {helper}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 const boardGroups = [
