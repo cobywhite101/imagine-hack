@@ -116,6 +116,57 @@ function isArticleGenerationRequest(text, hasCandidate = false) {
   return asksForArticle || acceptsPrompt;
 }
 
+function describeMeetingUpload(fileName, body) {
+  const haystack = `${fileName} ${body}`.toLowerCase();
+  if (/\b(action items?|attendees|agenda|minutes)\b/.test(haystack)) return "Raw client meeting minutes";
+  if (/\b(transcript|speaker|recording)\b/.test(haystack)) return "Client meeting transcript";
+  return "Advisor meeting notes";
+}
+
+function buildMeetingUploadMessage({ customer, memory }) {
+  const documentType = describeMeetingUpload(memory.sourceName || memory.title, memory.body || memory.summary);
+  const contactName = customer.contactName || customer.name;
+
+  return {
+    text: [
+      `I saved **${memory.sourceName || memory.title}** as meeting context for ${customer.name}.`,
+      "",
+      `**What it is**`,
+      `${documentType} with client context, commitments, and follow-up signals for ${contactName}.`,
+      "",
+      `**Summary**`,
+      memory.summary || "I could not extract a useful text summary from this file yet.",
+      "",
+      `**Suggestions**`,
+      `- Add the useful parts into an internal article so another advisor can reuse it later.`,
+      `- Draft a client follow-up email from the commitments and next steps.`,
+      `- Review action items, risks, and dates before updating the advisor workflow.`,
+      "",
+      "Want me to add this to an internal article?",
+    ].join("\n"),
+    suggestions: [
+      {
+        id: `article-${memory.id}`,
+        label: "Add to article",
+        action: "create-article",
+        memoryId: memory.id,
+        instruction: "Turn these uploaded meeting minutes into an internal article for the advisor knowledge base.",
+      },
+      {
+        id: `followup-${memory.id}`,
+        label: "Draft follow-up",
+        action: "draft-follow-up",
+      },
+      {
+        id: `actions-${memory.id}`,
+        label: "Review actions",
+        action: "send-prompt",
+        prompt: `Review the action items, risks, important dates, and recommended next steps from ${memory.sourceName || memory.title}.`,
+      },
+    ],
+  };
+}
+
 function upsertArticleList(articles, article) {
   const next = [article, ...articles.filter((item) => item.id !== article.id)];
   return next.sort((a, b) => new Date(b.updatedAt ?? 0) - new Date(a.updatedAt ?? 0));
@@ -391,7 +442,32 @@ function EmailDraftBlock({ initialSubject, initialBody }) {
   );
 }
 
-function CustomerChatMessage({ message }) {
+function MessageSuggestions({ suggestions = [], onSuggestion }) {
+  if (!suggestions.length) return null;
+
+  return (
+    <div className="mt-3 flex max-w-full flex-wrap gap-2">
+      {suggestions.map((suggestion) => {
+        const SuggestionIcon =
+          suggestion.action === "create-article" ? FileText : suggestion.action === "draft-follow-up" ? Mail : Check;
+
+        return (
+          <button
+            key={suggestion.id || suggestion.label}
+            type="button"
+            onClick={() => onSuggestion?.(suggestion)}
+            className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-lg border border-black/[0.08] bg-white px-2.5 text-[13px] font-medium leading-none text-[#101112] shadow-[0_1px_2px_rgba(28,40,64,0.04)] transition-colors hover:bg-[#f6f7f9]"
+          >
+            <SuggestionIcon className="size-3.5 shrink-0 text-[#266df0]" strokeWidth={1.9} />
+            <span className="truncate">{suggestion.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CustomerChatMessage({ message, onSuggestion }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -426,6 +502,8 @@ function CustomerChatMessage({ message }) {
           </div>
         )}
 
+        <MessageSuggestions suggestions={message.suggestions} onSuggestion={onSuggestion} />
+
         <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
           <CustomerChatIconButton label="Copy">
             <Copy className="size-3.5" strokeWidth={1.8} />
@@ -440,6 +518,7 @@ function CustomerChatMessage({ message }) {
       <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
         {renderMessageText(message.text, message.id !== "seed-1")}
       </div>
+      <MessageSuggestions suggestions={message.suggestions} onSuggestion={onSuggestion} />
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
           <Copy className="size-3.5" strokeWidth={1.8} />
@@ -584,18 +663,20 @@ export function CustomerWorkspace() {
     };
   }
 
-  async function remember(entry) {
+  async function remember(entry, { notify = true } = {}) {
     setMemories((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
     const savedEntry = await api.saveCustomerMemory(customer.id, entry);
     setMemories((prev) => [savedEntry, ...prev.filter((item) => item.id !== savedEntry.id)]);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `memory-${savedEntry.id}`,
-        role: "assistant",
-        text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
-      },
-    ]);
+    if (notify) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `memory-${savedEntry.id}`,
+          role: "assistant",
+          text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
+        },
+      ]);
+    }
     return savedEntry;
   }
 
@@ -633,8 +714,8 @@ export function CustomerWorkspace() {
     });
   }
 
-  async function createArticleFromLatestMinutes(instruction = "") {
-    const sourceMemory = getArticleSourceMemory();
+  async function createArticleFromLatestMinutes(instruction = "", sourceOverride = null) {
+    const sourceMemory = sourceOverride ?? getArticleSourceMemory();
     if (!sourceMemory) {
       addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
       return null;
@@ -696,11 +777,12 @@ export function CustomerWorkspace() {
             body,
             sourceName: upload.name,
             sourceMeta: `${formatFileSize(upload.size)} | ${isTextLikeFile(upload.file) ? "Summarized" : "Stored reference"}`,
-          })
+          }),
+          { notify: !meetingMinutes }
         );
         if (meetingMinutes) {
           setArticleCandidate(savedEntry);
-          addAssistantNotice(`I saved ${upload.name} as meeting context. Want me to turn it into an internal article?`);
+          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry }));
         }
       }
     } finally {
@@ -767,13 +849,18 @@ export function CustomerWorkspace() {
     setListening(false);
   }
 
-  function addAssistantNotice(text) {
+  function addAssistantNotice(notice) {
+    const message =
+      typeof notice === "string"
+        ? { text: notice }
+        : notice;
+
     setMessages((prev) => [
       ...prev,
       {
         id: `notice-${Date.now()}`,
         role: "assistant",
-        text,
+        ...message,
       },
     ]);
   }
@@ -807,8 +894,7 @@ export function CustomerWorkspace() {
     }
   }
 
-  async function submit() {
-    const text = value.trim();
+  async function sendCustomerPrompt(text) {
     if (!text || sending) return;
 
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
@@ -827,6 +913,43 @@ export function CustomerWorkspace() {
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function submit() {
+    await sendCustomerPrompt(value.trim());
+  }
+
+  async function handleSuggestion(suggestion) {
+    if (!suggestion || sending) return;
+
+    if (suggestion.action === "create-article") {
+      const sourceMemory =
+        memories.find((memory) => memory.id === suggestion.memoryId) ||
+        (articleCandidate?.id === suggestion.memoryId ? articleCandidate : null);
+
+      setMessages((prev) => [
+        ...prev,
+        { id: `u-${Date.now()}`, role: "user", text: suggestion.label },
+      ]);
+      setSending(true);
+      try {
+        await createArticleFromLatestMinutes(suggestion.instruction || "", sourceMemory);
+      } catch {
+        addAssistantNotice("I could not generate the internal article right now. Try again from the uploaded minutes.");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    if (suggestion.action === "draft-follow-up") {
+      await draftFollowUp();
+      return;
+    }
+
+    if (suggestion.action === "send-prompt") {
+      await sendCustomerPrompt(suggestion.prompt || suggestion.label);
     }
   }
 
@@ -867,7 +990,7 @@ export function CustomerWorkspace() {
             <div className="flex min-h-full flex-col items-center justify-end">
               <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
                 {messages.map((message) => (
-                  <CustomerChatMessage key={message.id} message={message} />
+                  <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
                 ))}
                 {sending && <CustomerChatThinkingIndicator />}
                 <div ref={threadEndRef} />
