@@ -21,7 +21,7 @@ export function Home() {
   const brief = dashboard?.brief;
   const selectedMeetingId = searchParams.get("meeting");
   const initialLoading = dashboard === null && !homeError;
-  const briefHeadline = brief?.headline ?? defaultBrief.headline;
+  const briefHeadline = brief?.headline ?? getTimeBasedBriefHeadline();
 
   const refreshHomeDashboard = useCallback(async () => {
     try {
@@ -102,19 +102,31 @@ export function Home() {
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white">
         <div className="w-full px-4 pt-4">
-          <section className="rounded-[8px] bg-white p-5 text-[#4a4a4a]">
-            <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
-              {initialLoading ? <SkeletonBlock width={260} height={28} /> : briefHeadline}
+          <section className="rounded-[8px] bg-white py-5 pl-2 pr-0 text-[#4a4a4a]">
+            <h2 className="mb-2.5 flex items-center gap-2 text-[22px] font-semibold text-[#101112]">
+              {initialLoading ? (
+                <SkeletonBlock width={260} height={28} />
+              ) : (
+                <>
+                  <span
+                    className="inline-block origin-[70%_75%] animate-wave text-[24px] leading-none"
+                    aria-hidden="true"
+                  >
+                    👋
+                  </span>
+                  <span>{briefHeadline}</span>
+                </>
+              )}
             </h2>
             {initialLoading ? (
-              <div className="max-w-[920px] space-y-2">
+              <div className="w-full space-y-2">
                 <SkeletonBlock height={24} width="96%" />
                 <SkeletonBlock height={24} width="78%" />
               </div>
             ) : brief?.body ? (
               <p
                 key={brief.body}
-                className="max-w-[920px] animate-grok-fade text-[18px] font-medium leading-7 text-[#101112]"
+                className="max-w-[68ch] animate-grok-fade text-[18px] font-medium leading-7 text-[#101112]"
               >
                 <BriefBody body={brief.body} highlights={brief.bodyHighlights} />
               </p>
@@ -162,14 +174,30 @@ export function Home() {
   );
 }
 
-const defaultBrief = {
-  headline: "Good morning, Daniel.",
-};
+function getTimeBasedBriefHeadline() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) {
+    return "Good morning, Daniel.";
+  }
+
+  if (hour < 17) {
+    return "Good afternoon, Daniel.";
+  }
+
+  return "Good evening, Daniel.";
+}
 
 const briefHighlightTones = {
   meetings: "text-[#2563eb]",
   followups: "text-[#8b5cf6]",
   priority: "text-[#dc2626]",
+};
+
+const briefHighlightEmoji = {
+  meetings: "📅",
+  followups: "📬",
+  priority: "🔥",
 };
 
 function BriefBody({ body, highlights = [] }) {
@@ -178,11 +206,18 @@ function BriefBody({ body, highlights = [] }) {
   return parts.map((part, index) => {
     if (!part.tone) return part.text;
 
+    const emoji = briefHighlightEmoji[part.tone];
+
     return (
       <span
         key={`${part.tone}-${part.text}-${index}`}
-        className={briefHighlightTones[part.tone] ?? "text-[#101112]"}
+        className={`whitespace-nowrap ${briefHighlightTones[part.tone] ?? "text-[#101112]"}`}
       >
+        {emoji ? (
+          <span className="mr-1 align-[-1px]" aria-hidden="true">
+            {emoji}
+          </span>
+        ) : null}
         {part.text}
       </span>
     );

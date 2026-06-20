@@ -36,7 +36,7 @@ function Toggle({ checked, onChange, disabled = false, label }) {
 function Section({ label, defaultOpen = true, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="py-4">
+    <div className="py-4">
       <div className="flex items-center justify-between">
         <h3 className="text-[15px] font-semibold text-[#1a1a1a]">{label}</h3>
         <div className="flex items-center gap-1.5 text-[#bdbdc2]">
@@ -58,7 +58,7 @@ function Section({ label, defaultOpen = true, children }) {
         </div>
       </div>
       {open && <div className="mt-3">{children}</div>}
-    </section>
+    </div>
   );
 }
 

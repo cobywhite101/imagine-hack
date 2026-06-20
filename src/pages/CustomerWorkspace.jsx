@@ -5,20 +5,25 @@ import {
   ArrowDown,
   ArrowUp,
   Brain,
+  CalendarClock,
   CalendarDays,
+  CalendarPlus,
   ChevronDown,
   CircleCheck,
+  Command,
   Copy,
   FileText,
   Mail,
   Paperclip,
   Plus,
+  ShieldCheck,
   Sparkles,
   Pencil,
   Send,
   Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ActionSearchBar } from "@/components/ui/action-search-bar";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
@@ -1108,16 +1113,116 @@ function CustomerChatComposer({
   onSubmit,
   onAttach,
   onDraft,
+  onSendPrompt,
+  onOpenCalendar,
   sending,
   model,
   onModelChange,
 }) {
   const [open, setOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   const modelLabels = {
     base: "Base",
     reasoning: "Reasoning",
   };
+
+  const firstName = (customer.contactName || customer.name || "this customer").split(" ")[0];
+
+  const quickActions = [
+    {
+      id: "schedule-meeting",
+      label: "Schedule a meeting",
+      description: `Suggest times & draft an invite for ${firstName}`,
+      end: "Agent",
+      icon: CalendarPlus,
+      keywords: ["meeting", "schedule", "book", "call", "appointment", "invite"],
+      onSelect: () =>
+        onSendPrompt?.(
+          `Help me schedule a meeting with ${customer.name}. Suggest a few good time slots and draft a short scheduling message I can send.`
+        ),
+    },
+    {
+      id: "draft-follow-up",
+      label: "Draft follow-up email",
+      description: "From the latest saved knowledge",
+      end: "Email",
+      icon: Mail,
+      iconClassName: "text-[#7c5cff]",
+      keywords: ["email", "follow up", "followup", "write", "message"],
+      onSelect: () => onDraft?.(),
+    },
+    {
+      id: "summarize-relationship",
+      label: "Summarize relationship",
+      description: "Key facts, open items & rapport",
+      end: "Agent",
+      icon: Sparkles,
+      iconClassName: "text-[#e0992a]",
+      keywords: ["summary", "summarize", "recap", "overview", "brief"],
+      onSelect: () =>
+        onSendPrompt?.(
+          `Summarize my relationship with ${customer.name}: key facts, last contact, open action items, and rapport notes.`
+        ),
+    },
+    {
+      id: "renewal-review",
+      label: "Prep renewal review",
+      description: "Policies due & talking points",
+      end: "Agent",
+      icon: CalendarClock,
+      iconClassName: "text-[#16a06a]",
+      keywords: ["renewal", "policy", "review", "prep", "talking points"],
+      onSelect: () =>
+        onSendPrompt?.(
+          `Prepare a renewal review for ${customer.name}: which policies are coming up for renewal, recommended talking points, and next steps.`
+        ),
+    },
+    {
+      id: "risk-check",
+      label: "Risk & coverage check",
+      description: "Gaps and protection summary",
+      end: "Agent",
+      icon: ShieldCheck,
+      iconClassName: "text-[#d9534f]",
+      keywords: ["risk", "coverage", "protection", "gaps", "insurance"],
+      onSelect: () =>
+        onSendPrompt?.(
+          `Give me a risk and coverage summary for ${customer.name}: current protection, gaps, and recommendations.`
+        ),
+    },
+    {
+      id: "upload-minutes",
+      label: "Upload meeting minutes",
+      description: "Save notes as client context",
+      end: "Upload",
+      icon: Paperclip,
+      iconClassName: "text-black/55",
+      keywords: ["upload", "minutes", "notes", "attach", "file", "transcript"],
+      onSelect: () => onAttach?.(),
+    },
+    {
+      id: "open-calendar",
+      label: "Open calendar",
+      description: "View linked meetings",
+      end: "App",
+      icon: CalendarDays,
+      iconClassName: "text-black/55",
+      keywords: ["calendar", "meetings", "agenda", "open"],
+      onSelect: () => onOpenCalendar?.(),
+    },
+  ];
+
+  useEffect(() => {
+    function handleShortcut(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setActionsOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
 
   return (
     <div className="flex h-[140px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[24px]">
@@ -1131,6 +1236,31 @@ function CustomerChatComposer({
         />
         <div className="flex h-11 items-end justify-between gap-3 p-2">
           <div className="flex min-w-0 items-center gap-1">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setActionsOpen((prev) => !prev)}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 transition-colors hover:bg-black/[0.04]",
+                  actionsOpen ? "text-[#266df0] bg-[#266df0]/[0.06]" : "text-black/55"
+                )}
+              >
+                <Command className="size-3.5" strokeWidth={1.9} />
+                Actions
+              </button>
+
+              {actionsOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} />
+                  <ActionSearchBar
+                    actions={quickActions}
+                    placeholder={`Help with ${firstName}...`}
+                    onClose={() => setActionsOpen(false)}
+                    className="absolute bottom-full left-0 z-50 mb-2 w-[460px] max-w-[calc(100vw-2rem)]"
+                  />
+                </>
+              )}
+            </div>
             <div className="relative">
               <button
                 type="button"
@@ -2328,6 +2458,8 @@ export function CustomerWorkspace() {
               onSubmit={submit}
               onAttach={() => inputRef.current?.click()}
               onDraft={draftFollowUp}
+              onSendPrompt={sendCustomerPrompt}
+              onOpenCalendar={() => navigate("/home")}
               sending={sending}
               model={selectedModel}
               onModelChange={setSelectedModel}

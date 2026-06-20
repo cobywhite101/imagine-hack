@@ -95,6 +95,7 @@
   --color-info: var(--info);
   --animate-grok-fade: grok-fade 240ms ease-out forwards;
   --animate-thinking-status-fade: thinking-status-fade 950ms ease-in-out both;
+  --animate-wave: wave 2.4s ease-in-out 3;
 }
 
 @keyframes grok-fade {
@@ -105,6 +106,21 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes wave {
+  0%,
+  40%,
+  100% {
+    transform: rotate(0deg);
+  }
+  8%,
+  24% {
+    transform: rotate(16deg);
+  }
+  16% {
+    transform: rotate(-10deg);
   }
 }
 
@@ -123,8 +139,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-grok-fade,
-  .animate-thinking-status-fade {
+  .animate-thinking-status-fade,
+  .animate-wave {
     animation-duration: 1ms;
+    animation-iteration-count: 1;
   }
 }
 
