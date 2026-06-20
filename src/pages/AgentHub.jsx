@@ -8,7 +8,7 @@ export function AgentHub() {
       <header className="flex items-center justify-between border-b px-6 py-3.5">
         <div>
           <h1 className="text-sm font-semibold">Agent Hub</h1>
-          <p className="font-mono text-[11px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             Autonomous agents that work your book
           </p>
         </div>

@@ -31,7 +31,7 @@ export function ChatComposer({ onSend, disabled }) {
         className="max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
       />
       <div className="flex items-center justify-between px-1 pt-1">
-        <span className="rounded-md px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+        <span className="rounded-md px-1.5 py-0.5 text-xs text-muted-foreground">
           Auto
         </span>
         <Button

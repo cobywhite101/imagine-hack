@@ -49,7 +49,7 @@ export function ChatPanel() {
               <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
                 <Sparkles className="size-4 animate-pulse" />
               </span>
-              <span className="font-mono text-xs">Thinking…</span>
+              <span className="text-xs">Thinking…</span>
             </div>
           )}
         </div>

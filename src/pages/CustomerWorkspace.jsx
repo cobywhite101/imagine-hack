@@ -90,7 +90,7 @@ export function CustomerWorkspace() {
           </Button>
           <div className="min-w-0">
             <h1 className="text-sm font-semibold">Customer not found</h1>
-            <p className="font-mono text-[11px] text-muted-foreground">Return to Customer Hub</p>
+            <p className="text-[11px] text-muted-foreground">Return to Customer Hub</p>
           </div>
         </header>
       </div>
@@ -143,7 +143,7 @@ export function CustomerWorkspace() {
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold">{customer.name}</h1>
-            <p className="truncate font-mono text-[11px] text-muted-foreground">{customer.email}</p>
+            <p className="truncate text-[11px] text-muted-foreground">{customer.email}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -297,7 +297,7 @@ export function CustomerWorkspace() {
                     <FileText className="size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{file.name}</p>
-                      <p className="font-mono text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
                     </div>
                     <button
                       type="button"
@@ -319,7 +319,7 @@ export function CustomerWorkspace() {
                 <div key={discussion.id} className="border-l-2 border-primary/25 pl-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium">{discussion.title}</p>
-                    <span className="font-mono text-[11px] text-muted-foreground">{discussion.date}</span>
+                    <span className="text-[11px] text-muted-foreground">{discussion.date}</span>
                   </div>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{discussion.text}</p>
                 </div>

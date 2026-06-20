@@ -37,7 +37,7 @@ function Sidebar() {
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 px-2">
-        <div className="px-2 pb-1.5 pt-2 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="px-2 pb-1.5 pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
           Workspace
         </div>
         {nav.map(({ to, label, icon: Icon, end }) => (
@@ -63,7 +63,7 @@ function Sidebar() {
       <div className="flex flex-col gap-3 border-t px-3 py-3">
         <span
           className={cn(
-            "inline-flex w-fit items-center rounded-full px-2 py-0.5 font-mono text-xs font-medium",
+            "inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium",
             dataMode === "supabase"
               ? "bg-primary/15 text-primary"
               : "bg-secondary text-muted-foreground"
@@ -77,7 +77,7 @@ function Sidebar() {
           </Avatar>
           <div className="leading-tight">
             <div className="text-sm font-medium">Ferdinand</div>
-            <div className="font-mono text-[11px] text-muted-foreground">Account Executive</div>
+            <div className="text-[11px] text-muted-foreground">Account Executive</div>
           </div>
         </div>
       </div>

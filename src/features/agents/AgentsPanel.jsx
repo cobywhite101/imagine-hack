@@ -66,7 +66,7 @@ export function AgentsPanel() {
           <CardTitle>Activity log</CardTitle>
           <CardDescription>Live trace of agent steps</CardDescription>
         </CardHeader>
-        <CardContent className="flex max-h-96 flex-col gap-2 overflow-auto font-mono text-xs">
+        <CardContent className="flex max-h-96 flex-col gap-2 overflow-auto text-xs">
           {entries.map((e) => (
             <div key={e.id} className="flex gap-2">
               <span className="text-muted-foreground">{e.at}</span>

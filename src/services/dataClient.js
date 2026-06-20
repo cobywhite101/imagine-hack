@@ -52,6 +52,15 @@ async function fromTableOrMock(table, mockValue) {
   }
 }
 
+function normalizeCustomerRecord(customer) {
+  return {
+    ...customer,
+    lastTouch: customer.lastTouch ?? customer.last_touch,
+    nextAction: customer.nextAction ?? customer.next_action,
+    tags: customer.tags ?? [],
+  };
+}
+
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -80,7 +89,10 @@ export const api = {
 
   // --- Sales workspace ---------------------------------------------------
 
-  getCustomers: () => fromTableOrMock("customers", mockCustomers),
+  getCustomers: async () => {
+    const rows = await fromTable("customers", mockCustomers, { column: "name" });
+    return rows.map(normalizeCustomerRecord);
+  },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
 

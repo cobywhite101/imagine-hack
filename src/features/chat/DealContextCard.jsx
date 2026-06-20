@@ -24,8 +24,8 @@ export function DealContextCard({ deal }) {
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-semibold">{deal.title}</span>
         </div>
-        <div className="font-mono text-xs text-muted-foreground">{deal.when}</div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">{deal.when}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <MessageSquare className="size-3" /> {deal.comments}
           </span>

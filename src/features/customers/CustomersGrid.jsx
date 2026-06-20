@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Link } from "react-router-dom";
 import {
   Plus,
@@ -8,8 +9,10 @@ import {
   ChevronUp,
   ChevronDown,
   Trash2,
+  X,
 } from "lucide-react";
-import { CUSTOMERS } from "@/data/customers";
+import { api } from "@/services/dataClient";
+import { useApi } from "@/hooks/useApi";
 
 /**
  * Functional CRM grid styled as a faithful replica of Attio's spreadsheet view.
@@ -17,7 +20,7 @@ import { CUSTOMERS } from "@/data/customers";
  * Uses Attio's light palette and pixel metrics on purpose (rgb(238,239,241)
  * borders, rgb(16,17,18) ink, rgb(38,109,240) links, rgba(155,105,255,0.04)
  * row hover) rather than the app's dark tokens — the goal is visual accuracy
- * to the source design. Data is fake/in-memory customers.
+ * to the source design.
  */
 
 const BORDER = "rgb(238, 239, 241)";
@@ -30,6 +33,16 @@ const STATUS_STYLE = {
 };
 
 const STATUSES = Object.keys(STATUS_STYLE);
+const DEAL_STATUS_TO_GRID_STATUS = {
+  Lead: "Monitoring",
+  Qualified: "Scheduled",
+  Proposal: "Scheduled",
+  Negotiation: "Action needed",
+  Won: "Monitoring",
+  "Churn-risk": "Action needed",
+};
+const ACCENTS = ["#3bd4cb", "#317cff", "#ec5d40", "#4991e5", "#9b69ff", "#f5a524", "#22b8cf", "#2f9e44"];
+const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
 const COLS = [
@@ -93,13 +106,50 @@ function CellInput({ value, onCommit, onCancel }) {
 const EDIT_CLASSES =
   "cursor-text rounded-[5px] outline outline-1 outline-transparent hover:outline-black/15";
 
+function getInitials(name) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return initials || "NC";
+}
+
+function normalizeCustomer(customer) {
+  const name = customer.name ?? customer.company ?? "Unnamed customer";
+  const rawStatus = customer.status;
+  const status = STATUS_STYLE[rawStatus]
+    ? rawStatus
+    : DEAL_STATUS_TO_GRID_STATUS[rawStatus] ?? (customer.overdue ? "Action needed" : "Monitoring");
+
+  return {
+    ...customer,
+    name,
+    task: customer.task ?? customer.nextAction ?? customer.next_action ?? "",
+    avatar: customer.avatar ?? getInitials(name),
+    accent: customer.accent ?? "#868e96",
+    status,
+    email: customer.email ?? customer.contact ?? "",
+  };
+}
+
 export function CustomersGrid() {
-  const [data, setData] = useState(CUSTOMERS);
+  const { data: customers, loading, error } = useApi(() => api.getCustomers());
+  const [data, setData] = useState([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [selected, setSelected] = useState(() => new Set());
   const [editing, setEditing] = useState(null); // { id, key }
+  const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newClient, setNewClient] = useState(EMPTY_CLIENT);
   const nextId = useRef(1000);
+
+  useEffect(() => {
+    if (customers) setData(customers.map(normalizeCustomer));
+  }, [customers]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -131,13 +181,37 @@ export function CustomersGrid() {
     setEditing(null);
   }
 
-  function addClient() {
+  function openNewClientModal() {
+    setNewClient(EMPTY_CLIENT);
+    setNewClientOpen(true);
+  }
+
+  function updateNewClient(key, value) {
+    setNewClient((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function addClient(e) {
+    e.preventDefault();
+    const name = newClient.name.trim();
+    if (!name) return;
+
     const id = nextId.current++;
+    const task = newClient.task.trim();
     setData((prev) => [
-      { id, name: "New client", task: "", avatar: "NC", accent: "#868e96", status: "Monitoring", email: "" },
+      {
+        id,
+        name,
+        task,
+        avatar: getInitials(name),
+        accent: ACCENTS[id % ACCENTS.length],
+        status: newClient.status,
+        email: newClient.email.trim(),
+      },
       ...prev,
     ]);
-    setEditing({ id, key: "task" });
+    setEditing(task ? null : { id, key: "task" });
+    setNewClient(EMPTY_CLIENT);
+    setNewClientOpen(false);
   }
 
   function deleteSelected() {
@@ -184,7 +258,7 @@ export function CustomersGrid() {
         </div>
         {selected.size > 0 && (
           <>
-            <span className="font-mono text-xs text-black/55">{selected.size} selected</span>
+            <span className="text-xs text-black/55">{selected.size} selected</span>
             <button
               type="button"
               onClick={deleteSelected}
@@ -195,13 +269,22 @@ export function CustomersGrid() {
             </button>
           </>
         )}
-        <button
-          type="button"
-          onClick={addClient}
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-[rgb(38,109,240)] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)]"
-        >
-          <Plus className="size-3.5" /> New client
-        </button>
+        <NewClientDialog
+          client={newClient}
+          open={newClientOpen}
+          onOpenChange={setNewClientOpen}
+          onChange={updateNewClient}
+          onSubmit={addClient}
+          trigger={
+            <button
+              type="button"
+              onClick={openNewClientModal}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-[rgb(38,109,240)] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)]"
+            >
+              <Plus className="size-3.5" /> New client
+            </button>
+          }
+        />
       </div>
 
       {/* Grid */}
@@ -209,7 +292,7 @@ export function CustomersGrid() {
         className="min-h-0 flex-1 overflow-auto rounded-lg border bg-white"
             style={{ borderColor: BORDER, color: INK, fontSize: 14 }}
           >
-        <table className="border-collapse" style={{ tableLayout: "fixed" }}>
+        <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-30">
             <tr>
               {/* Customer header — sticky left */}
@@ -230,7 +313,7 @@ export function CustomersGrid() {
                   <button
                     type="button"
                     aria-label="New client"
-                    onClick={addClient}
+                    onClick={openNewClientModal}
                     className="ml-auto flex size-7 items-center justify-center rounded-lg text-black/55 transition-colors hover:bg-black/5"
                   >
                     <Plus className="size-3.5" />
@@ -238,14 +321,15 @@ export function CustomersGrid() {
                 </div>
               </th>
 
-              {COLS.map((c) => {
+              {COLS.map((c, index) => {
                 const Icon = c.icon;
                 const active = sort.key === c.key;
+                const isLast = index === COLS.length - 1;
                 return (
                   <th
                     key={c.key}
                     style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
-                    className="h-10 border-b border-r bg-white px-3 align-middle font-medium"
+                    className={`h-10 border-b bg-white px-3 align-middle font-medium ${isLast ? "" : "border-r"}`}
                   >
                     <button
                       type="button"
@@ -264,6 +348,30 @@ export function CustomersGrid() {
           </thead>
 
           <tbody>
+            {loading && (
+              <tr>
+                <td
+                  colSpan={COLS.length + 1}
+                  className="h-24 px-3 text-center text-sm text-black/45"
+                  style={{ borderColor: BORDER }}
+                >
+                  Loading customers...
+                </td>
+              </tr>
+            )}
+
+            {!loading && error && (
+              <tr>
+                <td
+                  colSpan={COLS.length + 1}
+                  className="h-24 px-3 text-center text-sm text-[#d4351c]"
+                  style={{ borderColor: BORDER }}
+                >
+                  Could not load customers from Supabase.
+                </td>
+              </tr>
+            )}
+
             {rows.map((c) => {
               const isSel = selected.has(c.id);
               const rowBg = isSel ? "bg-[rgba(38,109,240,0.06)]" : "bg-white group-hover/r:bg-[rgba(155,105,255,0.04)]";
@@ -295,13 +403,14 @@ export function CustomersGrid() {
                     </div>
                   </td>
 
-                  {COLS.map((col) => {
+                  {COLS.map((col, index) => {
                     const isEditing = editing && editing.id === c.id && editing.key === col.key;
+                    const isLast = index === COLS.length - 1;
                     return (
                       <td
                         key={col.key}
                         style={{ width: col.width, minWidth: col.width, borderColor: BORDER }}
-                        className={`h-9 border-b border-r px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg}`}
+                        className={`h-9 border-b px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg} ${isLast ? "" : "border-r"}`}
                       >
                         {col.type === "select" ? (
                           isEditing ? (
@@ -361,17 +470,20 @@ export function CustomersGrid() {
                 </span>{" "}
                 count
               </td>
-              {COLS.map((c) => (
-                <td
-                  key={c.key}
-                  style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
-                  className="group/calc h-9 border-r bg-white px-3"
-                >
-                  <span className="flex items-center gap-1.5 text-black/30 transition-colors group-hover/calc:text-black/55">
-                    <Plus className="size-3.5" /> Add calculation
-                  </span>
-                </td>
-              ))}
+              {COLS.map((c, index) => {
+                const isLast = index === COLS.length - 1;
+                return (
+                  <td
+                    key={c.key}
+                    style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
+                    className={`group/calc h-9 bg-white px-3 ${isLast ? "" : "border-r"}`}
+                  >
+                    <span className="flex items-center gap-1.5 text-black/30 transition-colors group-hover/calc:text-black/55">
+                      <Plus className="size-3.5" /> Add calculation
+                    </span>
+                  </td>
+                );
+              })}
             </tr>
           </tbody>
         </table>
@@ -381,7 +493,7 @@ export function CustomersGrid() {
 }
 
 function StatusPill({ status }) {
-  const s = STATUS_STYLE[status] ?? STATUS_STYLE.Lead;
+  const s = STATUS_STYLE[status] ?? STATUS_STYLE.Monitoring;
   return (
     <span
       className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
@@ -389,5 +501,115 @@ function StatusPill({ status }) {
     >
       {status}
     </span>
+  );
+}
+
+function NewClientDialog({ client, open, onOpenChange, onChange, onSubmit, trigger }) {
+  const canSubmit = client.name.trim().length > 0;
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <Dialog.Content
+          className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white p-0 text-[rgb(16,17,18)] shadow-2xl outline-none"
+          style={{ borderColor: BORDER }}
+        >
+          <form onSubmit={onSubmit}>
+            <div className="flex items-start justify-between gap-4 border-b px-5 py-4" style={{ borderColor: BORDER }}>
+              <div>
+                <Dialog.Title className="text-base font-semibold">New client</Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-black/55">
+                  Add a client to the customer workspace.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-black/45 transition-colors hover:bg-black/5 hover:text-black/70"
+                >
+                  <X className="size-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <div className="grid gap-4 px-5 py-5">
+              <label className="grid gap-1.5 text-sm font-medium">
+                Name
+                <input
+                  autoFocus
+                  value={client.name}
+                  onChange={(e) => onChange("name", e.target.value)}
+                  placeholder="Maya Chen"
+                  className="h-9 rounded-lg border bg-white px-3 text-sm font-normal text-black outline-none transition-colors placeholder:text-black/35 focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: BORDER }}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                Email
+                <input
+                  type="email"
+                  value={client.email}
+                  onChange={(e) => onChange("email", e.target.value)}
+                  placeholder="maya.chen@example.com"
+                  className="h-9 rounded-lg border bg-white px-3 text-sm font-normal text-black outline-none transition-colors placeholder:text-black/35 focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: BORDER }}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                Status
+                <select
+                  value={client.status}
+                  onChange={(e) => onChange("status", e.target.value)}
+                  className="h-9 rounded-lg border bg-white px-3 text-sm font-normal text-black outline-none transition-colors focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: BORDER }}
+                >
+                  {STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                Task
+                <textarea
+                  value={client.task}
+                  onChange={(e) => onChange("task", e.target.value)}
+                  placeholder="Prepare annual policy check-in notes"
+                  rows={3}
+                  className="min-h-20 resize-none rounded-lg border bg-white px-3 py-2 text-sm font-normal text-black outline-none transition-colors placeholder:text-black/35 focus:border-[rgb(38,109,240)]"
+                  style={{ borderColor: BORDER }}
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t px-5 py-4" style={{ borderColor: BORDER }}>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="h-8 rounded-lg border bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+                  style={{ borderColor: BORDER }}
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="h-8 rounded-lg bg-[rgb(38,109,240)] px-3 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)] disabled:cursor-not-allowed disabled:bg-black/20"
+              >
+                Create client
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

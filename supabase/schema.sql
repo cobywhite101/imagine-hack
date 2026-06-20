@@ -53,6 +53,50 @@ create table if not exists agent_runs (
   created_at timestamptz default now()
 );
 
+create table if not exists customers (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  contact text,
+  email text,
+  avatar text,
+  accent text,
+  status text not null default 'Monitoring',
+  tier text,
+  seats int,
+  value text,
+  last_touch text,
+  next_action text,
+  task text,
+  due text,
+  overdue boolean not null default false,
+  tags text[] not null default '{}',
+  created_at timestamptz default now()
+);
+
+insert into customers (
+  id,
+  name,
+  contact,
+  avatar,
+  accent,
+  status,
+  tier,
+  seats,
+  value,
+  last_touch,
+  next_action,
+  due,
+  overdue,
+  tags
+) values
+  ('cust1', 'Greenleaf', 'Maya Chen · VP Sales', 'GL', '#3bd4cb', 'Negotiation', 'Enterprise', 52, '$148k', '2d ago', 'Send security review', 'Today', true, array['AI', 'Migration']),
+  ('cust2', 'Northwind Labs', 'Dev Okafor · Head of RevOps', 'NL', '#317cff', 'Proposal', 'Mid-market', 24, '$61k', '5d ago', 'Share ROI deck', 'Tomorrow', false, array['Expansion']),
+  ('cust3', 'Atlas Freight', 'Priya Nair · COO', 'AF', '#ec5d40', 'Qualified', 'Enterprise', 80, '$210k', '1d ago', 'Book technical demo', 'Thu', false, array['Logistics', 'ICP fit']),
+  ('cust4', 'Sunrise Retail', 'Tom Becker · Director', 'SR', '#4991e5', 'Won', 'Mid-market', 18, '$44k', 'Today', 'Kickoff onboarding', 'Fri', false, array['Closed']),
+  ('cust5', 'Quanta Health', 'Dr. Lena Voss · CIO', 'QH', '#39bdd6', 'Churn-risk', 'Enterprise', 64, '$172k', '21d ago', 'Re-engage exec sponsor', 'Overdue', true, array['At risk', 'Renewal']),
+  ('cust6', 'Beacon Studios', 'Iris Wong · Founder', 'BS', '#3bd4cb', 'Lead', 'Startup', 9, '$12k', '8d ago', 'Qualify budget', 'Next week', false, array['Inbound'])
+on conflict (id) do nothing;
+
 -- Atomic point award used by api.awardPoints().
 create or replace function award_points(p_user_id uuid, p_points int)
 returns void language sql as $$
@@ -66,6 +110,7 @@ alter table quests enable row level security;
 alter table agents enable row level security;
 alter table mcp_servers enable row level security;
 alter table agent_runs enable row level security;
+alter table customers enable row level security;
 
 create policy "public read" on users for select using (true);
 create policy "public read" on badges for select using (true);
@@ -73,3 +118,4 @@ create policy "public read" on quests for select using (true);
 create policy "public read" on agents for select using (true);
 create policy "public read" on mcp_servers for select using (true);
 create policy "public read" on agent_runs for select using (true);
+create policy "public read" on customers for select using (true);

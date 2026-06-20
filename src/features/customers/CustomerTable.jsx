@@ -27,7 +27,7 @@ function CustomerRow({ c }) {
           </span>
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">{c.name}</div>
-            <div className="truncate font-mono text-[11px] text-muted-foreground">
+            <div className="truncate text-[11px] text-muted-foreground">
               {c.contact}
             </div>
           </div>
@@ -41,18 +41,18 @@ function CustomerRow({ c }) {
 
       {/* Tier / seats / value */}
       <td className="px-3 py-3 text-sm text-muted-foreground">{c.tier}</td>
-      <td className="px-3 py-3 font-mono text-sm text-muted-foreground">{c.seats}</td>
-      <td className="px-3 py-3 font-mono text-sm font-medium text-foreground">{c.value}</td>
+      <td className="px-3 py-3 text-sm text-muted-foreground">{c.seats}</td>
+      <td className="px-3 py-3 text-sm font-medium text-foreground">{c.value}</td>
 
       {/* Last touch */}
-      <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{c.lastTouch}</td>
+      <td className="px-3 py-3 text-xs text-muted-foreground">{c.lastTouch}</td>
 
       {/* Next action + due */}
       <td className="px-3 py-3">
         <div className="text-sm text-foreground">{c.nextAction}</div>
         <div
           className={cn(
-            "font-mono text-[11px]",
+            "text-[11px]",
             c.overdue ? "text-destructive" : "text-muted-foreground"
           )}
         >
@@ -90,7 +90,7 @@ export function CustomerTable() {
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b bg-secondary/30 text-left font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b bg-secondary/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <th className="py-2.5 pl-4 pr-3 font-medium">Customer</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
               <th className="px-3 py-2.5 font-medium">Tier</th>

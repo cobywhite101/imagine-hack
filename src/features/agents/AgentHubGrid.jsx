@@ -36,7 +36,7 @@ function AgentCard({ agent }) {
         <p className="text-sm leading-relaxed text-muted-foreground">{agent.description}</p>
       </div>
 
-      <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{agent.model}</span>
         <span>{agent.runs.toLocaleString()} runs</span>
       </div>
