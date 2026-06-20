@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-react";
-import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { cn } from "@/lib/utils";
 
 /* Notion-like workflow configuration panel. Replicates the agent settings layout:
@@ -123,42 +122,65 @@ function SlackLogo() {
   );
 }
 
-export function WorkflowHeader() {
+function initialsFor(value) {
+  return String(value ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+export function WorkflowHeader({ customer }) {
+  const customerName = customer?.name || "Customer";
+  const ownerLabel = customer?.advisorId ? `Managed by ${customer.advisorId}` : "Advisor unassigned";
+  const statusLabel = customer?.task || customer?.nextAction || customer?.kycStatus || "No next action recorded";
+  const tagLabel = customer?.acquisitionChannel || customer?.preferredCommunicationChannel || customer?.kycStatus || "Client";
+  const avatar = customer?.avatar || initialsFor(customerName) || "C";
+  const accent = customer?.accent || "#868e96";
+
   return (
-    <div className="px-6 pt-7">
-      <div className="flex size-[68px] items-center justify-center rounded-[20px] bg-[#b6e84f]">
-        <DotmSquare6 size={42} dotSize={5} dotShape="square" pattern="full" color="#1d4ed8" ariaLabel="Workflow icon" />
+    <div className="px-6 pt-4">
+      <div
+        className="flex size-[48px] items-center justify-center rounded-xl text-[18px] font-semibold text-white"
+        style={{ backgroundColor: accent }}
+      >
+        {avatar}
       </div>
 
-      <h1 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-[#1a1a1a]">
-        Resume Review
+      <h1 className="mt-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#1a1a1a]">
+        {customerName}
       </h1>
-      <p className="mt-1.5 text-[15px] text-[#9a9aa0]">Drafting completed - awaiting approval</p>
+      <p className="mt-1 text-[13px] text-[#9a9aa0]">{statusLabel}</p>
 
-      <div className="mt-3.5 flex items-center gap-2 text-[14px] text-[#3f3f46]">
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#d97757] text-[10px] font-semibold text-white">
-          G
+      <div className="mt-2.5 flex min-w-0 items-center gap-2 text-[13px] text-[#3f3f46]">
+        <span
+          className="flex size-[18px] shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+          style={{ backgroundColor: accent }}
+        >
+          {initialsFor(customer?.advisorId) || avatar[0] || "A"}
         </span>
-        <span>Managed by Gregor</span>
-        <span className="ml-0.5 inline-flex items-center gap-1 rounded-md bg-[#f1f1f3] px-2 py-0.5 text-[13px] text-[#6b6b70]">
-          <span className="text-[#a0a0a6]">#</span> HR
+        <span className="min-w-0 truncate">{ownerLabel}</span>
+        <span className="ml-0.5 inline-flex min-w-0 max-w-[150px] items-center gap-1 rounded-md bg-[#f1f1f3] px-1.5 py-0.5 text-[12px] text-[#6b6b70]">
+          <span className="shrink-0 text-[#a0a0a6]">#</span>
+          <span className="min-w-0 truncate">{tagLabel}</span>
         </span>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
-          className="inline-flex h-9 items-center gap-2 rounded-[10px] bg-[#1a1a1a] px-3.5 text-[14px] font-medium text-white transition-colors hover:bg-[#000]"
+          className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#1a1a1a] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#000]"
         >
-          <Waypoints className="size-4" strokeWidth={1.9} />
-          Manage workflow
+          <Waypoints className="size-3.5" strokeWidth={1.9} />
+          Manage client workflow
         </button>
         <button
           type="button"
           aria-label="More options"
-          className="flex size-9 items-center justify-center rounded-[10px] bg-[#f1f1f3] text-[#3f3f46] transition-colors hover:bg-[#e8e8ec]"
+          className="flex size-8 items-center justify-center rounded-[8px] bg-[#f1f1f3] text-[#3f3f46] transition-colors hover:bg-[#e8e8ec]"
         >
-          <MoreHorizontal className="size-4.5" strokeWidth={2} />
+          <MoreHorizontal className="size-4" strokeWidth={2} />
         </button>
       </div>
     </div>

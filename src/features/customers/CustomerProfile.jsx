@@ -183,24 +183,7 @@ export function CustomerProfile({ customer }) {
   const hasCompliance = customer.kycStatus || customer.lastFactFindDate || customer.hasWill != null || customer.estatePlanStatus;
 
   return (
-    <div className="pb-2">
-      <div className="flex items-start gap-2.5">
-        {customer.avatar && (
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold text-white"
-            style={{ backgroundColor: customer.accent }}
-          >
-            {customer.avatar}
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[17px] font-semibold leading-tight tracking-[-0.01em] text-[#1a1a1a]">{customer.name}</h2>
-          {demographics.length > 0 && (
-            <p className="mt-0.5 text-[13px] text-[#6b6b70]">{demographics.join(" · ")}</p>
-          )}
-          {clientSinceLabel && <p className="mt-0.5 text-[12px] text-[#9a9aa0]">{clientSinceLabel}</p>}
-        </div>
-      </div>
+    <div className="mt-5 border-t border-[#ededed] px-6 pb-2 pt-5">
 
       {(renewalDays != null || contactDays != null) && (
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">

@@ -25,11 +25,12 @@ export function Home() {
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
         <div className="w-[1179px] px-4 pt-4">
-          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-4 text-[#4a4a4a]">
-            <p className="max-w-[920px] text-[16px] font-medium leading-7 text-[#101112]">
-              Start with the overdue Quanta sponsor re-engagement, then prepare the
-              Greenleaf renewal review before the first call. Northwind needs a concise ROI
-              deck, and Beacon Studios still needs budget qualification before next week.
+          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
+            <h2 className="text-[22px] font-semibold text-[#317cff] mb-2.5">
+              Good morning, Daniel.
+            </h2>
+            <p className="max-w-[920px] text-[18px] font-medium leading-7 text-[#101112]">
+              You have <span className="text-[#317cff] font-semibold">three meetings today</span>, with <span className="text-[#317cff] font-semibold">two follow-ups slipping</span>. <span className="text-[#317cff] font-semibold">Mei Lin's portfolio review at 9:30</span> is your first priority.
             </p>
           </section>
         </div>
@@ -96,9 +97,9 @@ export function Home() {
 
 const meetings = [
   {
-    time: "9:00",
-    title: "Greenleaf renewal review",
-    brief: "Confirm beneficiary sequence, premium sensitivity, and the security review timeline.",
+    time: "9:30",
+    title: "Mei Lin's portfolio review",
+    brief: "Review asset allocation, risk tolerance adjustments, and the proposed rebalancing plan.",
   },
   {
     time: "11:30",

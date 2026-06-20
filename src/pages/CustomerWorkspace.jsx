@@ -20,12 +20,15 @@ import {
   UploadCloud,
   UserRound,
   X,
+  Pencil,
+  Send,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerProfile } from "@/features/customers/CustomerProfile";
-import { WorkflowHeader } from "@/features/customers/WorkflowPanel";
+import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
@@ -142,7 +145,7 @@ function CustomerChatComposer({
   };
 
   return (
-    <div className="flex h-[126px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[10px]">
+    <div className="flex h-[140px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[24px]">
       <div className="relative flex h-[116px] w-full flex-col rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] focus-within:shadow-[inset_0_0_0_1px_rgba(38,109,240,0.28),0_8px_24px_rgba(28,40,64,0.08)]">
         <textarea
           value={value}
@@ -272,6 +275,109 @@ function renderMessageText(text, isAssistant = false) {
   });
 }
 
+function parseEmailDraft(text) {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+  let subjectLineIndex = -1;
+  let subjectText = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const match = line.match(/^(?:\*\*|\*|)?Subject(?:\*\*|\*|)?:\s*(.+)$/i);
+    if (match) {
+      subjectLineIndex = i;
+      subjectText = match[1].replace(/[\*\_\#]+/g, "").trim();
+      break;
+    }
+  }
+
+  if (subjectLineIndex === -1) return null;
+
+  const preText = lines.slice(0, subjectLineIndex).join("\n").trim();
+  const bodyLines = lines.slice(subjectLineIndex + 1);
+  let bodyText = bodyLines.join("\n").trim();
+
+  let postText = "";
+  const sourcesIndex = bodyText.search(/\n\s*(?:Sources|Source):\s*/i);
+  if (sourcesIndex !== -1) {
+    postText = bodyText.substring(sourcesIndex).trim();
+    bodyText = bodyText.substring(0, sourcesIndex).trim();
+  }
+
+  return {
+    preText,
+    subject: subjectText,
+    body: bodyText,
+    postText,
+  };
+}
+
+function formatBodyToHtml(rawText) {
+  if (!rawText) return "";
+
+  const paragraphs = rawText.split(/\n\n+/);
+
+  return paragraphs
+    .map((p) => {
+      let escaped = p
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      escaped = escaped.replace(/\[([^\]]+)\]/g, (match) => {
+        return `<span class="text-[#0d0d0d] bg-[#266df0]/10 border border-[#266df0]/20 cursor-text rounded-md px-1 py-0.5 font-medium select-all">${match}</span>`;
+      });
+
+      escaped = escaped.replace(/\n/g, "<br />");
+
+      return `<p class="mb-4 last:mb-0 leading-[26px]">${escaped}</p>`;
+    })
+    .join("");
+}
+
+function EmailDraftBlock({ initialSubject, initialBody }) {
+  const subjectRef = useRef(null);
+  const bodyRef = useRef(null);
+
+  return (
+    <div className="my-4 w-[768px] max-w-full font-sans text-left">
+      <div className="relative isolate w-full overflow-clip rounded-[24px] border border-black/[0.06] bg-white shadow-[0px_4px_80px_rgba(0,0,0,0.02)] h-[559px] flex flex-col">
+        {/* Subject */}
+        <div className="pt-6 pb-3 pr-10 pl-5 shrink-0">
+          <div className="grid">
+            <textarea
+              ref={subjectRef}
+              defaultValue={initialSubject}
+              className="col-start-1 col-end-2 row-start-1 row-end-2 w-full resize-none overflow-hidden p-0 border-none bg-transparent text-[22px] font-semibold text-[#0d0d0d] leading-normal placeholder:text-[#9b9b9b] focus:ring-0 focus:outline-hidden"
+              aria-label="Subject"
+              rows={1}
+              onInput={(e) => {
+                e.target.style.height = "auto";
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Divider */}
+        <hr className="border-t-[0.5px] border-black/[0.08] mx-5 my-0" />
+
+        {/* Body Editor */}
+        <div className="flex-1 overflow-y-auto pt-4 pb-4 pr-10 pl-5 min-h-0">
+          <div
+            ref={bodyRef}
+            contentEditable
+            suppressContentEditableWarning
+            className="ProseMirror w-full break-words focus:outline-none text-[15px] leading-[26px] text-[#0d0d0d] font-sans"
+            dangerouslySetInnerHTML={{ __html: formatBodyToHtml(initialBody) }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomerChatMessage({ message }) {
   if (message.role === "user") {
     return (
@@ -283,10 +389,52 @@ function CustomerChatMessage({ message }) {
     );
   }
 
+  const parsedDraft = parseEmailDraft(message.text);
+  if (parsedDraft) {
+    const finalPreText = parsedDraft.preText || `Here is the drafted email for this customer:`;
+    return (
+      <div className="group flex flex-col gap-1 w-full items-start">
+        {finalPreText && (
+          <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112] w-full mb-2">
+            {renderMessageText(finalPreText, message.id !== "seed-1")}
+          </div>
+        )}
+
+        <div className="w-[768px] h-[605px] max-w-full flex flex-col">
+          <EmailDraftBlock
+            initialSubject={parsedDraft.subject}
+            initialBody={parsedDraft.body}
+          />
+        </div>
+
+        {parsedDraft.postText && (
+          <div className="mt-2 text-[12px] text-black/45 italic">
+            {parsedDraft.postText}
+          </div>
+        )}
+
+        <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+          <CustomerChatIconButton label="Copy">
+            <Copy className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Helpful">
+            <ThumbsUp className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Not helpful">
+            <ThumbsDown className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+          <CustomerChatIconButton label="Try again">
+            <RotateCcw className="size-3.5" strokeWidth={1.8} />
+          </CustomerChatIconButton>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group">
       <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112]">
-        {renderMessageText(message.text, true)}
+        {renderMessageText(message.text, message.id !== "seed-1")}
       </div>
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
@@ -324,6 +472,7 @@ export function CustomerWorkspace() {
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const configSaveTimer = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
@@ -358,6 +507,10 @@ export function CustomerWorkspace() {
 
   useEffect(() => {
     return () => recognitionRef.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimeout(configSaveTimer.current);
   }, []);
 
   useEffect(() => {
@@ -556,6 +709,16 @@ export function CustomerWorkspace() {
 
 
 
+  // Update workflow config in state immediately (so the chat uses the latest)
+  // and debounce the persistence so we don't write on every keystroke.
+  function updateWorkflowConfig(next) {
+    setWorkflowConfig(next);
+    clearTimeout(configSaveTimer.current);
+    configSaveTimer.current = setTimeout(() => {
+      api.saveWorkflowConfig(customer.id, next);
+    }, 600);
+  }
+
   async function draftFollowUp() {
     if (!customer || sending) return;
 
@@ -643,7 +806,7 @@ export function CustomerWorkspace() {
               </div>
             </div>
           </div>
-          <div className="pointer-events-none absolute bottom-[142px] left-0 right-0 flex h-7 items-center justify-center">
+          <div className="pointer-events-none absolute bottom-[170px] left-0 right-0 flex h-7 items-center justify-center">
             <button
               type="button"
               aria-label="Scroll to latest message"
@@ -670,7 +833,8 @@ export function CustomerWorkspace() {
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white">
-          <WorkflowHeader />
+          <WorkflowHeader customer={customer} />
+          <CustomerProfile customer={customer} />
 
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
             <TabsList
@@ -692,7 +856,11 @@ export function CustomerWorkspace() {
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
-              <CustomerProfile customer={customer} />
+              {workflowConfig ? (
+                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} />
+              ) : (
+                <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
+              )}
             </TabsContent>
 
             <TabsContent value="activity" className="pt-5">
