@@ -11,7 +11,6 @@ import {
   Copy,
   FileText,
   Mail,
-  MessageCircle,
   Paperclip,
   Plus,
   ShieldCheck,
@@ -84,8 +83,6 @@ const MIN_THINKING_MS_BY_INTENT = Object.fromEntries(
   Object.entries(THINKING_STEPS_BY_INTENT).map(([intent, steps]) => [intent, steps.length * THINKING_STEP_MS])
 );
 const DEFAULT_THINKING_INTENT = "general";
-const ADVISOR_CHAT_STORAGE_KEY = "client-os-advisor-chat-threads-v1";
-const ADVISOR_CHAT_UPDATED_EVENT = "client-os-advisor-chat-updated";
 
 function getThinkingStepsForIntent(intent) {
   return THINKING_STEPS_BY_INTENT[intent] ?? THINKING_STEPS_BY_INTENT.general;
@@ -123,15 +120,6 @@ function waitForThinkingSequence(startedAt, intent = DEFAULT_THINKING_INTENT) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, remaining);
   });
-}
-
-function formatMemoryDate(value) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 function formatMeetingDate(iso) {
@@ -224,6 +212,281 @@ function formatMonthDay(date) {
     day: "numeric",
     timeZone: "UTC",
   }).format(date);
+}
+
+function formatPromptDate(date, { weekday = false, year = false } = {}) {
+  return new Intl.DateTimeFormat("en", {
+    ...(weekday ? { weekday: "short" } : {}),
+    month: "short",
+    day: "numeric",
+    ...(year ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  }).format(date).replace(",", "");
+}
+
+function getTodayUtc(today = new Date()) {
+  return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+}
+
+function getPromptCustomerName(customer) {
+  const fullName = cleanText(customer?.contactName || customer?.name || "this client");
+  const parts = fullName.split(/\s+/);
+
+  if (customer?.ethnicity === "Chinese" && parts.length === 3) {
+    return parts.slice(1).join(" ");
+  }
+
+  return fullName;
+}
+
+function titleCaseText(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function getPolicyLabel(policyType) {
+  const label = titleCaseText(policyType);
+  if (!label) return "";
+  if (/insurance|policy|savings|linked|medical|life/i.test(label)) return label;
+  return `${label} policy`;
+}
+
+function getCustomerRenewalPrompt(customer, today = new Date()) {
+  const todayUtc = getTodayUtc(today);
+  const policyRenewals = (Array.isArray(customer?.policies) ? customer.policies : [])
+    .map((policy) => ({
+      date: parseDateOnly(policy.renewalDate ?? policy.renewal_date),
+      policyType: policy.policyType ?? policy.policy_type,
+    }))
+    .filter((item) => item.date);
+  const recordRenewal = {
+    date: parseDateOnly(customer?.nextRenewal),
+    policyType: customer?.nextRenewalPolicyType,
+  };
+  const renewals = [recordRenewal, ...policyRenewals].filter((item) => item.date);
+  if (!renewals.length) return null;
+
+  const upcoming = renewals
+    .filter((item) => item.date >= todayUtc)
+    .sort((a, b) => a.date - b.date);
+  const fallback = renewals.sort((a, b) => b.date - a.date);
+  const renewal = upcoming[0] ?? fallback[0];
+
+  return {
+    ...renewal,
+    isPast: renewal.date < todayUtc,
+  };
+}
+
+function buildCustomerPromptSuggestions(customer) {
+  const promptName = getPromptCustomerName(customer);
+  const birthday = getNextAnnualDate(customer?.dateOfBirth);
+  const renewal = getCustomerRenewalPrompt(customer);
+  const lastContactDate = parseDateOnly(customer?.lastContactDate);
+  const policyLabel = getPolicyLabel(renewal?.policyType || customer?.nextRenewalPolicyType);
+  const suggestions = [];
+
+  if (renewal) {
+    const renewalVerb = renewal.isPast ? "renewed" : "renews";
+    const showRenewalYear = renewal.date.getUTCFullYear() !== getTodayUtc().getUTCFullYear();
+    const renewalDateLabel = formatPromptDate(renewal.date, { year: showRenewalYear });
+    suggestions.push({
+      id: "renewal",
+      label: `Plan ${renewalVerb} ${renewalDateLabel}`,
+      prompt: `What should I know about ${promptName}'s ${policyLabel || "policy"} renewal?`,
+      summaryLabel: `plan ${renewalVerb} ${renewalDateLabel}`,
+    });
+  }
+
+  if (birthday) {
+    suggestions.push({
+      id: "birthday",
+      label: `Birthday ${formatPromptDate(birthday.date)}`,
+      prompt: `What should I say to ${promptName} for the birthday check-in?`,
+      summaryLabel: `Birthday ${formatPromptDate(birthday.date, { weekday: true })}`,
+    });
+  }
+
+  if (customer?.riskTolerance) {
+    suggestions.push({
+      id: "risk",
+      label: `${titleCaseText(customer.riskTolerance)} risk`,
+      prompt: `Summarize ${promptName}'s risk profile and what it means for the next recommendation.`,
+    });
+  }
+
+  if (lastContactDate) {
+    suggestions.push({
+      id: "last-contact",
+      label: `Last met ${formatPromptDate(lastContactDate)}`,
+      prompt: `Recap the last contact with ${promptName} and the next best action.`,
+    });
+  }
+
+  if (policyLabel) {
+    suggestions.push({
+      id: "policy",
+      label: policyLabel,
+      prompt: `Explain ${promptName}'s ${policyLabel.toLowerCase()} context and any follow-up risks.`,
+    });
+  }
+
+  const seen = new Set();
+  return suggestions.filter((suggestion) => {
+    const key = suggestion.label.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getCustomerPronouns(customer) {
+  const gender = cleanText(customer?.gender).toLowerCase();
+  if (gender === "female") return { possessive: "her", possessiveCap: "Her", subject: "she" };
+  if (gender === "male") return { possessive: "his", possessiveCap: "His", subject: "he" };
+  return { possessive: "their", possessiveCap: "Their", subject: "they" };
+}
+
+function formatUpcomingDatePhrase(date, daysUntil) {
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(date);
+  const monthDay = formatMonthDay(date);
+  if (daysUntil >= 0 && daysUntil <= 7) return `this ${weekday}, ${monthDay}`;
+  if (daysUntil > 7 && daysUntil <= 14) return `next ${weekday}, ${monthDay}`;
+  return formatPromptDate(date, { weekday: true, year: date.getUTCFullYear() !== getTodayUtc().getUTCFullYear() });
+}
+
+function formatRelativeBadge(daysUntil) {
+  if (daysUntil === 0) return "today";
+  if (daysUntil === 1) return "tomorrow";
+  if (daysUntil > 1 && daysUntil <= 30) return `in ${daysUntil} days`;
+  if (daysUntil < 0) return `${Math.abs(daysUntil)} days ago`;
+  return "";
+}
+
+function formatElapsedContact(date) {
+  const days = Math.round((getTodayUtc().getTime() - date.getTime()) / DAY_MS);
+  if (days < 0) return `scheduled ${formatPromptDate(date)}`;
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 45) return `${days} days ago`;
+  if (days < 365) {
+    const months = Math.max(1, Math.round(days / 30));
+    return `${months === 1 ? "about a month" : `about ${months} months`} ago`;
+  }
+  const years = Math.max(1, Math.round(days / 365));
+  return `${years === 1 ? "about a year" : `about ${years} years`} ago`;
+}
+
+function getPolicyField(policy, camelKey, snakeKey) {
+  return policy?.[camelKey] ?? policy?.[snakeKey];
+}
+
+function getRenewalPolicy(customer, renewal) {
+  const policies = Array.isArray(customer?.policies) ? customer.policies : [];
+  if (!renewal?.date || !policies.length) return null;
+
+  const renewalDate = renewal.date.toISOString().slice(0, 10);
+  const renewalType = cleanText(renewal.policyType).toLowerCase();
+
+  return (
+    policies.find((policy) => {
+      const policyDate = parseDateOnly(getPolicyField(policy, "renewalDate", "renewal_date"))?.toISOString().slice(0, 10);
+      const policyType = cleanText(getPolicyField(policy, "policyType", "policy_type")).toLowerCase();
+      return policyDate === renewalDate && (!renewalType || policyType === renewalType);
+    }) ??
+    policies.find((policy) => {
+      const policyDate = parseDateOnly(getPolicyField(policy, "renewalDate", "renewal_date"))?.toISOString().slice(0, 10);
+      return policyDate === renewalDate;
+    }) ??
+    null
+  );
+}
+
+function formatPolicyPremium(policy) {
+  const amount = Number(getPolicyField(policy, "premiumAmount", "premium_amount"));
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+
+  const frequency = cleanText(getPolicyField(policy, "premiumFrequency", "premium_frequency")).toLowerCase();
+  const suffix = frequency.startsWith("annual") || frequency.startsWith("year") ? " / year" : frequency.startsWith("month") ? " / month" : "";
+  return `RM${Math.round(amount).toLocaleString("en-US")}${suffix}`;
+}
+
+function formatLastContactDetail(customer) {
+  const topic = cleanText(customer?.task || customer?.nextAction || customer?.policySummary)
+    .replace(/^(?:discuss|review|prepare|complete|send|confirm)\s+/i, "")
+    .replace(/[.]+$/g, "");
+
+  if (topic) return `You discussed ${topic.charAt(0).toLowerCase()}${topic.slice(1)}.`;
+  return "Recap the conversation and the next best action.";
+}
+
+function buildCustomerMomentCards(customer) {
+  const promptName = getPromptCustomerName(customer);
+  const pronouns = getCustomerPronouns(customer);
+  const birthday = getNextAnnualDate(customer?.dateOfBirth);
+  const renewal = getCustomerRenewalPrompt(customer);
+  const lastContactDate = parseDateOnly(customer?.lastContactDate);
+  const cards = [];
+
+  if (birthday) {
+    cards.push({
+      id: "birthday-moment",
+      label: "Birthday",
+      accent: "#c47b2d",
+      badge: formatRelativeBadge(birthday.daysUntil) || formatPromptDate(birthday.date),
+      title: `${pronouns.possessiveCap} birthday is ${formatUpcomingDatePhrase(birthday.date, birthday.daysUntil)}`,
+      detail: "A short, personal note goes a long way.",
+      actionLabel: "Draft a birthday message",
+      prompt: `Draft a warm, concise birthday message for ${promptName}.`,
+    });
+  }
+
+  if (renewal) {
+    const renewalPolicy = getRenewalPolicy(customer, renewal);
+    const policyLabel = getPolicyLabel(renewal.policyType || customer?.nextRenewalPolicyType) || "plan";
+    const details = [
+      formatPolicyPremium(renewalPolicy),
+      customer?.riskTolerance ? `${cleanText(customer.riskTolerance).toLowerCase()} risk` : "",
+    ].filter(Boolean);
+
+    cards.push({
+      id: "renewal-moment",
+      label: "Renewal",
+      accent: "#5268e8",
+      badge: renewal.isPast ? formatPromptDate(renewal.date) : `due ${formatPromptDate(renewal.date)}`,
+      title: `${pronouns.possessiveCap} ${policyLabel.toLowerCase()} is up for renewal`,
+      detail: details.length ? details.join(" · ") : cleanText(customer?.policySummary) || "Review coverage, premium, and next steps.",
+      actionLabel: "Summarize the options",
+      prompt: `Summarize the options for ${promptName}'s ${policyLabel.toLowerCase()} renewal and call out any follow-up risks.`,
+    });
+  }
+
+  if (lastContactDate) {
+    cards.push({
+      id: "last-spoke-moment",
+      label: "Last spoke",
+      accent: "#7c58df",
+      badge: formatPromptDate(lastContactDate),
+      title: `You last spoke ${formatElapsedContact(lastContactDate)}`,
+      detail: formatLastContactDetail(customer),
+      actionLabel: "Recap it",
+      prompt: `Recap the last contact with ${promptName} and recommend the next best action.`,
+    });
+  }
+
+  cards.push({
+    id: "portfolio-moment",
+    label: "Portfolio",
+    accent: "#c66e4e",
+    badge: "-6% YTD",
+    title: "Down about 6% so far this year",
+    detail: `In line with the market - ${pronouns.subject} may have questions.`,
+    actionLabel: "Explain it simply",
+    prompt: `Explain simply how to discuss a portfolio being down about 6% YTD with ${promptName}, using the customer record context and an advisor-friendly tone.`,
+  });
+
+  return cards.slice(0, 4);
 }
 
 function getRelationshipLead(customer) {
@@ -1019,6 +1282,193 @@ function summarizeText(rawText, fallback) {
   return `${summary.slice(0, 280).replace(/\s+\S*$/, "")}...`;
 }
 
+function truncateConversationSummaryText(text, maxLength = 120) {
+  const cleaned = cleanText(text);
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
+}
+
+function stripConversationSummaryMarkdown(text) {
+  return cleanText(
+    String(text ?? "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^#+\s+/gm, "")
+      .replace(/^\s*[-*]\s+/gm, "")
+  );
+}
+
+function parseCustomerConversationMemory(memory) {
+  const body = String(memory?.body ?? "").trim();
+  const match = body.match(/^Advisor:\s*([\s\S]*?)(?:(?:\n{2,}|\s+)Assistant:\s*([\s\S]*))?$/i);
+
+  if (match) {
+    return {
+      advisorText: match[1]?.trim() || "",
+      assistantText: match[2]?.trim() || "",
+    };
+  }
+
+  return {
+    advisorText: "",
+    assistantText: body || memory?.summary || "",
+  };
+}
+
+function buildConversationTurnsFromMemory(memory) {
+  const { advisorText, assistantText } = parseCustomerConversationMemory(memory);
+  const turns = [];
+
+  if (advisorText) {
+    turns.push({
+      role: "advisor",
+      text: stripConversationSummaryMarkdown(advisorText),
+      createdAt: memory?.createdAt,
+    });
+  }
+
+  if (assistantText) {
+    turns.push({
+      role: "assistant",
+      text: stripConversationSummaryMarkdown(assistantText),
+      createdAt: memory?.createdAt,
+    });
+  }
+
+  return turns.filter((turn) => turn.text);
+}
+
+function buildCurrentConversationTurns(messages = []) {
+  return messages
+    .filter((message) => message?.id !== "seed-1" && (message?.role === "user" || message?.role === "assistant"))
+    .map((message) => ({
+      role: message.role === "user" ? "advisor" : "assistant",
+      text: stripConversationSummaryMarkdown(message.text),
+    }))
+    .filter((turn) => turn.text);
+}
+
+function buildSavedConversationTurns(memories = []) {
+  return [...memories]
+    .filter((memory) => memory?.kind === "chat")
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 6)
+    .reverse()
+    .flatMap((memory) => buildConversationTurnsFromMemory(memory));
+}
+
+function getConversationSentences(text) {
+  return stripConversationSummaryMarkdown(text)
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((sentence) => cleanText(sentence))
+    .filter(Boolean) ?? [];
+}
+
+function inferConversationTopics(text) {
+  const rules = [
+    ["Renewal", /\b(renew|renewal|policy|premium|coverage|life insurance|medical card|rider)\b/i],
+    ["Risk", /\b(risk|kyc|suitability|compliance|liabilit|debt)\b/i],
+    ["Follow-up", /\b(follow[- ]?up|email|draft|reply|message|call|meeting)\b/i],
+    ["Planning", /\b(plan|strategy|next step|action|prepare|review)\b/i],
+    ["Client profile", /\b(net worth|income|birthday|rapport|preference|family|occupation)\b/i],
+  ];
+
+  return rules
+    .filter(([, pattern]) => pattern.test(text))
+    .map(([label]) => label)
+    .slice(0, 3);
+}
+
+function getConversationActionText(turns) {
+  const sentences = turns
+    .filter((turn) => turn.role === "assistant")
+    .flatMap((turn) => getConversationSentences(turn.text));
+  const actionSentence = sentences.find((sentence) => {
+    const lower = sentence.toLowerCase();
+    return ACTION_WORDS.some((word) => lower.includes(word)) || /\b(recommended|confirm|schedule|send|review|update)\b/i.test(sentence);
+  });
+
+  if (actionSentence) return truncateConversationSummaryText(actionSentence, 160);
+
+  const latestAdvisor = [...turns].reverse().find((turn) => turn.role === "advisor")?.text;
+  if (latestAdvisor && turns.at(-1)?.role === "advisor") {
+    return `Waiting for the assistant response to: ${truncateConversationSummaryText(latestAdvisor, 120)}`;
+  }
+
+  return "";
+}
+
+function getConversationKeyPoints(turns) {
+  const assistantSentences = turns
+    .filter((turn) => turn.role === "assistant")
+    .flatMap((turn) => getConversationSentences(turn.text));
+  const advisorSentences = turns
+    .filter((turn) => turn.role === "advisor")
+    .flatMap((turn) => getConversationSentences(turn.text));
+  const picked = [
+    advisorSentences.at(-1),
+    ...assistantSentences.filter((sentence) => /\b(status|next|action|risk|renew|plan|source|recommend)\b/i.test(sentence)),
+    assistantSentences.at(-1),
+  ]
+    .filter(Boolean)
+    .map((sentence) => truncateConversationSummaryText(sentence, 140));
+
+  return Array.from(new Set(picked)).slice(0, 3);
+}
+
+function buildCustomerConversationSummary({ customer, messages = [], memories = [] }) {
+  const currentTurns = buildCurrentConversationTurns(messages);
+  const savedTurns = buildSavedConversationTurns(memories);
+  const turns = currentTurns.length ? currentTurns : savedTurns;
+  const fullText = turns.map((turn) => turn.text).join(" ");
+  const advisorTurns = turns.filter((turn) => turn.role === "advisor");
+  const assistantTurns = turns.filter((turn) => turn.role === "assistant");
+  const topics = inferConversationTopics(fullText);
+  const latestAdvisor = advisorTurns.at(-1)?.text ?? "";
+  const latestAssistant = assistantTurns.at(-1)?.text ?? "";
+  const sourceLabel = currentTurns.length ? "Current conversation" : "Saved conversation";
+  const turnCount = turns.length;
+
+  if (!turns.length) {
+    return {
+      isEmpty: true,
+      sourceLabel: "No conversation yet",
+      turnCount: 0,
+      overview: `No advisor conversation has been summarized for ${customer?.name ?? "this customer"} yet.`,
+      advisorFocus: "No advisor request yet.",
+      assistantSummary: "No assistant response yet.",
+      keyPoints: [],
+      nextAction: customer?.task || customer?.nextAction || "No next action captured yet.",
+      topics: [],
+    };
+  }
+
+  const topicText = topics.length ? ` around ${topics.join(", ").toLowerCase()}` : "";
+  const advisorCount = advisorTurns.length;
+  const assistantCount = assistantTurns.length;
+  const overview = `${customer?.name ?? "This customer"}'s ${sourceLabel.toLowerCase()} includes ${advisorCount} advisor ${
+    advisorCount === 1 ? "request" : "requests"
+  } and ${assistantCount} assistant ${assistantCount === 1 ? "response" : "responses"}${topicText}.`;
+
+  return {
+    isEmpty: false,
+    sourceLabel,
+    turnCount,
+    overview,
+    advisorFocus: latestAdvisor
+      ? summarizeText(latestAdvisor, "No advisor request yet.")
+      : "No advisor request yet.",
+    assistantSummary: latestAssistant
+      ? summarizeText(latestAssistant, "No assistant response yet.")
+      : "No assistant response yet.",
+    keyPoints: getConversationKeyPoints(turns),
+    nextAction: getConversationActionText(turns) || customer?.task || customer?.nextAction || "No next action captured yet.",
+    topics,
+  };
+}
+
 function isTextLikeFile(file) {
   return (
     file.type?.startsWith("text/") ||
@@ -1111,6 +1561,93 @@ function CustomerChatIconButton({ label, children, onClick, disabled, className 
     >
       {children}
     </button>
+  );
+}
+
+function CustomerPromptStart({ customer, onSendPrompt, sending }) {
+  const promptName = getPromptCustomerName(customer);
+  const suggestions = buildCustomerPromptSuggestions(customer);
+  const summaryItems = suggestions
+    .filter((suggestion) => suggestion.id === "birthday" || suggestion.id === "renewal")
+    .sort((a, b) => (a.id === "birthday" ? -1 : 1) - (b.id === "birthday" ? -1 : 1))
+    .map((suggestion) => suggestion.summaryLabel || suggestion.label)
+    .slice(0, 2);
+  const visibleSuggestions = suggestions.slice(0, 5);
+
+  return (
+    <div className="flex w-[660px] max-w-full flex-col items-center self-center px-5 py-6 text-center xl:py-7">
+      {summaryItems.length ? (
+        <div className="mb-3 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12px] font-medium leading-5 text-black/45 xl:mb-4">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-[#266df0]">
+            <span className="size-1.5 rounded-full bg-[#266df0]" aria-hidden="true" />
+            Upcoming
+          </span>
+          <span className="text-black/20" aria-hidden="true">
+            /
+          </span>
+          <span className="min-w-0 text-center text-black/50">{summaryItems.join(" · ")}</span>
+        </div>
+      ) : null}
+
+      <h2 className="max-w-[600px] text-[27px] font-semibold leading-[1.14] text-[#171717] sm:text-[31px] xl:text-[34px]">
+        What would you like to know about {promptName}?
+      </h2>
+      <p className="mt-4 text-[14px] font-medium leading-6 text-black/38 xl:text-[15px]">
+        Ask in your own words, or pick something I already remember.
+      </p>
+
+      {visibleSuggestions.length ? (
+        <div className="mt-3 flex max-w-[560px] flex-wrap items-center justify-center gap-1.5 xl:mt-4">
+          {visibleSuggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              type="button"
+              onClick={() => onSendPrompt?.(suggestion.prompt)}
+              disabled={sending}
+              className="flex h-8 max-w-full items-center rounded-full border border-black/[0.06] bg-[#f7f8fa] px-3 text-[12px] font-normal leading-none text-[#4f5961] transition-colors hover:border-black/[0.08] hover:bg-[#eef1f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-45"
+            >
+              <span className="truncate">{suggestion.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerMomentCards({ customer, onSendPrompt, sending }) {
+  const cards = buildCustomerMomentCards(customer);
+  if (!cards.length) return null;
+
+  return (
+    <div className="flex max-h-[340px] shrink-0 justify-center overflow-y-auto bg-[#fbf4f8] px-4 py-4">
+      <div className="flex w-[700px] max-w-full flex-col gap-3">
+        {cards.map((card) => (
+          <button
+            key={card.id}
+            type="button"
+            onClick={() => onSendPrompt?.(card.prompt)}
+            disabled={sending}
+            className="group w-full rounded-[8px] border border-[#eadce4] bg-[#fff9fd] px-5 py-4 text-left shadow-[0_1px_2px_rgba(28,40,64,0.03)] transition-colors hover:border-[#ddc9d4] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-50"
+          >
+            <span className="flex min-w-0 items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 text-[10px] font-semibold uppercase leading-none" style={{ color: card.accent }}>
+                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: card.accent }} aria-hidden="true" />
+                <span className="truncate">{card.label}</span>
+              </span>
+              <span className="shrink-0 rounded-full bg-[#f2e8ef] px-3 py-1 text-[12px] font-medium leading-none text-[#9a6b7f]">
+                {card.badge}
+              </span>
+            </span>
+            <span className="mt-3 block text-[17px] font-semibold leading-6 text-[#16151a]">{card.title}</span>
+            <span className="mt-1 block text-[14px] leading-5 text-[#817178]">
+              {card.detail}{" "}
+              <span className="font-semibold text-[#3159ff] transition-colors group-hover:text-[#2147e8]">{card.actionLabel} -&gt;</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1227,9 +1764,28 @@ function CustomerChatComposer({
   );
 }
 
-function renderMessageText(text, isAssistant = false) {
-  if (!text) return "";
-  const parts = text.split("**");
+const MARKDOWN_DIVIDER_LINE_PATTERN = /^\s*(?:\*\*)?(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})(?:\*\*)?\s*$/;
+
+function getRenderableMessageText(text, isAssistant = false) {
+  const rawText = String(text ?? "");
+  if (!isAssistant) return rawText;
+
+  return rawText
+    .split("\n")
+    .filter((line) => !MARKDOWN_DIVIDER_LINE_PATTERN.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "");
+}
+
+function shouldAnimateMessageText(message) {
+  return message?.role === "assistant" && message?.animateText === true;
+}
+
+function renderMessageText(text, isAssistant = false, animate = false) {
+  const displayText = getRenderableMessageText(text, isAssistant);
+  if (!displayText) return "";
+  const parts = displayText.split("**");
   let wordIndex = 0;
 
   return parts.flatMap((part, partIndex) => {
@@ -1245,7 +1801,7 @@ function renderMessageText(text, isAssistant = false) {
       const currentWordIndex = wordIndex;
       wordIndex += 1;
 
-      const style = isAssistant
+      const style = isAssistant && animate
         ? {
             animationDelay: `${currentWordIndex * 15}ms`,
           }
@@ -1256,7 +1812,7 @@ function renderMessageText(text, isAssistant = false) {
           key={`word-${partIndex}-${tokenIndex}`}
           style={style}
           className={`${isBold ? "font-semibold" : ""} ${
-            isAssistant ? "inline-block animate-grok-fade opacity-0" : ""
+            isAssistant && animate ? "inline-block animate-grok-fade opacity-0" : ""
           }`}
         >
           {token}
@@ -1398,6 +1954,7 @@ function MessageSuggestions({ suggestions = [], onSuggestion }) {
 
 function CustomerChatMessage({ message, onSuggestion }) {
   if (!message || typeof message !== "object") return null;
+  const animateText = shouldAnimateMessageText(message);
 
   if (message.role === "user") {
     return (
@@ -1438,7 +1995,7 @@ function CustomerChatMessage({ message, onSuggestion }) {
       <div className="group flex flex-col gap-1 w-full items-start">
         {finalPreText && (
           <div className="whitespace-pre-wrap text-[14px] font-normal leading-6 text-[#101112] w-full mb-2">
-            {renderMessageText(finalPreText, true)}
+            {renderMessageText(finalPreText, true, animateText)}
           </div>
         )}
 
@@ -1474,7 +2031,7 @@ function CustomerChatMessage({ message, onSuggestion }) {
           message.id === "seed-1" ? "text-[16px] leading-7" : "text-[14px] leading-6"
         )}
       >
-        {renderMessageText(message.text, true)}
+        {renderMessageText(message.text, true, animateText)}
       </div>
       <MessageSuggestions suggestions={message.suggestions} onSuggestion={onSuggestion} />
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
@@ -1640,7 +2197,7 @@ export function CustomerWorkspace() {
   const { customerId } = useParams();
   const navigate = useNavigate();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
-  const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
+  const { data: fetchedMemories, loading: memoriesLoading } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
   const { data: fetchedArticles } = useApi(() => api.getCustomerArticles(customerId), [customerId]);
   const { data: fetchedMeetings } = useApi(() => api.getAdvisorMeetings(), [customerId]);
@@ -1660,8 +2217,6 @@ export function CustomerWorkspace() {
   const [sending, setSending] = useState(false);
   const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
   const [selectedModel, setSelectedModel] = useState("base");
-  const [advisorChatThreads, setAdvisorChatThreads] = useState([]);
-  const [advisorChatsLoading, setAdvisorChatsLoading] = useState(true);
   const customer = customerOverride ?? fetchedCustomer;
   const apiModel = selectedModel === "reasoning" ? "deepseek-reasoner" : "deepseek-chat";
   const customerMeetings = useMemo(() => {
@@ -1710,36 +2265,6 @@ export function CustomerWorkspace() {
   useEffect(() => {
     if (fetchedConfig) setWorkflowConfig(fetchedConfig);
   }, [fetchedConfig]);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function loadAdvisorChatThreads() {
-      setAdvisorChatsLoading(true);
-      try {
-        const threads = await api.getAdvisorChatThreads({ limit: 8 });
-        if (alive) setAdvisorChatThreads(threads);
-      } catch {
-        if (alive) setAdvisorChatThreads([]);
-      } finally {
-        if (alive) setAdvisorChatsLoading(false);
-      }
-    }
-
-    function onStorage(event) {
-      if (event.key === ADVISOR_CHAT_STORAGE_KEY) loadAdvisorChatThreads();
-    }
-
-    loadAdvisorChatThreads();
-    window.addEventListener(ADVISOR_CHAT_UPDATED_EVENT, loadAdvisorChatThreads);
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      alive = false;
-      window.removeEventListener(ADVISOR_CHAT_UPDATED_EVENT, loadAdvisorChatThreads);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
 
   useEffect(() => {
     if (!customer?.id || !workflowConfig || !fetchedConfig || !fetchedMemories || !fetchedArticles || !fetchedMeetings) return;
@@ -2247,7 +2772,7 @@ export function CustomerWorkspace() {
         model: apiModel,
       });
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
-      if (reply) setMessages((prev) => [...prev, reply]);
+      if (reply) setMessages((prev) => [...prev, { ...reply, animateText: true }]);
     } catch {
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -2327,7 +2852,7 @@ export function CustomerWorkspace() {
       });
       await waitForThinkingSequence(thinkingStartedAt, intent);
       if (reply) {
-        setMessages((prev) => [...prev, reply]);
+        setMessages((prev) => [...prev, { ...reply, animateText: true }]);
         try {
           await remember(
             buildMemoryEntry({
@@ -2406,13 +2931,32 @@ export function CustomerWorkspace() {
     }
   }
 
-  const chatHistoryItems = advisorChatThreads.slice(0, 6);
+  function startNewCustomerChat() {
+    if (!customer || sending) return;
+
+    setMessages([buildCustomerSeedMessage(customer, memories)]);
+    setValue("");
+    setFiles([]);
+    setArticleCandidate(null);
+    setThinkingIntent(DEFAULT_THINKING_INTENT);
+    window.requestAnimationFrame(() => {
+      threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }
+
+  const conversationSummary = buildCustomerConversationSummary({
+    customer,
+    messages: visibleMessages,
+    memories: safeMemories,
+  });
+  const hasStartedChat = visibleMessages.some((message) => message.id !== "seed-1");
+  const showStartPrompt = !hasStartedChat && !sending;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
-          <div className="absolute left-6 top-6 z-10">
+          <div className="absolute left-6 top-6 z-10 flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -2422,13 +2966,32 @@ export function CustomerWorkspace() {
             >
               <ArrowLeft className="size-4 text-muted-foreground" />
             </Button>
+            <button
+              type="button"
+              onClick={startNewCustomerChat}
+              disabled={sending}
+              aria-label="Start new customer chat"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[12px] font-medium text-[#101112] shadow-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-45"
+            >
+              <Plus className="size-3.5 text-muted-foreground" strokeWidth={1.9} />
+              <span>New chat</span>
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="flex min-h-full flex-col items-center justify-end">
-              <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
-                {visibleMessages.map((message) => (
-                  <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
-                ))}
+            <div className={cn("flex min-h-full flex-col items-center", showStartPrompt ? "justify-center" : "justify-end")}>
+              <div
+                className={cn(
+                  "flex max-w-full flex-col items-stretch justify-start px-6 py-8",
+                  showStartPrompt ? "w-full" : "w-[700px] gap-10"
+                )}
+              >
+                {showStartPrompt ? (
+                  <CustomerPromptStart customer={customer} onSendPrompt={sendCustomerPrompt} sending={sending} />
+                ) : (
+                  visibleMessages.map((message) => (
+                    <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
+                  ))
+                )}
                 {sending && <CustomerChatThinkingIndicator intent={thinkingIntent} />}
                 <div ref={threadEndRef} />
               </div>
@@ -2457,10 +3020,11 @@ export function CustomerWorkspace() {
               onOpenCalendar={() => navigate("/home")}
               sending={sending}
               model={selectedModel}
-              onModelChange={setSelectedModel}
-            />
-          </div>
-        </section>
+	              onModelChange={setSelectedModel}
+	            />
+	          </div>
+	          <CustomerMomentCards customer={customer} onSendPrompt={sendCustomerPrompt} sending={sending} />
+	        </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white px-6">
           <div className="pt-4">
@@ -2479,10 +3043,10 @@ export function CustomerWorkspace() {
                 Details
               </TabsTrigger>
               <TabsTrigger
-                value="activity"
+                value="summary"
                 className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
-                Activity
+                Summary
               </TabsTrigger>
               <TabsTrigger
                 value="meetings"
@@ -2508,60 +3072,13 @@ export function CustomerWorkspace() {
               )}
             </TabsContent>
 
-            <TabsContent value="activity" className="pt-5">
-              <section aria-labelledby="chat-history-heading">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 id="chat-history-heading" className="text-sm font-semibold">
-                    Chat history
-                  </h3>
-                  <span
-                    className="text-xs text-muted-foreground"
-                    aria-label={`${chatHistoryItems.length} saved advisor chats`}
-                  >
-                    {advisorChatsLoading ? "Loading" : `${chatHistoryItems.length} saved`}
-                  </span>
-                </div>
-
-                {chatHistoryItems.length ? (
-                  <ul className="space-y-2" aria-label="Saved advisor chatbot history">
-                    {chatHistoryItems.map((thread) => (
-                      <li key={thread.id}>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/chat?thread=${encodeURIComponent(thread.id)}`)}
-                          className="grid w-full grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-md py-2 text-left transition-colors hover:bg-black/[0.03] focus-visible:bg-black/[0.03] focus-visible:outline-none"
-                        >
-                          <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                            <MessageCircle className="size-4" aria-hidden="true" />
-                          </span>
-                          <span className="min-w-0 border-b pb-3 pr-1">
-                            <span className="flex items-start justify-between gap-3">
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-medium">{thread.title}</span>
-                                <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                                  <span>{thread.messageCount} messages</span>
-                                  <span aria-hidden="true"> | </span>
-                                  <time dateTime={thread.updatedAt}>{formatMemoryDate(thread.updatedAt)}</time>
-                                </span>
-                              </span>
-                              <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                Open
-                              </span>
-                            </span>
-                            <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
-                              {thread.summary}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground" role="status">
-                    {advisorChatsLoading ? "Loading advisor chatbot history..." : "No advisor chatbot history saved yet."}
-                  </div>
-                )}
-              </section>
+            <TabsContent value="summary" className="pt-5">
+              <CustomerConversationSummaryPanel
+                summary={conversationSummary}
+                memoriesLoading={memoriesLoading}
+                onStartNewChat={startNewCustomerChat}
+                sending={sending}
+              />
             </TabsContent>
 
             <TabsContent value="meetings" className="pt-5">
@@ -2582,6 +3099,88 @@ export function CustomerWorkspace() {
         }}
       />
     </div>
+  );
+}
+
+function ConversationSummaryItem({ label, value }) {
+  return (
+    <div className="border-b border-black/[0.06] pb-3 last:border-b-0 last:pb-0">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">{label}</dt>
+      <dd className="mt-1 text-sm leading-6 text-[#101112]">{value}</dd>
+    </div>
+  );
+}
+
+function CustomerConversationSummaryPanel({ summary, memoriesLoading, onStartNewChat, sending }) {
+  const turnLabel = summary.turnCount === 1 ? "1 turn" : `${summary.turnCount} turns`;
+
+  return (
+    <section aria-labelledby="conversation-summary-heading">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 id="conversation-summary-heading" className="text-sm font-semibold">
+          Conversation summary
+        </h3>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onStartNewChat}
+            disabled={sending}
+            className="flex h-7 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2 text-[12px] font-medium leading-none text-[#101112] shadow-[0_1px_2px_rgba(28,40,64,0.04)] transition-colors hover:bg-[#f6f7f9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-45"
+          >
+            <Plus className="size-3.5 text-[#266df0]" strokeWidth={1.9} />
+            <span>New chat</span>
+          </button>
+          <span className="text-xs text-muted-foreground" aria-label={`Conversation summary source: ${summary.sourceLabel}`}>
+            {memoriesLoading && summary.isEmpty ? "Loading" : summary.sourceLabel}
+          </span>
+        </div>
+      </div>
+
+      {memoriesLoading && summary.isEmpty ? (
+        <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground" role="status">
+          Summarizing conversation...
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-black/[0.07] bg-white p-4">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#266df0]">
+                <Sparkles className="size-3.5" strokeWidth={1.9} />
+                Summary
+              </span>
+              <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {turnLabel}
+              </span>
+            </div>
+            <p className="text-sm leading-6 text-[#101112]">{summary.overview}</p>
+          </div>
+
+          <dl className="rounded-lg border border-black/[0.07] bg-white p-4">
+            <ConversationSummaryItem label="Advisor focus" value={summary.advisorFocus} />
+            <ConversationSummaryItem label="Assistant covered" value={summary.assistantSummary} />
+            <ConversationSummaryItem label="Next action" value={summary.nextAction} />
+            <ConversationSummaryItem
+              label="Topics"
+              value={summary.topics.length ? summary.topics.join(", ") : "No topics detected yet."}
+            />
+          </dl>
+
+          {summary.keyPoints.length ? (
+            <div className="rounded-lg border border-black/[0.07] bg-white p-4">
+              <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">Key points</h4>
+              <ul className="mt-2 space-y-2">
+                {summary.keyPoints.map((point) => (
+                  <li key={point} className="flex gap-2 text-sm leading-6 text-[#101112]">
+                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#266df0]" aria-hidden="true" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 

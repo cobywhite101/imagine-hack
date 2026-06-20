@@ -36,8 +36,8 @@ function Toggle({ checked, onChange, disabled = false, label }) {
 function Section({ label, defaultOpen = true, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <>
-      <div className="flex items-center justify-between">
+    <div className="mb-6 last:mb-0">
+      <div className="flex items-center justify-between py-1">
         <h3 className="text-[15px] font-semibold text-[#1a1a1a]">{label}</h3>
         <div className="flex items-center gap-1.5 text-[#bdbdc2]">
           <button
@@ -57,8 +57,8 @@ function Section({ label, defaultOpen = true, children }) {
           </button>
         </div>
       </div>
-      {open && <div className="mt-3">{children}</div>}
-    </>
+      {open && <div className="mt-5">{children}</div>}
+    </div>
   );
 }
 
@@ -187,11 +187,18 @@ function formatHorizon(years) {
   return `${value} ${value === 1 ? "year" : "years"}`;
 }
 
+function nationalityFlag(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "malaysia" || normalized === "malaysian") return "🇲🇾";
+  return "";
+}
+
 // Conservative / Moderate / Aggressive get a scannable status dot.
 const RISK_DOT_COLOR = { Conservative: "#16a06a", Moderate: "#e0992a", Aggressive: "#d9534f" };
 
 function ProfileRow({ label, value, dotColor }) {
   const hasValue = value === 0 || Boolean(value);
+  const content = hasValue ? value : "Not recorded";
   return (
     <div className="flex items-baseline justify-between gap-4 py-[5px]">
       <span className="shrink-0 text-[13px] text-[#9a9aa0]">{label}</span>
@@ -204,7 +211,7 @@ function ProfileRow({ label, value, dotColor }) {
         {hasValue && dotColor ? (
           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />
         ) : null}
-        <span className="min-w-0 truncate">{hasValue ? String(value) : "Not recorded"}</span>
+        <span className="min-w-0 truncate">{content}</span>
       </span>
     </div>
   );
@@ -221,6 +228,7 @@ export function CustomerProfileCard({ customer }) {
     : "";
   const dependents =
     customer.dependents === 0 || customer.dependents ? String(customer.dependents) : "";
+  const flag = nationalityFlag(customer.nationality);
 
   return (
     <div className="text-[#2a2a2e]">
@@ -230,7 +238,19 @@ export function CustomerProfileCard({ customer }) {
           <ProfileRow label="Gender" value={customer.gender} />
           <ProfileRow label="Marital status" value={customer.maritalStatus} />
           <ProfileRow label="Occupation" value={customer.occupation} />
-          <ProfileRow label="Nationality" value={customer.nationality} />
+          <ProfileRow
+            label="Nationality"
+            value={
+              flag ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true">{flag}</span>
+                  <span>{customer.nationality}</span>
+                </span>
+              ) : (
+                customer.nationality
+              )
+            }
+          />
           <ProfileRow label="Ethnicity" value={customer.ethnicity} />
           <ProfileRow label="Dependents" value={dependents} />
         </div>

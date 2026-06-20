@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node scripts/assert-english-response-rule.mjs",
+    "test": "node scripts/assert-english-response-rule.mjs && node scripts/assert-customer-chat-history-source.mjs && node scripts/assert-customer-chat-divider-lines.mjs && node scripts/assert-customer-chat-fresh-animation.mjs",
     "preview": "vite preview",
     "sync:aag": "node scripts/sync-aag-data.mjs"
   },
