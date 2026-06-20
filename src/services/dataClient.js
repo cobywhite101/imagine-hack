@@ -27,7 +27,6 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
-const CUSTOMER_ARTICLES_KEY = "client-companion-articles-v1";
 const useSupabaseCustomerMemory = isSupabaseConfigured;
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
@@ -58,6 +57,12 @@ const localCustomers = mockCustomers;
 const localCustomerMemories = mockCustomerMemories;
 const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
 const FALLBACK_CUSTOMER_ACCENT = "#868e96";
+
+function requireSupabase(feature) {
+  if (!isSupabaseConfigured) {
+    throw new Error(`${feature} requires Supabase configuration.`);
+  }
+}
 
 function getCustomerAccent(customer) {
   if (customer.accent && customer.accent !== FALLBACK_CUSTOMER_ACCENT) return customer.accent;
@@ -165,27 +170,6 @@ function normalizeCustomerRecord(customer) {
   };
 }
 
-function getStoredCustomerArticles(customerId) {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_ARTICLES_KEY) ?? "{}");
-    return stored[String(customerId)] ?? [];
-  } catch {
-    return [];
-  }
-}
-
-function setStoredCustomerArticles(customerId, articles) {
-  if (typeof window === "undefined") return;
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_ARTICLES_KEY) ?? "{}");
-    stored[String(customerId)] = articles;
-    window.localStorage.setItem(CUSTOMER_ARTICLES_KEY, JSON.stringify(stored));
-  } catch {
-    /* local persistence is best-effort for the demo */
-  }
-}
-
 function normalizeWorkflowConfig(config) {
   return {
     instructions: config?.instructions ?? mockWorkflowConfig.instructions,
@@ -258,6 +242,99 @@ function truncateCustomerText(text, maxLength = 6000) {
   const value = String(text ?? "").trim();
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
+}
+
+function decodeBasicHtmlEntities(text) {
+  return String(text ?? "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function htmlToPlainText(html) {
+  return decodeBasicHtmlEntities(
+    String(html ?? "")
+      .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "\n- ")
+      .replace(/<\/(p|div|section|article|h[1-6]|li|ul|ol|tr)>/gi, "\n")
+      .replace(/<[^>]*>/g, " ")
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function summarizeCustomerKnowledge(text, fallback = "Saved customer knowledge source.") {
+  const cleaned = cleanCustomerText(text);
+  if (!cleaned) return fallback;
+
+  const sentences = cleaned
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((sentence) => cleanCustomerText(sentence))
+    .filter(Boolean) ?? [cleaned];
+
+  const priority = sentences.find((sentence) => {
+    const lower = sentence.toLowerCase();
+    return /\b(net worth|income|risk|liabilit|policy|renew|action|next|follow|deadline|commitment)\b/.test(lower);
+  });
+  const summary = cleanCustomerText([priority ?? sentences[0], ...sentences.filter((sentence) => sentence !== priority).slice(0, 1)].join(" "));
+
+  if (summary.length <= 320) return summary;
+  return `${summary.slice(0, 320).replace(/\s+\S*$/, "")}...`;
+}
+
+function getArticleMemoryId(articleId) {
+  return `article-memory-${articleId}`;
+}
+
+function customerArticleToMemory(article) {
+  const entry = normalizeCustomerArticle(article);
+  if (!entry.id) return null;
+
+  const bodyText = htmlToPlainText(entry.body);
+  const sourceMeta = [
+    `article:${entry.id}`,
+    entry.subtitle,
+    entry.updatedAt ? `Updated ${new Date(entry.updatedAt).toLocaleDateString()}` : "",
+  ].filter(Boolean).join(" | ");
+
+  return normalizeCustomerMemory({
+    id: getArticleMemoryId(entry.id),
+    customerId: entry.customerId,
+    kind: "article",
+    title: entry.title,
+    summary: summarizeCustomerKnowledge(bodyText, entry.subtitle || entry.title),
+    body: bodyText,
+    sourceName: `Internal article: ${entry.title}`,
+    sourceMeta,
+    createdAt: entry.updatedAt ?? entry.createdAt,
+  });
+}
+
+function dedupeCustomerKnowledgeSources(sources) {
+  const seen = new Set();
+  return sources.filter((source) => {
+    const key = cleanCustomerText(`${source.kind}:${source.title}:${source.body || source.summary}`).toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildCustomerKnowledgeSources(memories = [], articles = []) {
+  const articleSources = articles
+    .map(customerArticleToMemory)
+    .filter(Boolean);
+  const memorySources = memories.map(normalizeCustomerMemory);
+
+  return dedupeCustomerKnowledgeSources([...articleSources, ...memorySources]);
 }
 
 function escapeArticleHtml(text) {
@@ -366,16 +443,6 @@ function getCustomerSearchTerms(text) {
     ?.filter((word) => !CUSTOMER_CHAT_STOP_WORDS.has(word)) ?? [];
 }
 
-function getMockCustomerMemories(customerId) {
-  return localCustomerMemories
-    .filter((memory) => String(memory.customerId) === String(customerId))
-    .map(normalizeCustomerMemory);
-}
-
-function getAllLocalCustomerMemories(customerId) {
-  return getMockCustomerMemories(customerId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-}
-
 function rankCustomerMemories(question, memories) {
   const terms = getCustomerSearchTerms(question);
   if (!terms.length) return memories.slice(0, 3).map((memory) => ({ memory, score: 1 }));
@@ -392,6 +459,23 @@ function rankCustomerMemories(question, memories) {
 
 function formatCustomerSource(memory) {
   return `${memory.sourceName || memory.title}${memory.createdAt ? `, ${new Date(memory.createdAt).toLocaleDateString()}` : ""}`;
+}
+
+function extractNetWorthFact(memory) {
+  const text = `${memory?.summary ?? ""}\n${memory?.body ?? ""}`;
+  const index = text.toLowerCase().lastIndexOf("net worth");
+  if (index === -1) return null;
+
+  const snippet = text.slice(index, index + 260);
+  const value = snippet.match(/\b(?:below\s+)?RM\s*\d+(?:\.\d+)?\s*(?:k|m|million)?(?:\s*[–-]\s*(?:RM\s*)?\d+(?:\.\d+)?\s*(?:k|m|million)?)?\+?/i)?.[0];
+  if (!value) return null;
+
+  const date = snippet.match(/\bas of\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?|\d{4}-\d{2}-\d{2})/i)?.[1];
+
+  return {
+    value: cleanCustomerText(value),
+    date: date ? cleanCustomerText(date) : "",
+  };
 }
 
 function buildCustomerDraft(customer, memories) {
@@ -414,15 +498,40 @@ function buildCustomerDraft(customer, memories) {
   ].join("\n");
 }
 
-function buildLocalCustomerChatReply({ customer, text, memories }) {
-  const ranked = rankCustomerMemories(text, memories);
+function buildLocalCustomerChatReply({ customer, text, memories, articles = [] }) {
+  const knowledgeSources = buildCustomerKnowledgeSources(memories, articles);
+  const ranked = rankCustomerMemories(text, knowledgeSources);
+  const rankedOrRecent = ranked.length
+    ? ranked
+    : knowledgeSources
+        .map((memory) => ({ memory, score: 0 }))
+        .sort((a, b) => new Date(b.memory.createdAt) - new Date(a.memory.createdAt));
   const lower = text.toLowerCase();
   const wantsDraft = /\b(draft|email|follow[- ]?up|reply|message)\b/.test(lower);
   const wantsPlan = /\b(plan|recap|summary|risk|renew|next|prepare|strategy)\b/.test(lower);
+  const wantsNetWorth = /\bnet\s*worth\b/.test(lower);
+
+  if (wantsNetWorth) {
+    const source = rankedOrRecent.map((item) => item.memory).find((memory) => extractNetWorthFact(memory));
+    const fact = source ? extractNetWorthFact(source) : null;
+
+    if (source && fact) {
+      return {
+        id: `a-${Date.now()}`,
+        role: "assistant",
+        text: [
+          `Based on ${formatCustomerSource(source)}, ${customer.name}'s latest net worth is ${fact.value}${fact.date ? ` as of ${fact.date}` : ""}.`,
+          source.kind === "article"
+            ? "I used the saved internal article that was indexed for future chatbot answers."
+            : "",
+        ].filter(Boolean).join("\n\n"),
+      };
+    }
+  }
 
   if (wantsDraft) {
-    const draft = buildCustomerDraft(customer, ranked.map((item) => item.memory));
-    const sources = ranked.slice(0, 2).map((item) => formatCustomerSource(item.memory)).join("; ");
+    const draft = buildCustomerDraft(customer, rankedOrRecent.map((item) => item.memory));
+    const sources = rankedOrRecent.slice(0, 2).map((item) => formatCustomerSource(item.memory)).join("; ");
 
     return {
       id: `a-${Date.now()}`,
@@ -439,7 +548,7 @@ function buildLocalCustomerChatReply({ customer, text, memories }) {
     };
   }
 
-  const relevant = ranked.slice(0, 3).map((item) => item.memory);
+  const relevant = rankedOrRecent.slice(0, 3).map((item) => item.memory);
   const sourceLines = relevant.length
     ? relevant.map((memory) => `- ${memory.summary} (${formatCustomerSource(memory)})`).join("\n")
     : `- ${customer.task || customer.nextAction || "No next step recorded"} (customer record)`;
@@ -559,6 +668,70 @@ async function queryDeepSeek(messages, systemPrompt = "", model = "deepseek-chat
   }
 }
 
+async function syncCustomerArticleMemory(customerId, article) {
+  const entry = customerArticleToMemory({ ...article, customerId });
+  if (!entry) return null;
+
+  if (!useSupabaseCustomerMemory) {
+    throw new Error("Article memory indexing requires Supabase configuration.");
+  }
+
+  const row = {
+    id: entry.id,
+    customer_id: customerId,
+    kind: entry.kind,
+    title: entry.title,
+    summary: entry.summary,
+    body: entry.body,
+    source_name: entry.sourceName,
+    source_meta: entry.sourceMeta,
+    created_at: entry.createdAt,
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from("customer_memories")
+      .upsert(row, { onConflict: "id" })
+      .select("*")
+      .single();
+
+    if (!error && data) return normalizeCustomerMemory(data);
+    if (error) throw error;
+  } catch {
+    const fallbackRow = {
+      ...row,
+      id: `${entry.id}-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase
+      .from("customer_memories")
+      .insert(fallbackRow)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return normalizeCustomerMemory(data);
+  }
+
+  return entry;
+}
+
+async function deleteCustomerArticleMemory(customerId, articleId) {
+  if (!useSupabaseCustomerMemory || !customerId || !articleId) return false;
+
+  try {
+    const { error } = await supabase
+      .from("customer_memories")
+      .delete()
+      .eq("customer_id", customerId)
+      .eq("id", getArticleMemoryId(articleId));
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 export const api = {
   getCurrentUser: async () => {
     if (!isSupabaseConfigured) {
@@ -636,64 +809,87 @@ export const api = {
 
   getCustomerMemories: async (customerId) => {
     if (!customerId) return [];
+    requireSupabase("Customer memories");
 
-    if (useSupabaseCustomerMemory) {
-      try {
-        const { data, error } = await supabase
-          .from("customer_memories")
-          .select("*")
-          .eq("customer_id", customerId)
-          .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("customer_memories")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        return (data ?? []).map(normalizeCustomerMemory);
-      } catch (error) {
-        throw error;
-      }
+      if (error) throw error;
+      return (data ?? []).map(normalizeCustomerMemory);
+    } catch (error) {
+      throw error;
     }
-
-    await delay(120);
-    return getAllLocalCustomerMemories(customerId);
   },
 
   saveCustomerMemory: async (customerId, memory) => {
+    requireSupabase("Saving customer memory");
     const entry = normalizeCustomerMemory({
       ...memory,
       customerId,
       createdAt: memory.createdAt ?? new Date().toISOString(),
     });
 
-    if (useSupabaseCustomerMemory) {
-      try {
-        const { data, error } = await supabase
-          .from("customer_memories")
-          .insert({
-            id: entry.id,
-            customer_id: customerId,
-            kind: entry.kind,
-            title: entry.title,
-            summary: entry.summary,
-            body: entry.body,
-            source_name: entry.sourceName,
-            source_meta: entry.sourceMeta,
-            created_at: entry.createdAt,
-          })
-          .select("*")
-          .single();
+    try {
+      const { data, error } = await supabase
+        .from("customer_memories")
+        .insert({
+          id: entry.id,
+          customer_id: customerId,
+          kind: entry.kind,
+          title: entry.title,
+          summary: entry.summary,
+          body: entry.body,
+          source_name: entry.sourceName,
+          source_meta: entry.sourceMeta,
+          created_at: entry.createdAt,
+        })
+        .select("*")
+        .single();
 
-        if (error) throw error;
-        if (!error && data) return normalizeCustomerMemory(data);
-      } catch (error) {
-        throw error;
-      }
+      if (error) throw error;
+      if (!error && data) return normalizeCustomerMemory(data);
+    } catch (error) {
+      throw error;
     }
 
-    await delay(120);
     return entry;
+  },
+
+  updateCustomerMemory: async (customerId, memory) => {
+    if (!customerId || !memory?.id) return normalizeCustomerMemory(memory);
+    requireSupabase("Updating customer memory");
+
+    const entry = normalizeCustomerMemory({
+      ...memory,
+      customerId,
+    });
+
+    const { data, error } = await supabase
+      .from("customer_memories")
+      .update({
+        kind: entry.kind,
+        title: entry.title,
+        summary: entry.summary,
+        body: entry.body,
+        source_name: entry.sourceName,
+        source_meta: entry.sourceMeta,
+      })
+      .eq("id", entry.id)
+      .eq("customer_id", customerId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return normalizeCustomerMemory(data);
   },
 
   getCustomerArticles: async (customerId) => {
     if (!customerId) return [];
+    requireSupabase("Customer articles");
 
     const formatCustomerProfileToArticleBody = (customer) => {
       if (!customer) return "";
@@ -761,74 +957,57 @@ export const api = {
       return lines.join("\n");
     };
 
-    if (isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from("customer_articles")
+    try {
+      const { data, error } = await supabase
+        .from("customer_articles")
+        .select("*")
+        .eq("customer_id", customerId)
+        .order("updated_at", { ascending: false });
+
+      if (error) throw error;
+      if (data && data.length === 0) {
+        const { data: customerRow, error: customerError } = await supabase
+          .from("customers")
           .select("*")
-          .eq("customer_id", customerId)
-          .order("updated_at", { ascending: false });
+          .eq("id", customerId)
+          .maybeSingle();
+        if (customerError) throw customerError;
 
-        if (error) throw error;
-        if (data && data.length === 0) {
-            const customer = localCustomers.find((item) => String(item.id) === String(customerId));
-            if (customer) {
-              const bodyText = formatCustomerProfileToArticleBody(customer);
-              const initialArticle = {
-                id: `profile-article-${customerId}`,
-                customer_id: customerId,
-                title: `${customer.name}'s Profile`,
-                subtitle: "Client Profile & Financial Summary",
-                article_type: "Internal article",
-                body: bodyText,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              };
-              await supabase.from("customer_articles").insert({
-                id: initialArticle.id,
-                customer_id: customerId,
-                title: initialArticle.title,
-                subtitle: initialArticle.subtitle,
-                article_type: initialArticle.article_type,
-                body: initialArticle.body,
-                created_at: initialArticle.created_at,
-                updated_at: initialArticle.updated_at
-              });
-              return [normalizeCustomerArticle(initialArticle)];
-            }
+        const customer = customerRow ? normalizeCustomerRecord(customerRow) : null;
+        if (customer) {
+          const bodyText = formatCustomerProfileToArticleBody(customer);
+          const initialArticle = {
+            id: `profile-article-${customerId}`,
+            customer_id: customerId,
+            title: `${customer.name}'s Profile`,
+            subtitle: "Client Profile & Financial Summary",
+            article_type: "Internal article",
+            body: bodyText,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          await supabase.from("customer_articles").insert({
+            id: initialArticle.id,
+            customer_id: customerId,
+            title: initialArticle.title,
+            subtitle: initialArticle.subtitle,
+            article_type: initialArticle.article_type,
+            body: initialArticle.body,
+            created_at: initialArticle.created_at,
+            updated_at: initialArticle.updated_at,
+          });
+          return [normalizeCustomerArticle(initialArticle)];
         }
-        return (data ?? []).map(normalizeCustomerArticle);
-      } catch (error) {
-        throw error;
       }
+      return (data ?? []).map(normalizeCustomerArticle);
+    } catch (error) {
+      throw error;
     }
-
-    const customer = localCustomers.find((item) => String(item.id) === String(customerId));
-    let localArticles = getStoredCustomerArticles(customerId);
-    if (localArticles.length === 0 && customer) {
-      const bodyText = formatCustomerProfileToArticleBody(customer);
-      const initialArticle = {
-        id: `profile-article-${customerId}`,
-        customerId,
-        title: `${customer.name}'s Profile`,
-        subtitle: "Client Profile & Financial Summary",
-        type: "Internal article",
-        body: bodyText,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      localArticles = [initialArticle];
-      setStoredCustomerArticles(customerId, localArticles);
-    }
-
-    await delay(120);
-    return localArticles
-      .map(normalizeCustomerArticle)
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   },
 
   saveCustomerArticle: async (customerId, article) => {
     if (!customerId) return normalizeCustomerArticle(article);
+    requireSupabase("Saving customer articles");
     const now = new Date().toISOString();
     const entry = normalizeCustomerArticle({
       ...article,
@@ -838,65 +1017,58 @@ export const api = {
       updatedAt: now,
     });
 
-    if (isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from("customer_articles")
-          .upsert({
-            id: entry.id,
-            customer_id: customerId,
-            title: entry.title,
-            subtitle: entry.subtitle,
-            article_type: entry.type,
-            body: entry.body,
-            source_memory_id: entry.sourceMemoryId,
-            source_name: entry.sourceName,
-            created_at: entry.createdAt,
-            updated_at: entry.updatedAt,
-          })
-          .select("*")
-          .single();
+    try {
+      const { data, error } = await supabase
+        .from("customer_articles")
+        .upsert({
+          id: entry.id,
+          customer_id: customerId,
+          title: entry.title,
+          subtitle: entry.subtitle,
+          article_type: entry.type,
+          body: entry.body,
+          source_memory_id: entry.sourceMemoryId,
+          source_name: entry.sourceName,
+          created_at: entry.createdAt,
+          updated_at: entry.updatedAt,
+        })
+        .select("*")
+        .single();
 
-        if (error) throw error;
-        if (data) return normalizeCustomerArticle(data);
-      } catch (error) {
-        throw error;
+      if (error) throw error;
+      if (data) {
+        const savedArticle = normalizeCustomerArticle(data);
+        try {
+          const indexedMemory = await syncCustomerArticleMemory(customerId, savedArticle);
+          return { ...savedArticle, indexedMemory };
+        } catch (memoryError) {
+          return { ...savedArticle, memoryIndexError: memoryError };
+        }
       }
+    } catch (error) {
+      throw error;
     }
 
-    const existing = getStoredCustomerArticles(customerId)
-      .map(normalizeCustomerArticle)
-      .filter((item) => item.id !== entry.id);
-    const next = [entry, ...existing].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    setStoredCustomerArticles(customerId, next);
-    await delay(120);
     return entry;
   },
 
   deleteCustomerArticle: async (customerId, articleId) => {
     if (!customerId || !articleId) return false;
+    requireSupabase("Deleting customer articles");
 
-    if (isSupabaseConfigured) {
-      try {
-        const { error } = await supabase
-          .from("customer_articles")
-          .delete()
-          .eq("id", articleId)
-          .eq("customer_id", customerId);
+    try {
+      const { error } = await supabase
+        .from("customer_articles")
+        .delete()
+        .eq("id", articleId)
+        .eq("customer_id", customerId);
 
-        if (error) throw error;
-        return true;
-      } catch (error) {
-        throw error;
-      }
+      if (error) throw error;
+      await deleteCustomerArticleMemory(customerId, articleId);
+      return true;
+    } catch (error) {
+      throw error;
     }
-
-    const existing = getStoredCustomerArticles(customerId)
-      .map(normalizeCustomerArticle)
-      .filter((item) => item.id !== articleId);
-    setStoredCustomerArticles(customerId, existing);
-    await delay(120);
-    return true;
   },
 
   getWorkflowConfig: async (customerId) => {
@@ -940,23 +1112,25 @@ export const api = {
     return next;
   },
 
-  sendCustomerMessage: async ({ customer, text, memories = [], history = [], workflowConfig = null, model = "deepseek-chat" }) => {
+  sendCustomerMessage: async ({ customer, text, memories = [], articles = [], history = [], workflowConfig = null, model = "deepseek-chat" }) => {
     if (!customer || !text?.trim()) return null;
 
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+    const knowledgeSources = buildCustomerKnowledgeSources(memories, articles);
     if (apiKey) {
-      const memoryString = memories.length > 0
-        ? memories
+      const memoryString = knowledgeSources.length > 0
+        ? knowledgeSources
             .map((m, idx) => {
               const body = truncateCustomerText(m.body, 5000);
               return [
                 `[${idx + 1}] (${m.kind || "note"}): ${m.title || "Note"}`,
                 `Summary: ${m.summary || m.text || ""}`,
+                m.sourceMeta ? `Source meta: ${m.sourceMeta}` : "",
                 body ? `Source text: ${body}` : "",
               ].filter(Boolean).join("\n");
             })
             .join("\n\n")
-        : "No saved memories.";
+        : "No saved customer knowledge sources.";
 
       const cfg = workflowConfig ? normalizeWorkflowConfig(workflowConfig) : null;
       const enabledKnowledge = cfg
@@ -981,10 +1155,10 @@ Current Client Context:
 - KYC Status: ${customer.kycStatus || "N/A"}
 - Client Since: ${customer.clientSince || "N/A"}
 
-Saved Memories (Notes, Meeting Summaries, Files):
+Saved Knowledge Sources (client memories, meeting summaries, files, and internal articles saved to the database):
 ${memoryString}
 
-Respond to the Advisor's inquiry. Use the client's context and memories to ground your answer. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
+Respond to the Advisor's inquiry. Use the client's context and saved knowledge sources to ground your answer. Treat internal articles as authoritative advisor-written context. If an internal article and an older profile memory conflict, prefer the most recently updated internal article and mention the source/date. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
 
       const chatHistory = [...history];
       if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
@@ -1004,7 +1178,7 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
     if (useSupabaseCustomerChat) {
       try {
         const { data, error } = await supabase.functions.invoke("customer-chat", {
-          body: { customer, text, memories },
+          body: { customer, text, memories, articles },
         });
         if (!error && data?.message) return data.message;
         if (!error && data?.text) return data;
@@ -1014,13 +1188,13 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
     }
 
     await delay(450);
-    return buildLocalCustomerChatReply({ customer, text, memories });
+    return buildLocalCustomerChatReply({ customer, text, memories, articles });
   },
 
-  draftCustomerFollowUp: async ({ customer, memories = [], workflowConfig = null, model }) => {
+  draftCustomerFollowUp: async ({ customer, memories = [], articles = [], workflowConfig = null, model }) => {
     if (!customer) return null;
-    const text = `Draft a follow-up email for ${customer.name} using the latest saved memory and next step.`;
-    return api.sendCustomerMessage({ customer, text, memories, history: [], workflowConfig, model });
+    const text = `Draft a follow-up email for ${customer.name} using the latest saved memory, internal article, and next step.`;
+    return api.sendCustomerMessage({ customer, text, memories, articles, history: [], workflowConfig, model });
   },
 
   generateCustomerArticle: async ({

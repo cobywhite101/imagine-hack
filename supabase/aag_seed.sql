@@ -218,8 +218,12 @@ alter table customer_memories add column if not exists body text;
 alter table customer_memories enable row level security;
 drop policy if exists "public read" on customer_memories;
 drop policy if exists "public insert" on customer_memories;
+drop policy if exists "public update" on customer_memories;
+drop policy if exists "public delete" on customer_memories;
 create policy "public read" on customer_memories for select using (true);
 create policy "public insert" on customer_memories for insert with check (true);
+create policy "public update" on customer_memories for update using (true) with check (true);
+create policy "public delete" on customer_memories for delete using (true);
 
 delete from customer_memories where customer_id like 'CL-%' or source_name in ('AAG dataset', 'AAG memory synthesis');
 

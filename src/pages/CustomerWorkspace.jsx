@@ -7,6 +7,7 @@ import {
   Brain,
   CalendarDays,
   ChevronDown,
+  CircleCheck,
   Copy,
   FileText,
   Mail,
@@ -54,11 +55,59 @@ const THINKING_STEPS = [
 ];
 const THINKING_STEP_MS = 950;
 const MIN_THINKING_MS = THINKING_STEPS.length * THINKING_STEP_MS;
+const MEMORY_UPDATE_VERB_PATTERN = /\b(update|change|correct|fix|amend|edit|revise)\b/i;
+const MEMORY_TARGET_PATTERN = /\b(memory|remembered|client record|customer record|saved record|profile)\b/i;
+const MEMORY_UPDATE_FIELDS = [
+  {
+    id: "birthday",
+    label: "Birthday",
+    aliases: ["birthday", "birth date", "birthdate", "date of birth", "dob"],
+  },
+  {
+    id: "email",
+    label: "Email",
+    aliases: ["email", "email address"],
+  },
+  {
+    id: "phone",
+    label: "Phone",
+    aliases: ["phone", "phone number", "mobile", "mobile number"],
+  },
+  {
+    id: "address",
+    label: "Address",
+    aliases: ["address", "home address", "mailing address"],
+  },
+  {
+    id: "net_worth",
+    label: "Net worth",
+    aliases: ["net worth", "estimated net worth"],
+  },
+  {
+    id: "income",
+    label: "Income",
+    aliases: ["income", "income bracket", "annual income"],
+  },
+  {
+    id: "preference",
+    label: "Preference",
+    aliases: ["preference", "preferred channel", "communication preference"],
+  },
+  {
+    id: "occupation",
+    label: "Occupation",
+    aliases: ["occupation", "job", "role"],
+  },
+];
 
 function formatFileSize(size) {
   if (!size) return "0 KB";
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function waitForThinkingSequence(startedAt) {
@@ -81,6 +130,196 @@ function formatMemoryDate(value) {
 
 function cleanText(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function cleanCorrectionValue(value) {
+  return cleanText(value)
+    .replace(/^(?:from|to|as|is|was|be)\s+/i, "")
+    .replace(/\s+(?:in|on)\s+(?:the\s+)?(?:memory|record|profile)$/i, "")
+    .replace(/\s+(?:please|thanks|thank you)$/i, "")
+    .replace(/^[`"']+|[`"'.!?]+$/g, "")
+    .trim();
+}
+
+function isValidCorrectionValue(value) {
+  return value.length > 0 && value.length <= 120;
+}
+
+function findMemoryUpdateField(text) {
+  const normalizedText = cleanText(text);
+
+  return MEMORY_UPDATE_FIELDS.find((field) =>
+    field.aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(normalizedText))
+  ) ?? null;
+}
+
+function normalizeMemoryComparable(text) {
+  return cleanText(text)
+    .toLowerCase()
+    .replace(/\b(\d{1,2})(?:st|nd|rd|th)\b/g, "$1")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseMemoryUpdateRequest(text) {
+  const raw = cleanText(text);
+  if (!raw) return null;
+
+  const field = findMemoryUpdateField(raw);
+  const asksForUpdate =
+    MEMORY_UPDATE_VERB_PATTERN.test(raw) ||
+    /\bactually\b/i.test(raw) ||
+    /\b(?:not|instead of)\b/i.test(raw);
+
+  if (!asksForUpdate || (!field && !MEMORY_TARGET_PATTERN.test(raw))) return null;
+
+  const fieldPattern = field ? `(?:${field.aliases.map(escapeRegExp).join("|")})` : "(?:memory|record|profile)";
+  const patterns = [
+    {
+      regex: new RegExp(
+        `${fieldPattern}[\\s\\S]{0,80}?\\b(?:is|was|says|shows|listed as|stored as|recorded as)\\s+([\\s\\S]+?)\\s+\\b(?:but\\s+)?(?:it'?s|it is|that'?s|that is|should be|is)?\\s*actually\\s+([\\s\\S]+?)(?:[.!?]|$)`,
+        "i"
+      ),
+      oldIndex: 1,
+      nextIndex: 2,
+    },
+    {
+      regex: new RegExp(
+        `\\b(?:update|change|correct|fix|amend|edit|revise)\\b[\\s\\S]{0,100}?${fieldPattern}[\\s\\S]{0,100}?\\bfrom\\s+([\\s\\S]+?)\\s+\\bto\\s+([\\s\\S]+?)(?:[.!?]|$)`,
+        "i"
+      ),
+      oldIndex: 1,
+      nextIndex: 2,
+    },
+    {
+      regex: new RegExp(
+        `${fieldPattern}[\\s\\S]{0,80}?\\b(?:is|should be|=)\\s+([\\s\\S]+?)\\s+\\b(?:not|instead of)\\s+([\\s\\S]+?)(?:[.!?]|$)`,
+        "i"
+      ),
+      oldIndex: 2,
+      nextIndex: 1,
+    },
+    {
+      regex: new RegExp(
+        `${fieldPattern}[\\s\\S]{0,80}?\\bactually\\s+([\\s\\S]+?)\\s+\\b(?:not|instead of)\\s+([\\s\\S]+?)(?:[.!?]|$)`,
+        "i"
+      ),
+      oldIndex: 2,
+      nextIndex: 1,
+    },
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern.regex);
+    if (!match) continue;
+
+    const oldValue = cleanCorrectionValue(match[pattern.oldIndex]);
+    const nextValue = cleanCorrectionValue(match[pattern.nextIndex]);
+    if (
+      isValidCorrectionValue(oldValue) &&
+      isValidCorrectionValue(nextValue) &&
+      normalizeMemoryComparable(oldValue) !== normalizeMemoryComparable(nextValue)
+    ) {
+      return {
+        fieldId: field?.id ?? "memory",
+        fieldLabel: field?.label ?? "Memory",
+        fieldAliases: field?.aliases ?? [],
+        oldValue,
+        nextValue,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getReplacementPatterns(value) {
+  const cleaned = cleanCorrectionValue(value);
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (!parts.length) return [];
+
+  const patternFromParts = (tokens) =>
+    tokens
+      .map((token) => {
+        const ordinal = token.match(/^(\d{1,2})(?:st|nd|rd|th)?$/i);
+        if (ordinal) return `${ordinal[1]}(?:st|nd|rd|th)?`;
+        return escapeRegExp(token);
+      })
+      .join("[\\s,./-]+");
+
+  const patterns = [new RegExp(patternFromParts(parts), "i")];
+  const dayMonth = cleaned.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)$/i);
+  if (dayMonth) {
+    patterns.push(new RegExp(`${escapeRegExp(dayMonth[2])}[\\s,./-]+${dayMonth[1]}(?:st|nd|rd|th)?`, "i"));
+  }
+  const monthDay = cleaned.match(/^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+  if (monthDay) {
+    patterns.push(new RegExp(`${monthDay[2]}(?:st|nd|rd|th)?[\\s,./-]+${escapeRegExp(monthDay[1])}`, "i"));
+  }
+
+  return patterns;
+}
+
+function replaceCorrectionValue(text, oldValue, nextValue) {
+  const source = String(text ?? "");
+  if (!source) return { text: source, changed: false };
+
+  for (const pattern of getReplacementPatterns(oldValue)) {
+    const updated = source.replace(pattern, nextValue);
+    if (updated !== source) return { text: updated, changed: true };
+  }
+
+  return { text: source, changed: false };
+}
+
+function scoreMemoryForCorrection(memory, correction) {
+  const haystack = [
+    memory.title,
+    memory.summary,
+    memory.body,
+    memory.sourceName,
+    memory.sourceMeta,
+  ].join("\n");
+  const normalizedHaystack = normalizeMemoryComparable(haystack);
+  const normalizedOldValue = normalizeMemoryComparable(correction.oldValue);
+  if (!normalizedOldValue || !normalizedHaystack.includes(normalizedOldValue)) return 0;
+
+  const hasFieldAlias = correction.fieldAliases.some((alias) =>
+    normalizedHaystack.includes(normalizeMemoryComparable(alias))
+  );
+
+  return [
+    20,
+    hasFieldAlias ? 10 : 0,
+    memory.kind === "profile" ? 3 : 0,
+    memory.kind === "article" ? 2 : 0,
+    memory.kind === "chat" ? -3 : 0,
+  ].reduce((total, score) => total + score, 0);
+}
+
+function amendMemoryWithCorrection(memory, correction) {
+  const nextMemory = { ...memory };
+  const changedFields = [];
+
+  for (const key of ["title", "summary", "body"]) {
+    const result = replaceCorrectionValue(nextMemory[key], correction.oldValue, correction.nextValue);
+    if (result.changed) {
+      nextMemory[key] = result.text;
+      changedFields.push(key);
+    }
+  }
+
+  if (!changedFields.length) return null;
+  return { memory: nextMemory, changedFields };
+}
+
+function buildMemoryUpdatedMessage({ correction, memory }) {
+  return {
+    type: "memory-updated",
+    text: "Memory updated",
+    detail: `${correction.fieldLabel}: ${correction.oldValue} -> ${correction.nextValue}`,
+    source: memory?.title ? `Updated ${memory.title}` : "",
+  };
 }
 
 
@@ -141,13 +380,16 @@ function describeMeetingUpload(fileName, body) {
   return "Advisor meeting notes";
 }
 
-function buildMeetingUploadMessage({ customer, memory }) {
+function buildMeetingUploadMessage({ customer, memory, article }) {
   const documentType = describeMeetingUpload(memory.sourceName || memory.title, memory.body || memory.summary);
   const contactName = customer.contactName || customer.name;
 
   return {
     text: [
       `I saved **${memory.sourceName || memory.title}** as meeting context for ${customer.name}.`,
+      article
+        ? `I also pushed **${article.title}** to the internal articles database and indexed it for future chatbot answers.`
+        : "I saved the meeting context, but could not generate the internal article automatically from this file.",
       "",
       `**What it is**`,
       `${documentType} with client context, commitments, and follow-up signals for ${contactName}.`,
@@ -156,20 +398,10 @@ function buildMeetingUploadMessage({ customer, memory }) {
       memory.summary || "I could not extract a useful text summary from this file yet.",
       "",
       `**Suggestions**`,
-      `- Add the useful parts into an internal article so another advisor can reuse it later.`,
       `- Draft a client follow-up email from the commitments and next steps.`,
       `- Review action items, risks, and dates before updating the advisor workflow.`,
-      "",
-      "Want me to add this to an internal article?",
     ].join("\n"),
     suggestions: [
-      {
-        id: `article-${memory.id}`,
-        label: "Add to article",
-        action: "create-article",
-        memoryId: memory.id,
-        instruction: "Turn these uploaded meeting minutes into an internal article for the advisor knowledge base.",
-      },
       {
         id: `followup-${memory.id}`,
         label: "Draft follow-up",
@@ -496,6 +728,25 @@ function CustomerChatMessage({ message, onSuggestion }) {
     );
   }
 
+  if (message.type === "memory-updated") {
+    return (
+      <div className="group flex w-full items-start gap-2.5">
+        <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[#e8f7ee] text-[#16794c]">
+          <CircleCheck className="size-4" strokeWidth={2.1} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[14px] font-semibold leading-5 text-[#16794c]">Memory updated</p>
+          {message.detail && (
+            <p className="mt-0.5 text-[13px] font-normal leading-5 text-[#101112]">{message.detail}</p>
+          )}
+          {message.source && (
+            <p className="mt-0.5 text-[12px] font-medium leading-4 text-black/45">{message.source}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const parsedDraft = parseEmailDraft(message.text);
   if (parsedDraft) {
     const finalPreText = parsedDraft.preText || `Here is the drafted email for this customer:`;
@@ -628,7 +879,7 @@ export function CustomerWorkspace() {
   }, []);
 
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ block: "end" });
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, sending]);
 
   if (loading && !customer) {
@@ -698,7 +949,6 @@ export function CustomerWorkspace() {
   }
 
   async function remember(entry, { notify = true } = {}) {
-    setMemories((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
     try {
       const savedEntry = await api.saveCustomerMemory(customer.id, entry);
       setMemories((prev) => [savedEntry, ...prev.filter((item) => item.id !== savedEntry.id && item.id !== entry.id)]);
@@ -714,15 +964,14 @@ export function CustomerWorkspace() {
       }
       return savedEntry;
     } catch (error) {
-      setMemories((prev) => prev.filter((item) => item.id !== entry.id));
       throw error;
     }
   }
 
-  async function saveCustomerArticle(article) {
+  async function saveCustomerArticle(article, { notify = true } = {}) {
     if (!customer) return null;
     const now = new Date().toISOString();
-    const optimisticArticle = {
+    const articleForSave = {
       ...article,
       id: article.id ?? `article-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       customerId: customer.id,
@@ -730,16 +979,65 @@ export function CustomerWorkspace() {
       updatedAt: now,
     };
 
-    setArticles((prev) => upsertArticleList(prev, optimisticArticle));
-    const savedArticle = await api.saveCustomerArticle(customer.id, optimisticArticle);
+    const savedArticle = await api.saveCustomerArticle(customer.id, articleForSave);
     setArticles((prev) => upsertArticleList(prev, savedArticle));
+    if (savedArticle?.indexedMemory) {
+      setMemories((prev) => [
+        savedArticle.indexedMemory,
+        ...prev.filter((item) => item.id !== savedArticle.indexedMemory.id),
+      ]);
+    }
+    if (notify) {
+      addAssistantNotice(
+        savedArticle?.memoryIndexError
+          ? `Saved internal article: **${savedArticle.title}**\n\nPushed to the internal articles database. I could not mirror it into client memory, but this chat can still read it from Source files.`
+          : `Saved internal article: **${savedArticle.title}**\n\nPushed to the database and indexed for future chatbot answers.`
+      );
+    }
     return savedArticle;
   }
 
   async function deleteCustomerArticle(articleId) {
     if (!customer) return;
-    setArticles((prev) => prev.filter((item) => item.id !== articleId));
     await api.deleteCustomerArticle(customer.id, articleId);
+    setArticles((prev) => prev.filter((item) => item.id !== articleId));
+  }
+
+  async function refreshCustomerKnowledge() {
+    const [nextMemories, nextArticles] = await Promise.all([
+      api.getCustomerMemories(customer.id),
+      api.getCustomerArticles(customer.id),
+    ]);
+
+    setMemories(nextMemories);
+    setArticles(nextArticles);
+
+    return { memories: nextMemories, articles: nextArticles };
+  }
+
+  async function updateCustomerMemoryFromChat(correction, availableMemories = []) {
+    const rankedMemories = availableMemories
+      .map((memory) => ({ memory, score: scoreMemoryForCorrection(memory, correction) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || new Date(b.memory.createdAt) - new Date(a.memory.createdAt));
+    const target = rankedMemories[0]?.memory;
+    if (!target) return { status: "not-found", correction };
+
+    const amended = amendMemoryWithCorrection(target, correction);
+    if (!amended) return { status: "not-found", correction };
+
+    const savedMemory = await api.updateCustomerMemory(customer.id, amended.memory);
+    setMemories((prev) => {
+      if (!prev.some((memory) => memory.id === savedMemory.id)) return [savedMemory, ...prev];
+      return prev.map((memory) => (memory.id === savedMemory.id ? savedMemory : memory));
+    });
+
+    return {
+      status: "updated",
+      correction,
+      memory: savedMemory,
+      changedFields: amended.changedFields,
+    };
   }
 
   function getArticleSourceMemory() {
@@ -753,10 +1051,12 @@ export function CustomerWorkspace() {
     });
   }
 
-  async function createArticleFromLatestMinutes(instruction = "", sourceOverride = null) {
+  async function createArticleFromLatestMinutes(instruction = "", sourceOverride = null, { notify = true } = {}) {
     const sourceMemory = sourceOverride ?? getArticleSourceMemory();
     if (!sourceMemory) {
-      addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
+      if (notify) {
+        addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
+      }
       return null;
     }
 
@@ -770,15 +1070,19 @@ export function CustomerWorkspace() {
     });
 
     if (!generatedArticle) {
-      addAssistantNotice("I could not generate an article from the saved minutes yet. Try uploading a text transcript or note.");
+      if (notify) {
+        addAssistantNotice("I could not generate an article from the saved minutes yet. Try uploading a text transcript or note.");
+      }
       return null;
     }
 
-    const savedArticle = await saveCustomerArticle(generatedArticle);
+    const savedArticle = await saveCustomerArticle(generatedArticle, { notify: false });
     setArticleCandidate(null);
-    addAssistantNotice(
-      `Created internal article: **${savedArticle.title}**\n\nSaved under Details > Knowledge > Source files.`
-    );
+    if (notify) {
+      addAssistantNotice(
+        `Created internal article: **${savedArticle.title}**\n\nPushed to the database, saved under Details > Knowledge > Source files, and indexed for future chatbot answers.`
+      );
+    }
     return savedArticle;
   }
 
@@ -821,7 +1125,12 @@ export function CustomerWorkspace() {
         );
         if (meetingMinutes) {
           setArticleCandidate(savedEntry);
-          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry }));
+          const savedArticle = await createArticleFromLatestMinutes(
+            "Turn these uploaded meeting minutes into an internal article for the advisor knowledge base.",
+            savedEntry,
+            { notify: false }
+          );
+          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry, article: savedArticle }));
         }
       }
     } finally {
@@ -919,13 +1228,20 @@ export function CustomerWorkspace() {
   async function draftFollowUp() {
     if (!customer || sending) return;
 
-    const prompt = "Draft a follow-up email from this customer's latest memory.";
+    const prompt = "Draft a follow-up email from this customer's latest saved knowledge.";
     const thinkingStartedAt = Date.now();
     setSending(true);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
     try {
-      const reply = await api.draftCustomerFollowUp({ customer, memories, workflowConfig, model: selectedModel });
+      const latestKnowledge = await refreshCustomerKnowledge();
+      const reply = await api.draftCustomerFollowUp({
+        customer,
+        memories: latestKnowledge.memories,
+        articles: latestKnowledge.articles,
+        workflowConfig,
+        model: selectedModel,
+      });
       await waitForThinkingSequence(thinkingStartedAt);
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
@@ -939,19 +1255,46 @@ export function CustomerWorkspace() {
   async function sendCustomerPrompt(text) {
     if (!text || sending) return;
 
+    const memoryUpdateRequest = parseMemoryUpdateRequest(text);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setValue("");
     const thinkingStartedAt = Date.now();
     setSending(true);
+    let attemptedMemoryUpdate = false;
 
     try {
+      if (memoryUpdateRequest) {
+        attemptedMemoryUpdate = true;
+        const latestKnowledge = await refreshCustomerKnowledge();
+        const updateResult = await updateCustomerMemoryFromChat(memoryUpdateRequest, latestKnowledge.memories);
+        await waitForThinkingSequence(thinkingStartedAt);
+
+        if (updateResult.status === "updated") {
+          addAssistantNotice(buildMemoryUpdatedMessage(updateResult));
+        } else {
+          addAssistantNotice(
+            `I could not find "${memoryUpdateRequest.oldValue}" in ${customer.name}'s saved memory, so I did not change anything.`
+          );
+        }
+        return;
+      }
+
       if (isArticleGenerationRequest(text, !!articleCandidate)) {
         await createArticleFromLatestMinutes(text);
         await waitForThinkingSequence(thinkingStartedAt);
         return;
       }
 
-      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig, model: selectedModel });
+      const latestKnowledge = await refreshCustomerKnowledge();
+      const reply = await api.sendCustomerMessage({
+        customer,
+        text,
+        memories: latestKnowledge.memories,
+        articles: latestKnowledge.articles,
+        history: messages,
+        workflowConfig,
+        model: selectedModel,
+      });
       await waitForThinkingSequence(thinkingStartedAt);
       if (reply) {
         setMessages((prev) => [...prev, reply]);
@@ -972,7 +1315,11 @@ export function CustomerWorkspace() {
       }
     } catch {
       await waitForThinkingSequence(thinkingStartedAt);
-      addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
+      addAssistantNotice(
+        attemptedMemoryUpdate
+          ? "I found the memory update request, but could not save the change to Supabase."
+          : "I could not search this customer record right now. Try again in a moment."
+      );
     } finally {
       setSending(false);
     }
