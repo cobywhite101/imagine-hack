@@ -194,6 +194,7 @@ function setStoredCustomerArticles(customerId, articles) {
 function normalizeWorkflowConfig(config) {
   return {
     instructions: config?.instructions ?? mockWorkflowConfig.instructions,
+    notes: config?.notes ?? mockWorkflowConfig.notes,
     guardrails: config?.guardrails ?? mockWorkflowConfig.guardrails,
     tone: config?.tone ?? mockWorkflowConfig.tone,
     knowledge: { ...mockWorkflowConfig.knowledge, ...(config?.knowledge ?? {}) },
@@ -929,12 +930,12 @@ export const api = {
         ? Object.entries(cfg.tools).filter(([, on]) => on).map(([name]) => name)
         : [];
       const workflowBlock = cfg
-        ? `\n\nWorkflow configuration set by the Advisor (follow it):
-${cfg.instructions ? `\nInstructions:\n${cfg.instructions}` : ""}${cfg.guardrails ? `\n\nGuardrails (must follow):\n${cfg.guardrails}` : ""}${cfg.tone ? `\n\nTone: ${cfg.tone}` : ""}${enabledKnowledge.length ? `\n\nConnected knowledge sources: ${enabledKnowledge.join(", ")}.` : ""}${enabledTools.length ? `\nAvailable tools: ${enabledTools.join(", ")}.` : ""}`
+        ? `\n\nWorkflow configuration for this client record:
+${cfg.instructions ? `\nWorkflow brief:\n${cfg.instructions}` : ""}${cfg.notes ? `\n\nNotes:\n${cfg.notes}` : ""}${cfg.guardrails ? `\n\nRules (must follow):\n${cfg.guardrails}` : ""}${cfg.tone ? `\n\nCommunication style: ${cfg.tone}` : ""}${enabledKnowledge.length ? `\n\nConnected knowledge sources: ${enabledKnowledge.join(", ")}.` : ""}${enabledTools.length ? `\nAvailable tools: ${enabledTools.join(", ")}.` : ""}`
         : "";
 
       const customerSystem = `You are a helpful, precise, and professional Client CRM Companion (Client OS Advisor).
-You are assisting an Advisor with a client record.${workflowBlock}
+You are helping the advisor work from a client record.${workflowBlock}
 
 Current Client Context:
 - Name: ${customer.name}
@@ -1007,9 +1008,10 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
       const cfg = workflowConfig ? normalizeWorkflowConfig(workflowConfig) : null;
       const workflowGuidance = cfg
         ? [
-            cfg.instructions ? `Workflow instructions:\n${cfg.instructions}` : "",
-            cfg.guardrails ? `Workflow guardrails:\n${cfg.guardrails}` : "",
-            cfg.tone ? `Preferred tone: ${cfg.tone}` : "",
+            cfg.instructions ? `Workflow brief:\n${cfg.instructions}` : "",
+            cfg.notes ? `Notes:\n${cfg.notes}` : "",
+            cfg.guardrails ? `Workflow rules:\n${cfg.guardrails}` : "",
+            cfg.tone ? `Communication style: ${cfg.tone}` : "",
           ].filter(Boolean).join("\n\n")
         : "";
 

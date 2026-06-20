@@ -13,10 +13,7 @@ import {
   Mic,
   Paperclip,
   Plus,
-  RotateCcw,
   Sparkles,
-  ThumbsDown,
-  ThumbsUp,
   UploadCloud,
   UserRound,
   X,
@@ -433,15 +430,6 @@ function CustomerChatMessage({ message }) {
           <CustomerChatIconButton label="Copy">
             <Copy className="size-3.5" strokeWidth={1.8} />
           </CustomerChatIconButton>
-          <CustomerChatIconButton label="Helpful">
-            <ThumbsUp className="size-3.5" strokeWidth={1.8} />
-          </CustomerChatIconButton>
-          <CustomerChatIconButton label="Not helpful">
-            <ThumbsDown className="size-3.5" strokeWidth={1.8} />
-          </CustomerChatIconButton>
-          <CustomerChatIconButton label="Try again">
-            <RotateCcw className="size-3.5" strokeWidth={1.8} />
-          </CustomerChatIconButton>
         </div>
       </div>
     );
@@ -455,15 +443,6 @@ function CustomerChatMessage({ message }) {
       <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
         <CustomerChatIconButton label="Copy">
           <Copy className="size-3.5" strokeWidth={1.8} />
-        </CustomerChatIconButton>
-        <CustomerChatIconButton label="Helpful">
-          <ThumbsUp className="size-3.5" strokeWidth={1.8} />
-        </CustomerChatIconButton>
-        <CustomerChatIconButton label="Not helpful">
-          <ThumbsDown className="size-3.5" strokeWidth={1.8} />
-        </CustomerChatIconButton>
-        <CustomerChatIconButton label="Try again">
-          <RotateCcw className="size-3.5" strokeWidth={1.8} />
         </CustomerChatIconButton>
       </div>
     </div>
@@ -927,17 +906,17 @@ export function CustomerWorkspace() {
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
             <TabsList
               variant="ghost"
-              className="w-full justify-start gap-6 border-b border-[#ededed] bg-transparent p-0 [&_[data-slot=tab-indicator]]:hidden"
+              className="flex w-fit items-center gap-1 rounded-lg bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"
             >
               <TabsTrigger
                 value="details"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
+                className="h-8 rounded-md px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-10 rounded-none border-b-2 border-transparent px-0 text-[15px] font-medium text-[#9a9aa0] focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-[#266df0] data-active:bg-transparent data-active:text-[#266df0]"
+                className="h-8 rounded-md px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Activity
               </TabsTrigger>

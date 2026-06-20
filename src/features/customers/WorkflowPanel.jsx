@@ -3,9 +3,9 @@ import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-r
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
-/* Notion-like workflow configuration panel. Replicates the agent settings layout:
-   a pixel app icon, title + status, owner row, action buttons, and a stack of
-   collapsible sections (Instructions, Guardrails, Tone, Knowledge, Tools). */
+/* Notion-like client workflow configuration panel:
+   a customer icon, title + status, owner row, action buttons, and a stack of
+   collapsible sections for workflow guidance, sources, and capabilities. */
 
 const ACCENT = "#266df0"; // blue used for active toggles + connect link
 
@@ -212,35 +212,44 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
 
   return (
     <div className="text-[#2a2a2e]">
-      <Section label="Instructions">
+      <Section label="Workflow brief">
         <EditableText
-          ariaLabel="Instructions"
+          ariaLabel="Workflow brief"
           value={config.instructions}
           onChange={(value) => setField("instructions", value)}
-          placeholder="Describe what this workflow should do…"
+          placeholder="Describe what should happen for this client workflow..."
         />
       </Section>
 
-      <Section label="Guardrails">
+      <Section label="Notes">
         <EditableText
-          ariaLabel="Guardrails"
+          ariaLabel="Notes"
+          value={config.notes}
+          onChange={(value) => setField("notes", value)}
+          placeholder="Add notes, reminders, or client context..."
+        />
+      </Section>
+
+      <Section label="Rules">
+        <EditableText
+          ariaLabel="Rules"
           value={config.guardrails}
           onChange={(value) => setField("guardrails", value)}
-          placeholder="Add rules the agent must always follow…"
+          placeholder="Add rules this workflow should always respect..."
         />
       </Section>
 
-      <Section label="Tone">
+      <Section label="Communication style">
         <EditableText
-          ariaLabel="Tone"
+          ariaLabel="Communication style"
           italic
           value={config.tone}
           onChange={(value) => setField("tone", value)}
-          placeholder="Type I.e. Casual, Detailed, Humorous, Objective, etc.."
+          placeholder="Type e.g. concise, detailed, objective, warm, etc."
         />
       </Section>
 
-      <Section label="Knowledge">
+      <Section label="Customer sources">
         <div className="-mt-1">
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-2.5">
@@ -322,7 +331,7 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
         </div>
       </Section>
 
-      <Section label="Tools">
+      <Section label="Workflow capabilities">
         <div className="-mt-1">
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-2.5">

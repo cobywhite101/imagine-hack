@@ -135,16 +135,16 @@ export function McpPanel() {
   return (
     <div className="relative">
       <Tabs defaultValue="my-connectors" className="gap-0">
-        <TabsList variant="ghost" className="gap-4 bg-transparent p-0">
+        <TabsList variant="ghost" className="gap-4 bg-transparent p-0 [&_[data-slot=tab-indicator]]:hidden">
           <TabsTrigger
             value="my-connectors"
-            className="h-8 rounded-xl px-3 text-sm data-active:bg-secondary"
+            className="h-8 rounded-xl px-3 text-sm outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-secondary aria-selected:bg-secondary"
           >
             My Connectors
           </TabsTrigger>
           <TabsTrigger
             value="admin-controls"
-            className="h-8 rounded-xl px-3 text-sm data-active:bg-secondary"
+            className="h-8 rounded-xl px-3 text-sm outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-secondary aria-selected:bg-secondary"
           >
             Admin Controls
           </TabsTrigger>

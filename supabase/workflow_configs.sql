@@ -1,6 +1,7 @@
--- Per-customer workflow / agent configuration for the workspace Details panel.
--- The `config` blob holds instructions, guardrails, tone, and the
--- knowledge/tools toggles. Run after schema.sql so the customers table exists.
+-- Per-customer workflow configuration for the workspace Details panel.
+-- The `config` blob holds the workflow brief, notes, rules, communication
+-- style, and source/capability toggles. Run after schema.sql so the customers
+-- table exists.
 
 create table if not exists workflow_configs (
   customer_id text primary key references customers(id) on delete cascade,

@@ -222,13 +222,14 @@ export const mockAgentLog = [
 export const mockCustomers = [];
 export const mockCustomerMemories = [];
 
-// Default workflow / agent configuration for a customer workspace. These fields
-// compose the agent's behavior: instructions + guardrails + tone become the
-// system prompt; knowledge/tools become retrieval sources + tool definitions.
+// Default workflow configuration for a customer workspace. These fields compose
+// workflow guidance: brief + notes + rules + communication style become the
+// system prompt; sources/capabilities become retrieval context + tool definitions.
 export const mockWorkflowConfig = {
   instructions:
-    "# Data Analysis\n\nAnalyze and plot this data thoroughly and give me key figures like mean, median and standard deviation.",
-  guardrails: "You only discuss topics related to tutoring.",
+    "# Client workflow\n\nSummarize the client record, highlight the next best advisor action, and keep recommendations grounded in saved customer context.",
+  notes: "",
+  guardrails: "Stay focused on this client relationship and avoid unsupported claims.",
   tone: "",
   knowledge: { workday: true, drive: false, slack: true },
   tools: { code: true },
