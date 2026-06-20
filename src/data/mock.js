@@ -209,13 +209,12 @@ export const mockCustomers = [];
 export const mockCustomerMemories = [];
 
 // Default workflow configuration for a customer workspace. These fields compose
-// workflow guidance: brief + notes + rules + communication style become the
-// system prompt; sources/capabilities become retrieval context + tool definitions.
+// workflow guidance: brief + notes + communication style become the system
+// prompt; sources/capabilities become retrieval context + tool definitions.
 export const mockWorkflowConfig = {
   instructions:
     "# Client workflow\n\nSummarize the client record, highlight the next best advisor action, and keep recommendations grounded in saved customer context.",
   notes: "",
-  guardrails: "Stay focused on this client relationship and avoid unsupported claims.",
   tone: "",
   knowledge: { workday: true, drive: false, slack: true },
   tools: { code: true },

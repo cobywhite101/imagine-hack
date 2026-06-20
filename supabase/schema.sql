@@ -90,6 +90,7 @@ create table if not exists customers (
   occupation text,
   dependents int,
   nationality text,
+  ethnicity text,
   assigned_advisor_id text,
   client_since_date date,
   acquisition_channel text,
@@ -130,6 +131,7 @@ alter table customers add column if not exists marital_status text;
 alter table customers add column if not exists occupation text;
 alter table customers add column if not exists dependents int;
 alter table customers add column if not exists nationality text;
+alter table customers add column if not exists ethnicity text;
 alter table customers add column if not exists assigned_advisor_id text;
 alter table customers add column if not exists client_since_date date;
 alter table customers add column if not exists acquisition_channel text;

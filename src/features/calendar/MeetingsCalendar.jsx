@@ -182,7 +182,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
   return (
     <section className="meetings-calendar rounded-[8px] border border-[#eeeeee] bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">Today's meetings</h2>
+        <h2 className="text-[14px] font-medium leading-5 text-[#4a4a4a]">Today's events</h2>
         <div className="flex items-center gap-3">
           <ViewSwitcher viewMode={viewMode} setViewMode={setViewMode} />
           <span className="text-[12px] leading-4 text-[#7b7b7b]">

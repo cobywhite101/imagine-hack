@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { ActionSearchBar } from "@/components/ui/action-search-bar";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
+import { CustomerProfileCard, WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
@@ -700,6 +700,12 @@ const CUSTOMER_RECORD_FIELD_DEFINITIONS = [
     aliases: ["nationality", "citizenship"],
   },
   {
+    field: "ethnicity",
+    label: "Ethnicity",
+    aliases: ["ethnicity", "ethnic group", "race"],
+    options: ["Chinese", "Malay", "Indian", "Other"],
+  },
+  {
     field: "advisorId",
     label: "Advisor",
     aliases: ["advisor", "advisor id", "assigned advisor", "assigned advisor id", "owner"],
@@ -1050,7 +1056,7 @@ function describeMeetingUpload(fileName, body) {
   return "Advisor meeting notes";
 }
 
-function buildMeetingUploadMessage({ customer, memory }) {
+function buildMeetingUploadMessage({ customer, memory, workflowGenerated = false }) {
   const documentType = describeMeetingUpload(memory.sourceName || memory.title, memory.body || memory.summary);
   const contactName = customer.contactName || customer.name;
 
@@ -1064,6 +1070,9 @@ function buildMeetingUploadMessage({ customer, memory }) {
       `**Summary**`,
       memory.summary || "I could not extract a useful text summary from this file yet.",
       "",
+      workflowGenerated
+        ? "**Workflow updated**\nAI generated Notes and Communication style from this latest client context.\n"
+        : "",
       `**Suggestions**`,
       `- Draft a client follow-up email from the commitments and next steps.`,
       `- Review action items, risks, and dates before updating the advisor workflow.`,
@@ -1675,7 +1684,7 @@ function CustomerWorkspaceSkeleton() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto bg-white px-6 text-[13px]">
+        <aside className="min-h-0 overflow-y-auto bg-white px-6">
           <div className="pt-4">
             <SkeletonBlock width={48} height={48} />
 
@@ -1712,10 +1721,10 @@ function CustomerWorkspaceSkeleton() {
 function WorkflowDetailsSkeleton() {
   return (
     <div className="pt-1 text-[#2a2a2e]">
-      {Array.from({ length: 3 }).map((_, sectionIndex) => (
+      {Array.from({ length: 2 }).map((_, sectionIndex) => (
         <section key={sectionIndex} className="py-4">
           <div className="flex items-center justify-between gap-3">
-            <SkeletonBlock width={sectionIndex === 0 ? 48 : sectionIndex === 1 ? 42 : 154} height={18} />
+            <SkeletonBlock width={sectionIndex === 0 ? 48 : 154} height={18} />
             <div className="flex items-center gap-1.5">
               <SkeletonBlock width={24} height={24} />
               <SkeletonBlock width={24} height={24} />
@@ -1723,7 +1732,7 @@ function WorkflowDetailsSkeleton() {
           </div>
           <div className="mt-3 space-y-2">
             <SkeletonBlock height={17} width={sectionIndex === 0 ? "82%" : "94%"} />
-            <SkeletonBlock height={17} width={sectionIndex === 2 ? "68%" : "56%"} />
+            <SkeletonBlock height={17} width={sectionIndex === 1 ? "68%" : "56%"} />
           </div>
         </section>
       ))}
@@ -1762,6 +1771,7 @@ export function CustomerWorkspace() {
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const configSaveTimer = useRef(null);
+  const workflowGuidanceKeyRef = useRef(null);
   const [customerOverride, setCustomerOverride] = useState(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
@@ -1822,6 +1832,53 @@ export function CustomerWorkspace() {
   useEffect(() => {
     if (fetchedConfig) setWorkflowConfig(fetchedConfig);
   }, [fetchedConfig]);
+
+  useEffect(() => {
+    if (!customer?.id || !workflowConfig || !fetchedConfig || !fetchedMemories || !fetchedArticles || !fetchedMeetings) return;
+
+    const guidanceKey = [
+      customer.id,
+      customer.updatedAt ?? customer.updated_at ?? "",
+      safeMemories.map((memory) => [memory.id, memory.updatedAt, memory.createdAt, memory.title, memory.summary].filter(Boolean).join("|")).join("||"),
+      articles.map((article) => [article.id, article.updatedAt, article.createdAt, article.title, article.summary].filter(Boolean).join("|")).join("||"),
+      customerMeetings.map((meeting) => [meeting.id, meeting.updatedAt, meeting.createdAt, meeting.start, meeting.title, meeting.notes].filter(Boolean).join("|")).join("||"),
+    ].join("::");
+
+    if (workflowGuidanceKeyRef.current === guidanceKey) return;
+    workflowGuidanceKeyRef.current = guidanceKey;
+
+    let cancelled = false;
+    api.generateWorkflowGuidance({
+      customer,
+      memories: safeMemories,
+      articles,
+      meetings: customerMeetings,
+      workflowConfig,
+      model: apiModel,
+    })
+      .then((nextConfig) => {
+        if (cancelled || !nextConfig) return;
+        updateWorkflowConfig(nextConfig);
+      })
+      .catch(() => {
+        workflowGuidanceKeyRef.current = null;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    customer,
+    workflowConfig,
+    fetchedConfig,
+    fetchedMemories,
+    fetchedArticles,
+    fetchedMeetings,
+    safeMemories,
+    articles,
+    customerMeetings,
+    apiModel,
+  ]);
 
   useEffect(() => {
     if (!customer?.id) return undefined;
@@ -2154,6 +2211,29 @@ export function CustomerWorkspace() {
     return savedArticle;
   }
 
+  async function generateWorkflowGuidanceFromContext(sourceMemory, { customerOverride = null, memoriesOverride = null } = {}) {
+    if (!sourceMemory) return null;
+
+    const activeCustomer = customerOverride ?? customer;
+    const activeMemories = memoriesOverride ?? memories;
+    const baseConfig = workflowConfig ?? fetchedConfig;
+    if (!activeCustomer) return null;
+
+    const generatedConfig = await api.generateWorkflowGuidance({
+      customer: activeCustomer,
+      memories: activeMemories,
+      articles,
+      sourceMemory,
+      workflowConfig: baseConfig,
+      model: apiModel,
+    });
+
+    setWorkflowConfig(generatedConfig);
+    clearTimeout(configSaveTimer.current);
+    await api.saveWorkflowConfig(activeCustomer.id, generatedConfig);
+    return generatedConfig;
+  }
+
   async function addFiles(fileList) {
     const next = Array.from(fileList ?? []).map((file) => ({
       id: `${file.name}-${file.lastModified}-${file.size}`,
@@ -2193,7 +2273,18 @@ export function CustomerWorkspace() {
         );
         if (meetingMinutes) {
           setArticleCandidate(savedEntry);
-          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry }));
+          let workflowGenerated = false;
+          try {
+            const latestMemories = [savedEntry, ...memories.filter((memory) => memory.id !== savedEntry.id)];
+            const generatedConfig = await generateWorkflowGuidanceFromContext(savedEntry, {
+              customerOverride: customer,
+              memoriesOverride: latestMemories,
+            });
+            workflowGenerated = Boolean(generatedConfig);
+          } catch {
+            workflowGenerated = false;
+          }
+          addAssistantNotice(buildMeetingUploadMessage({ customer, memory: savedEntry, workflowGenerated }));
         }
       }
     } finally {
@@ -2503,6 +2594,8 @@ export function CustomerWorkspace() {
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
+              <CustomerProfileCard customer={customer} />
+              <div className="mt-1 border-t border-[#ededed] pt-1" />
               {workflowConfig ? (
                 <WorkflowDetails
                   config={workflowConfig}

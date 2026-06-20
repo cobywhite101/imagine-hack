@@ -288,7 +288,7 @@ function HomeState({ onSend, disabled = false }) {
         <div className="flex h-[686px] w-[1165px] flex-col items-center justify-stretch px-6 pb-14">
           <div className="mb-6 mt-12 flex h-6 w-[716px] max-w-[716px] flex-col items-start justify-start gap-1 px-2">
             <div className="h-6 w-[300px] whitespace-nowrap text-[20px] font-semibold leading-6 tracking-[-0.4px] text-[#101112]">
-              Good morning, Daniel.
+              Good morning, Ferdinand.
             </div>
           </div>
           <div className="flex h-[534px] w-[716px] max-w-[716px] flex-col items-stretch justify-start gap-10">
@@ -310,7 +310,7 @@ function AssistantOverview() {
   return (
     <div className="text-[16px] font-medium leading-[27px] tracking-[-0.16px] text-[#101112]">
       <p className="mb-3">
-        Hey Daniel! Here's a quick overview of what I can help you with in your client
+        Hey Ferdinand! Here's a quick overview of what I can help you with in your client
         workspace:
       </p>
       {assistantSections.map((section) => (

@@ -162,6 +162,96 @@ export function WorkflowHeader({ customer }) {
   );
 }
 
+function formatProfileDate(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "";
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function computeAge(value) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
+  const today = new Date();
+  const monthNow = today.getMonth() + 1;
+  let age = today.getFullYear() - year;
+  if (monthNow < month || (monthNow === month && today.getDate() < day)) age -= 1;
+  return age >= 0 && age < 130 ? age : null;
+}
+
+function formatHorizon(years) {
+  const value = Number(years);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return `${value} ${value === 1 ? "year" : "years"}`;
+}
+
+// Conservative / Moderate / Aggressive get a scannable status dot.
+const RISK_DOT_COLOR = { Conservative: "#16a06a", Moderate: "#e0992a", Aggressive: "#d9534f" };
+
+function ProfileRow({ label, value, dotColor }) {
+  const hasValue = value === 0 || Boolean(value);
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-[5px]">
+      <span className="shrink-0 text-[13px] text-[#9a9aa0]">{label}</span>
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 text-right text-[13px] font-medium",
+          hasValue ? "text-[#2a2a2e]" : "text-[#c0c0c6]"
+        )}
+      >
+        {hasValue && dotColor ? (
+          <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />
+        ) : null}
+        <span className="min-w-0 truncate">{hasValue ? String(value) : "Not recorded"}</span>
+      </span>
+    </div>
+  );
+}
+
+// Read-only biography + fact-find snapshot, sourced from the customer record
+// (Supabase `customers` row). Matches the panel's existing light styling.
+export function CustomerProfileCard({ customer }) {
+  if (!customer) return null;
+
+  const age = computeAge(customer.dateOfBirth);
+  const dobDisplay = customer.dateOfBirth
+    ? `${formatProfileDate(customer.dateOfBirth)}${age != null ? ` (${age})` : ""}`
+    : "";
+  const dependents =
+    customer.dependents === 0 || customer.dependents ? String(customer.dependents) : "";
+
+  return (
+    <div className="text-[#2a2a2e]">
+      <Section label="Biography">
+        <div className="-mt-1">
+          <ProfileRow label="Date of birth" value={dobDisplay} />
+          <ProfileRow label="Gender" value={customer.gender} />
+          <ProfileRow label="Marital status" value={customer.maritalStatus} />
+          <ProfileRow label="Occupation" value={customer.occupation} />
+          <ProfileRow label="Nationality" value={customer.nationality} />
+          <ProfileRow label="Ethnicity" value={customer.ethnicity} />
+          <ProfileRow label="Dependents" value={dependents} />
+        </div>
+      </Section>
+
+      <Section label="Financial profile">
+        <div className="-mt-1">
+          <ProfileRow label="Annual income" value={customer.annualIncomeBracket} />
+          <ProfileRow label="Net worth" value={customer.netWorthBracket} />
+          <ProfileRow
+            label="Risk tolerance"
+            value={customer.riskTolerance}
+            dotColor={RISK_DOT_COLOR[customer.riskTolerance]}
+          />
+          <ProfileRow label="Investment horizon" value={formatHorizon(customer.investmentHorizonYears)} />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 // Controlled: parent owns `config` + `articles` and persists changes.
 export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle, onDeleteArticle }) {
   const knowledge = config.knowledge ?? {};
@@ -181,9 +271,6 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
     await onDeleteArticle?.(articleId);
     setEditing(null);
   }
-
-
-
   return (
     <div className="text-[#2a2a2e]">
       <Section label="Notes">
@@ -192,15 +279,6 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
           value={config.notes}
           onChange={(value) => setField("notes", value)}
           placeholder="Add notes, reminders, or client context..."
-        />
-      </Section>
-
-      <Section label="Rules">
-        <EditableText
-          ariaLabel="Rules"
-          value={config.guardrails}
-          onChange={(value) => setField("guardrails", value)}
-          placeholder="Add rules this workflow should always respect..."
         />
       </Section>
 
@@ -214,87 +292,30 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
         />
       </Section>
 
-      <Section label="Customer sources">
-        <div className="-mt-1">
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2.5">
-              <RecordsMark />
-              <span className="text-[15px]">Client records</span>
-            </div>
-            <Toggle label="Client records" checked={!!knowledge.workday} onChange={(value) => setKnowledge("workday", value)} />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <DocumentsMark />
-              <span className={cn("text-[15px]", knowledge.drive ? "" : "italic text-[#a0a0a6]")}>Document vault</span>
-              {!knowledge.drive && (
-                <>
-                  <span className="text-[#cfcfd4]">•</span>
-                  <button
-                    type="button"
-                    onClick={() => setKnowledge("drive", true)}
-                    className="text-[14px] font-medium text-[#266df0] hover:underline"
-                  >
-                    Connect Account
-                  </button>
-                </>
-              )}
-            </div>
-            <Toggle
-              label="Document vault"
-              checked={!!knowledge.drive}
-              disabled={!knowledge.drive}
-              onChange={(value) => setKnowledge("drive", value)}
+      <div className="mt-3 border-t border-[#ededed] pt-1">
+        <p className="py-2 font-mono text-[11px] uppercase tracking-wide text-[#a0a0a6]">Source files</p>
+        {articles.length > 0 ? (
+          articles.map((article) => (
+            <SourceFileRow
+              key={article.id}
+              title={article.title || "Untitled internal article"}
+              subtitle={article.subtitle || article.type || "Internal article"}
+              onClick={() => setEditing({ article })}
             />
-          </div>
+          ))
+        ) : (
+          <p className="py-2 text-[13px] leading-5 text-[#8a8a8f]">No internal articles saved yet.</p>
+        )}
 
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2.5">
-              <MessagesMark />
-              <span className="text-[15px]">Team messages</span>
-            </div>
-            <Toggle label="Team messages" checked={!!knowledge.slack} onChange={(value) => setKnowledge("slack", value)} />
-          </div>
-
-          <button
-            type="button"
-            className="mt-1 flex items-center gap-2 py-1.5 text-[15px] text-[#6b6b70] transition-colors hover:text-[#1a1a1a]"
-          >
-            <Plus className="size-4" strokeWidth={2} />
-            Add connection
-          </button>
-
-          <div className="mt-3 border-t border-[#ededed] pt-1">
-            <p className="py-2 font-mono text-[11px] uppercase tracking-wide text-[#a0a0a6]">Source files</p>
-            {articles.length > 0 ? (
-              articles.map((article) => (
-                <SourceFileRow
-                  key={article.id}
-                  title={article.title || "Untitled internal article"}
-                  subtitle={article.subtitle || article.type || "Internal article"}
-                  onClick={() => setEditing({ article })}
-                />
-              ))
-            ) : (
-              <p className="py-2 text-[13px] leading-5 text-[#8a8a8f]">
-                No internal articles saved yet.
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setEditing({ article: null })}
-              className="mt-1 flex items-center gap-2 py-1.5 text-[15px] text-[#6b6b70] transition-colors hover:text-[#1a1a1a]"
-            >
-              <Plus className="size-4" strokeWidth={2} />
-              New source file
-            </button>
-          </div>
-
-
-        </div>
-      </Section>
+        <button
+          type="button"
+          onClick={() => setEditing({ article: null })}
+          className="mt-1 flex items-center gap-2 py-1.5 text-[15px] text-[#6b6b70] transition-colors hover:text-[#1a1a1a]"
+        >
+          <Plus className="size-4" strokeWidth={2} />
+          New source file
+        </button>
+      </div>
 
       <Section label="Workflow capabilities">
         <div className="-mt-1">

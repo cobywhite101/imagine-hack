@@ -75,6 +75,7 @@ const CUSTOMER_RECORD_COLUMN_MAP = {
   occupation: "occupation",
   dependents: "dependents",
   nationality: "nationality",
+  ethnicity: "ethnicity",
   advisorId: "assigned_advisor_id",
   clientSince: "client_since_date",
   acquisitionChannel: "acquisition_channel",
@@ -597,7 +598,7 @@ function getHomeBriefContext(tasks, meetings, customers = []) {
   const customersById = new Map(customers.map((customer) => [String(customer.id), customer]));
 
   return {
-    advisorName: "Daniel",
+    advisorName: "Ferdinand",
     today,
     todayMeetings,
     followUps,
@@ -750,6 +751,17 @@ async function createHomeDashboard({ tasks, meetings, customers = [] }) {
   };
 }
 
+// Demo fallback: infer ethnicity from Malaysian patrilineal naming markers when
+// the record has no stored value (Malay: bin/binti; Indian: a/l, a/p, s/o, d/o).
+// Used only when `ethnicity` is missing so the profile is never blank pre-migration.
+function deriveEthnicityFromName(name) {
+  const value = String(name ?? "").toLowerCase();
+  if (!value) return "";
+  if (/\b(bin|binti|bt)\b/.test(value)) return "Malay";
+  if (/\b(a\/l|a\/p|s\/o|d\/o)\b/.test(value)) return "Indian";
+  return "Chinese";
+}
+
 function normalizeCustomerRecord(customer) {
   const mockCustomer = localCustomers.find((item) => String(item.id) === String(customer.id));
   const name = customer.name ?? customer.company ?? "Unnamed customer";
@@ -783,6 +795,8 @@ function normalizeCustomerRecord(customer) {
     dateOfBirth: customer.dateOfBirth ?? customer.date_of_birth ?? mockCustomer?.dateOfBirth ?? "",
     maritalStatus: customer.maritalStatus ?? customer.marital_status ?? mockCustomer?.maritalStatus ?? "",
     gender: customer.gender ?? mockCustomer?.gender ?? "",
+    ethnicity:
+      customer.ethnicity ?? mockCustomer?.ethnicity ?? deriveEthnicityFromName(name),
     dependents: customer.dependents ?? customer.number_of_dependents ?? mockCustomer?.dependents,
     annualIncomeBracket:
       customer.annualIncomeBracket ?? customer.annual_income_bracket ?? mockCustomer?.annualIncomeBracket ?? "",
@@ -878,7 +892,6 @@ function normalizeWorkflowConfig(config) {
   return {
     instructions: config?.instructions ?? mockWorkflowConfig.instructions,
     notes: config?.notes ?? mockWorkflowConfig.notes,
-    guardrails: config?.guardrails ?? mockWorkflowConfig.guardrails,
     tone: config?.tone ?? mockWorkflowConfig.tone,
     knowledge: { ...mockWorkflowConfig.knowledge, ...(config?.knowledge ?? {}) },
     tools: { ...mockWorkflowConfig.tools, ...(config?.tools ?? {}) },
@@ -1198,6 +1211,112 @@ function buildLocalArticleFromMemory({ customer, memory }) {
     sourceMemoryId: memory?.id ?? null,
     sourceName,
   });
+}
+
+function pickContextSentences(text, limit = 4) {
+  const sentences =
+    String(text ?? "")
+      .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+      ?.map((sentence) => cleanCustomerText(sentence))
+      .filter(Boolean) ?? [];
+
+  const scored = sentences.map((sentence, index) => {
+    const lower = sentence.toLowerCase();
+    return {
+      sentence,
+      index,
+      score:
+        (/\b(action|next|follow|renew|schedule|need|deadline|commitment|confirm)\b/.test(lower) ? 5 : 0) +
+        (/\b(risk|concern|objection|kyc|will|estate|liabilit|premium|policy|coverage)\b/.test(lower) ? 4 : 0) +
+        (/\b(prefers?|tone|email|whatsapp|call|concise|detailed|formal|warm)\b/.test(lower) ? 3 : 0) +
+        (sentence.length <= 220 ? 1 : 0),
+    };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map((item) => item.sentence);
+}
+
+function joinGuidanceLines(lines) {
+  return lines
+    .map((line) => cleanCustomerText(line).replace(/^[-*]\s+/, ""))
+    .filter(Boolean)
+    .map((line) => `- ${line.replace(/[.;\s]+$/, "")}.`)
+    .join("\n");
+}
+
+function cleanGeneratedGuidanceText(value) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function advisorMeetingToGuidanceMemory(meeting) {
+  if (!meeting) return null;
+  const entry = normalizeAdvisorMeeting(meeting);
+  const date = entry.start ? new Date(entry.start).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  const time = formatMeetingTime(entry);
+  const body = [
+    entry.title,
+    date || time ? `Meeting timing: ${[date, time].filter(Boolean).join(" at ")}` : "",
+    entry.location ? `Location: ${entry.location}` : "",
+    entry.status ? `Status: ${entry.status}` : "",
+    entry.notes ? `Meeting notes: ${entry.notes}` : "",
+  ].filter(Boolean).join("\n");
+
+  return {
+    id: `advisor-meeting-${entry.id}`,
+    kind: "meeting",
+    title: entry.title || "Advisor meeting",
+    summary: entry.notes || entry.title || "",
+    body,
+    sourceName: "Linked advisor meeting",
+    sourceMeta: [date, time, entry.location].filter(Boolean).join(" | "),
+    createdAt: entry.createdAt || entry.start || new Date().toISOString(),
+  };
+}
+
+function buildLocalWorkflowGuidance({ customer, memories = [], articles = [], meetings = [], sourceMemory = null }) {
+  const source = sourceMemory ? normalizeCustomerMemory(sourceMemory) : null;
+  const articleMemories = articles.map(customerArticleToMemory).filter(Boolean);
+  const meetingMemories = meetings.map(advisorMeetingToGuidanceMemory).filter(Boolean);
+  const contextSources = [
+    source,
+    ...meetingMemories,
+    ...memories.map(normalizeCustomerMemory),
+    ...articleMemories,
+  ].filter(Boolean);
+  const contextText = contextSources
+    .map((item) => [item.title, item.summary, item.body].filter(Boolean).join("\n"))
+    .join("\n\n");
+  const highlights = pickContextSentences(contextText, 5);
+  const nextAction = customer?.task || customer?.nextAction || "Confirm the next client action and timing";
+  const preferredChannel = customer?.preferredCommunicationChannel || "the client's preferred channel";
+  const sourceName = source?.sourceName || source?.title || (highlights[0] ? "latest saved context" : "client record");
+
+  const notes = joinGuidanceLines([
+    `AI-generated from ${sourceName}`,
+    ...highlights.slice(0, 3),
+    `Current advisor focus: ${nextAction}`,
+  ]);
+
+  const lowerContext = contextText.toLowerCase();
+  const toneParts = [
+    /\b(urgent|deadline|overdue|today|tomorrow)\b/.test(lowerContext) ? "direct about timing" : "calm",
+    /\b(concern|worried|objection|sensitive|family|estate|will)\b/.test(lowerContext) ? "empathetic" : "professional",
+    /\b(detail|explain|breakdown|analysis)\b/.test(lowerContext) ? "specific" : "concise",
+    `use ${preferredChannel} when drafting client outreach`,
+  ];
+
+  return {
+    notes,
+    tone: toneParts.join(", "),
+  };
 }
 
 function getCustomerSearchTerms(text) {
@@ -1914,10 +2033,11 @@ export const api = {
         : [];
       const workflowBlock = cfg
         ? `\n\nWorkflow configuration for this client record:
-${cfg.instructions ? `\nWorkflow brief:\n${cfg.instructions}` : ""}${cfg.notes ? `\n\nNotes:\n${cfg.notes}` : ""}${cfg.guardrails ? `\n\nRules (must follow):\n${cfg.guardrails}` : ""}${cfg.tone ? `\n\nCommunication style: ${cfg.tone}` : ""}${enabledKnowledge.length ? `\n\nConnected knowledge sources: ${enabledKnowledge.join(", ")}.` : ""}${enabledTools.length ? `\nAvailable tools: ${enabledTools.join(", ")}.` : ""}`
+${cfg.instructions ? `\nWorkflow brief:\n${cfg.instructions}` : ""}${cfg.notes ? `\n\nNotes:\n${cfg.notes}` : ""}${cfg.tone ? `\n\nCommunication style: ${cfg.tone}` : ""}${enabledKnowledge.length ? `\n\nConnected knowledge sources: ${enabledKnowledge.join(", ")}.` : ""}${enabledTools.length ? `\nAvailable tools: ${enabledTools.join(", ")}.` : ""}`
         : "";
 
-      const customerSystem = `You are a helpful, precise, and professional Client CRM Companion (Client OS Advisor).
+      const customerSystem = `You are the Client OS Advisor, a warm and trusted Client CRM Companion.
+Your personality: think of yourself as a sharp, genuinely caring colleague sitting next to the advisor. You are warm, encouraging, and personable, with a natural conversational tone and a little human warmth — never robotic, stiff, or overly formal. You care about the advisor's clients and want the advisor to look good in front of them. Stay precise and professional underneath the warmth: never sacrifice accuracy for friendliness, and skip the empty flattery or salesy filler.
 You are helping the advisor work from a client record.${workflowBlock}
 
 Current Client Record:
@@ -1968,6 +2088,78 @@ Respond to the Advisor's inquiry. Use Recent Conversation to resolve follow-ups,
     return api.sendCustomerMessage({ customer, text, memories, articles, history: [], workflowConfig, model });
   },
 
+  generateWorkflowGuidance: async ({
+    customer,
+    memories = [],
+    articles = [],
+    meetings = [],
+    sourceMemory = null,
+    workflowConfig = null,
+    model = "deepseek-chat",
+  }) => {
+    if (!customer) return normalizeWorkflowConfig(workflowConfig);
+
+    const source = sourceMemory ? normalizeCustomerMemory(sourceMemory) : null;
+    const meetingSources = meetings.map(advisorMeetingToGuidanceMemory).filter(Boolean);
+    const knowledgeSources = [...meetingSources, ...buildCustomerKnowledgeSources(memories, articles)];
+    const selectedSources = source
+      ? [source, ...knowledgeSources.filter((item) => String(item.id) !== String(source.id)).slice(0, 6)]
+      : knowledgeSources.slice(0, 7);
+    const contextText = selectedSources.length
+      ? selectedSources
+          .map((memory, index) => {
+            const body = truncateCustomerText(memory.body || memory.summary, 3500);
+            return [
+              `[${index + 1}] ${memory.title || memory.sourceName || "Saved customer context"}`,
+              memory.sourceName ? `Source: ${memory.sourceName}` : "",
+              memory.sourceMeta ? `Meta: ${memory.sourceMeta}` : "",
+              body,
+            ].filter(Boolean).join("\n");
+          })
+          .join("\n\n")
+      : "No saved customer knowledge sources.";
+
+    const baseConfig = normalizeWorkflowConfig(workflowConfig);
+    const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+
+    if (apiKey) {
+      const systemPrompt = `You generate workflow guidance for a financial advisor's client workspace.
+Return only valid JSON with exactly these string fields:
+{
+  "notes": "advisor-only notes as concise bullet lines",
+  "tone": "short communication style phrase"
+}
+
+Use only the supplied client record and saved context. Do not invent facts. Notes should reflect client-specific context, open commitments, risks, dates, and next steps. Tone should be tailored to the client and advisor context.`;
+
+      const userPrompt = [
+        `Customer record:\n${formatCustomerRecordForPrompt(customer)}`,
+        `Current advisor next action: ${customer.task || customer.nextAction || "None recorded"}`,
+        source ? `Primary updated context: ${source.sourceName || source.title}` : "",
+        `Current workflow notes:\n${baseConfig.notes || "None"}`,
+        `Current communication style:\n${baseConfig.tone || "None"}`,
+        `Saved customer and meeting context:\n${contextText}`,
+      ].filter(Boolean).join("\n\n");
+
+      const reply = await queryDeepSeek([{ role: "user", text: userPrompt }], systemPrompt, model);
+      const parsed = parseJsonObject(reply);
+
+      if (parsed) {
+        return normalizeWorkflowConfig({
+          ...baseConfig,
+          notes: cleanGeneratedGuidanceText(parsed.notes) || baseConfig.notes,
+          tone: cleanCustomerText(parsed.tone) || baseConfig.tone,
+        });
+      }
+    }
+
+    await delay(250);
+    return normalizeWorkflowConfig({
+      ...baseConfig,
+      ...buildLocalWorkflowGuidance({ customer, memories, articles, meetings, sourceMemory: source }),
+    });
+  },
+
   generateCustomerArticle: async ({
     customer,
     memory,
@@ -1991,7 +2183,6 @@ Respond to the Advisor's inquiry. Use Recent Conversation to resolve follow-ups,
         ? [
             cfg.instructions ? `Workflow brief:\n${cfg.instructions}` : "",
             cfg.notes ? `Notes:\n${cfg.notes}` : "",
-            cfg.guardrails ? `Workflow rules:\n${cfg.guardrails}` : "",
             cfg.tone ? `Communication style: ${cfg.tone}` : "",
           ].filter(Boolean).join("\n\n")
         : "";
@@ -2288,11 +2479,11 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
       let crmContext = "";
       try {
         const customers = localCustomers || [];
-        crmContext = `You are a helpful Client CRM assistant.
+        crmContext = `You are a warm, friendly Client CRM assistant — think of yourself as a sharp, genuinely caring colleague. Be encouraging and personable with a natural conversational tone and a touch of human warmth; never robotic, stiff, or overly formal. Stay precise and professional underneath the warmth, and skip empty flattery or salesy filler.
 Here are the clients in the workspace:
 ${customers.map((c) => `- ${c.name} (Contact: ${c.contactName || c.contact || "N/A"}, Next Step: ${c.task || c.nextAction || "None"})`).join("\n")}`;
       } catch (e) {
-        crmContext = "You are a helpful Client CRM assistant.";
+        crmContext = "You are a warm, friendly Client CRM assistant — a sharp, genuinely caring colleague. Be encouraging and personable with a natural, conversational tone, while staying precise and professional.";
       }
 
       const systemPrompt = `${crmContext}

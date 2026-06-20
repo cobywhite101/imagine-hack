@@ -1,6 +1,6 @@
 -- Per-customer workflow configuration for the workspace Details panel.
--- The `config` blob holds the workflow brief, notes, rules, communication
--- style, and source/capability toggles. Run after schema.sql so the customers
+-- The `config` blob holds the workflow brief, notes, communication style,
+-- and source/capability toggles. Run after schema.sql so the customers
 -- table exists.
 
 create table if not exists workflow_configs (

@@ -10,7 +10,8 @@ import { McpPage } from "@/pages/McpPage";
 import { Workflows } from "@/pages/Workflows";
 import { api } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import aetherLogo from "@/assets/Aether-logo.png";
 import {
   ChevronDown,
   Database,
@@ -218,11 +219,11 @@ function SidebarSection({ label, items, emptyText }) {
   const contentId = useId();
 
   return (
-    <div className="flex w-[247px] flex-col gap-0.5">
+    <div className="flex w-[247px] flex-col gap-0.5 px-1">
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
-        className="mx-2 flex h-7 w-[232px] items-center gap-1.5 rounded-md px-2 text-left text-[12px] font-medium leading-4 tracking-[-0.01em] text-black/60 transition-colors hover:bg-black/[0.035]"
+        className="w-full flex h-7 items-center gap-1.5 rounded-md px-2 text-left text-[12px] font-medium leading-4 tracking-[-0.01em] text-black/60 transition-colors hover:bg-black/[0.035]"
         aria-expanded={expanded}
         aria-controls={contentId}
       >
@@ -335,8 +336,13 @@ function Sidebar({ open, onCollapse }) {
     >
       <div className="flex h-[49px] w-full shrink-0 items-center gap-2 border-b border-[#e6e7ea] px-3 text-left">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1">
-          <Avatar className="size-6 shrink-0 rounded-md">
-            <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
+          <Avatar className="size-6 shrink-0 rounded-[6px]">
+            <AvatarImage
+              src={aetherLogo}
+              alt="Aether logo"
+              className="rounded-[6px] object-contain"
+            />
+            <AvatarFallback className="rounded-[6px] bg-[#e9a62a] text-[13px] font-semibold text-white">
               A
             </AvatarFallback>
           </Avatar>
@@ -395,13 +401,17 @@ function Sidebar({ open, onCollapse }) {
         <div className="mt-auto border-t border-[#e6e7ea] bg-white px-2 py-3">
           <div className="mx-0.5 flex items-center gap-2 rounded-md p-1.5">
             <Avatar className="size-8 shrink-0 rounded-md">
+              <AvatarImage src="" alt="Ferdinand profile picture" />
               <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
-                A
+                F
               </AvatarFallback>
             </Avatar>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-semibold leading-5 tracking-[-0.01em]">
-                Aether
+                Ferdinand
+              </span>
+              <span className="block truncate text-[11px] font-medium leading-4 text-black/55">
+                ferdinandnat@gmail.com
               </span>
             </span>
           </div>
