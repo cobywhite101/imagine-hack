@@ -51,7 +51,7 @@ const sections = [
     ],
   },
   {
-    label: "Signals",
+    label: "Chat",
     items: [
       { to: "/mcp", label: "Knowledge connectors", icon: Plug },
       { to: "/customers", label: "Weekly client view", icon: CalendarDays },

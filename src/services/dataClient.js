@@ -26,8 +26,7 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const CUSTOMER_MEMORY_KEY = "client-companion-memory-v1";
-const useSupabaseCustomerMemory =
-  isSupabaseConfigured && import.meta.env.VITE_ENABLE_SUPABASE_MEMORY === "true";
+const useSupabaseCustomerMemory = isSupabaseConfigured;
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
@@ -99,6 +98,43 @@ function normalizeCustomerRecord(customer) {
     email: customer.email ?? mockCustomer?.email ?? customer.contact ?? "",
     phone: customer.phone ?? mockCustomer?.phone ?? "",
     tags: customer.tags ?? mockCustomer?.tags ?? [],
+    contactName: customer.contactName ?? customer.contact_name ?? mockCustomer?.contactName ?? name,
+    occupation: customer.occupation ?? mockCustomer?.occupation ?? "",
+    dependents: customer.dependents ?? customer.number_of_dependents ?? mockCustomer?.dependents,
+    annualIncomeBracket:
+      customer.annualIncomeBracket ?? customer.annual_income_bracket ?? mockCustomer?.annualIncomeBracket ?? "",
+    netWorthBracket: customer.netWorthBracket ?? customer.net_worth_bracket ?? mockCustomer?.netWorthBracket ?? "",
+    riskTolerance: customer.riskTolerance ?? customer.risk_tolerance ?? mockCustomer?.riskTolerance ?? "",
+    investmentHorizonYears:
+      customer.investmentHorizonYears ??
+      customer.investment_horizon_years ??
+      mockCustomer?.investmentHorizonYears,
+    liabilitiesSummary: customer.liabilitiesSummary ?? customer.liabilities_summary ?? mockCustomer?.liabilitiesSummary ?? "",
+    policyCount: customer.policyCount ?? customer.policy_count ?? mockCustomer?.policyCount,
+    policySummary: customer.policySummary ?? customer.policy_summary ?? mockCustomer?.policySummary ?? "",
+    nextRenewal: customer.nextRenewal ?? customer.next_renewal ?? mockCustomer?.nextRenewal ?? "",
+    nextRenewalPolicyType:
+      customer.nextRenewalPolicyType ?? customer.next_renewal_policy_type ?? mockCustomer?.nextRenewalPolicyType ?? "",
+    estatePlanStatus:
+      customer.estatePlanStatus ?? customer.estate_plan_status ?? mockCustomer?.estatePlanStatus ?? "",
+    hasWill: customer.hasWill ?? customer.has_will ?? mockCustomer?.hasWill,
+    businessOwnership:
+      customer.businessOwnership ?? customer.business_ownership ?? mockCustomer?.businessOwnership,
+    intendedHeirs: customer.intendedHeirs ?? customer.intended_heirs ?? mockCustomer?.intendedHeirs ?? "",
+    nextLifeEvent: customer.nextLifeEvent ?? customer.next_life_event ?? mockCustomer?.nextLifeEvent ?? "",
+    nextLifeEventDate:
+      customer.nextLifeEventDate ?? customer.next_life_event_date ?? mockCustomer?.nextLifeEventDate ?? "",
+    lastContactDate: customer.lastContactDate ?? customer.last_contact_date ?? mockCustomer?.lastContactDate ?? "",
+    preferredCommunicationChannel:
+      customer.preferredCommunicationChannel ??
+      customer.preferred_communication_channel ??
+      mockCustomer?.preferredCommunicationChannel ??
+      "",
+    kycStatus: customer.kycStatus ?? customer.kyc_status ?? mockCustomer?.kycStatus ?? "",
+    advisorId: customer.advisorId ?? customer.assigned_advisor_id ?? mockCustomer?.advisorId ?? "",
+    clientSince: customer.clientSince ?? customer.client_since_date ?? mockCustomer?.clientSince ?? "",
+    acquisitionChannel:
+      customer.acquisitionChannel ?? customer.acquisition_channel ?? mockCustomer?.acquisitionChannel ?? "",
   };
 }
 
@@ -188,7 +224,7 @@ function buildCustomerDraft(customer, memories) {
   return [
     `Subject: Next step for ${customer.name}`,
     "",
-    `Hi ${customer.contact?.split(" · ")[0] || customer.name},`,
+    `Hi ${customer.contactName || customer.name},`,
     "",
     "Quick recap from our latest notes:",
     contextLines,
@@ -252,6 +288,52 @@ function getInitials(name) {
     .toUpperCase();
 
   return initials || "NC";
+}
+
+async function queryDeepSeek(messages, systemPrompt = "") {
+  const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    console.warn("DeepSeek API key is not configured.");
+    return null;
+  }
+
+  try {
+    const formattedMessages = [];
+    if (systemPrompt) {
+      formattedMessages.push({ role: "system", content: systemPrompt });
+    }
+
+    messages.forEach((msg) => {
+      formattedMessages.push({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.text || msg.content || "",
+      });
+    });
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: formattedMessages,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("DeepSeek API responded with error status:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || null;
+  } catch (error) {
+    console.error("Error querying DeepSeek API:", error);
+    return null;
+  }
 }
 
 export const api = {
@@ -386,8 +468,45 @@ export const api = {
     return entry;
   },
 
-  sendCustomerMessage: async ({ customer, text, memories = [] }) => {
+  sendCustomerMessage: async ({ customer, text, memories = [], history = [] }) => {
     if (!customer || !text?.trim()) return null;
+
+    const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+    if (apiKey) {
+      const memoryString = memories.length > 0
+        ? memories.map((m, idx) => `[${idx + 1}] (${m.kind || "note"}): ${m.title || "Note"} - ${m.summary || m.text}`).join("\n")
+        : "No saved memories.";
+
+      const customerSystem = `You are a helpful, precise, and professional Client CRM Companion (Client OS Advisor).
+You are assisting an Advisor with a client record.
+
+Current Client Context:
+- Name: ${customer.name}
+- Email: ${customer.email || "N/A"}
+- Contact Person: ${customer.contactName || customer.name}
+- Next Action/Task: ${customer.task || customer.nextAction || "None"}
+- KYC Status: ${customer.kycStatus || "N/A"}
+- Client Since: ${customer.clientSince || "N/A"}
+
+Saved Memories (Notes, Meeting Summaries, Files):
+${memoryString}
+
+Respond to the Advisor's inquiry. Use the client's context and memories to ground your answer. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
+
+      const chatHistory = [...history];
+      if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
+        chatHistory.push({ role: "user", text });
+      }
+
+      const deepseekReply = await queryDeepSeek(chatHistory, customerSystem);
+      if (deepseekReply) {
+        return {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          text: deepseekReply,
+        };
+      }
+    }
 
     if (useSupabaseCustomerChat) {
       try {
@@ -408,7 +527,7 @@ export const api = {
   draftCustomerFollowUp: async ({ customer, memories = [] }) => {
     if (!customer) return null;
     const text = `Draft a follow-up email for ${customer.name} using the latest saved memory and next step.`;
-    return api.sendCustomerMessage({ customer, text, memories });
+    return api.sendCustomerMessage({ customer, text, memories, history: [] });
   },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
@@ -424,7 +543,37 @@ export const api = {
   // The assistant. The live home is a Supabase Edge Function (where the
   // DeepSeek key lives server-side). Until it exists, fall back to a
   // context-aware canned reply so the demo always responds.
-  sendChatMessage: async ({ text }) => {
+  sendChatMessage: async ({ text, history = [] }) => {
+    const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+    if (apiKey) {
+      let crmContext = "";
+      try {
+        const customers = mockCustomers || [];
+        crmContext = `You are a helpful Client CRM assistant.
+Here are the clients in the workspace:
+${customers.map((c) => `- ${c.name} (Contact: ${c.contactName || c.contact || "N/A"}, Next Step: ${c.task || c.nextAction || "None"})`).join("\n")}`;
+      } catch (e) {
+        crmContext = "You are a helpful Client CRM assistant.";
+      }
+
+      const systemPrompt = `${crmContext}
+Assist the user with CRM tasks, answering questions about clients, recommending follow-up templates, or explaining CRM strategies. Keep answers clear, direct, and formatted nicely in markdown.`;
+
+      const chatHistory = [...history];
+      if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
+        chatHistory.push({ role: "user", text });
+      }
+
+      const deepseekReply = await queryDeepSeek(chatHistory, systemPrompt);
+      if (deepseekReply) {
+        return {
+          id: `msg-${Date.now()}`,
+          role: "assistant",
+          text: deepseekReply,
+        };
+      }
+    }
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.functions.invoke("chat", {

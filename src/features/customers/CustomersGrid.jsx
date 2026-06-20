@@ -10,6 +10,14 @@ import {
   ChevronDown,
   Trash2,
   X,
+  BriefcaseBusiness,
+  CalendarDays,
+  FileCheck2,
+  FileText,
+  Landmark,
+  MessageSquare,
+  ShieldCheck,
+  HeartHandshake,
 } from "lucide-react";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
@@ -46,8 +54,46 @@ const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
 const COLS = [
-  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 420, type: "text", sortValue: (c) => c.task },
+  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 360, type: "text", sortValue: (c) => c.task },
   { key: "status", label: "Status", icon: CircleDot, width: 160, type: "select", options: STATUSES, sortValue: (c) => c.status },
+  { key: "occupation", label: "Occupation", icon: BriefcaseBusiness, width: 190, type: "text", sortValue: (c) => c.occupation },
+  { key: "annualIncomeBracket", label: "Income", icon: Landmark, width: 140, type: "text", sortValue: (c) => c.annualIncomeBracket },
+  { key: "netWorthBracket", label: "Net worth", icon: Landmark, width: 150, type: "text", sortValue: (c) => c.netWorthBracket },
+  { key: "riskTolerance", label: "Risk", icon: ShieldCheck, width: 135, type: "text", sortValue: (c) => c.riskTolerance },
+  {
+    key: "policySummary",
+    label: "Policies",
+    icon: FileText,
+    width: 260,
+    type: "text",
+    editable: false,
+    sortValue: (c) => c.policyCount ?? 0,
+  },
+  {
+    key: "nextRenewal",
+    label: "Next renewal",
+    icon: CalendarDays,
+    width: 140,
+    type: "text",
+    sortValue: (c) => c.nextRenewal,
+  },
+  {
+    key: "estatePlanStatus",
+    label: "Estate plan",
+    icon: HeartHandshake,
+    width: 145,
+    type: "text",
+    sortValue: (c) => c.estatePlanStatus,
+  },
+  {
+    key: "preferredCommunicationChannel",
+    label: "Channel",
+    icon: MessageSquare,
+    width: 130,
+    type: "text",
+    sortValue: (c) => c.preferredCommunicationChannel,
+  },
+  { key: "kycStatus", label: "KYC", icon: FileCheck2, width: 120, type: "text", sortValue: (c) => c.kycStatus },
 ];
 
 const NAME_COL = { key: "name", sortValue: (c) => c.name };
@@ -126,6 +172,13 @@ function getInitials(name) {
   return initials || "NC";
 }
 
+function getCellValue(row, col) {
+  const value = row[col.key];
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return value ?? "";
+}
+
 function normalizeCustomer(customer) {
   const name = customer.name ?? customer.company ?? "Unnamed customer";
   const rawStatus = customer.status;
@@ -141,6 +194,20 @@ function normalizeCustomer(customer) {
     accent: customer.accent ?? "#868e96",
     status,
     email: customer.email ?? customer.contact ?? "",
+    occupation: customer.occupation ?? "",
+    annualIncomeBracket: customer.annualIncomeBracket ?? customer.annual_income_bracket ?? "",
+    netWorthBracket: customer.netWorthBracket ?? customer.net_worth_bracket ?? "",
+    riskTolerance: customer.riskTolerance ?? customer.risk_tolerance ?? "",
+    policyCount: customer.policyCount ?? customer.policy_count ?? customer.policies?.length ?? 0,
+    policySummary:
+      customer.policySummary ??
+      customer.policy_summary ??
+      (customer.policies?.length ? `${customer.policies.length} policies` : ""),
+    nextRenewal: customer.nextRenewal ?? customer.next_renewal ?? "",
+    estatePlanStatus: customer.estatePlanStatus ?? customer.estate_plan_status ?? "",
+    preferredCommunicationChannel:
+      customer.preferredCommunicationChannel ?? customer.preferred_communication_channel ?? "",
+    kycStatus: customer.kycStatus ?? customer.kyc_status ?? "",
   };
 }
 
@@ -163,7 +230,7 @@ export function CustomersGrid() {
     const q = query.trim().toLowerCase();
     const filtered = q
       ? data.filter((c) =>
-          [c.name, c.task, c.status]
+          [c.name, c.task, c.status, ...COLS.map((col) => getCellValue(c, col)), ...(c.tags ?? [])]
             .join(" ")
             .toLowerCase()
             .includes(q)
@@ -443,7 +510,7 @@ export function CustomersGrid() {
                               <StatusPill status={c.status} />
                             </button>
                           )
-                        ) : isEditing ? (
+                        ) : isEditing && col.editable !== false ? (
                           <CellInput
                             value={c[col.key]}
                             onCommit={(v) => commitEdit(c.id, col.key, v)}
@@ -452,11 +519,13 @@ export function CustomersGrid() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => setEditing({ id: c.id, key: col.key })}
-                            className="block w-full truncate text-left cursor-text outline-none"
+                            onClick={() => {
+                              if (col.editable !== false) setEditing({ id: c.id, key: col.key });
+                            }}
+                            className={`block w-full truncate text-left outline-none ${col.editable === false ? "cursor-default" : "cursor-text"}`}
                             style={{ color: INK }}
                           >
-                            {c[col.key] || "—"}
+                            {getCellValue(c, col) || "—"}
                           </button>
                         )}
                       </td>

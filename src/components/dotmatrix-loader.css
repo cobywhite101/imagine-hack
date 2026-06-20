@@ -1,0 +1,106 @@
+.dmx-root {
+  --dmx-cycle: 1200ms;
+  --dmx-opacity-base: 0.08;
+  --dmx-opacity-mid: 0.34;
+  --dmx-opacity-peak: 0.94;
+  --dmx-bloom-level: 0;
+  --dmx-halo-level: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.dmx-grid {
+  display: grid;
+  grid-template-columns: repeat(5, var(--dmx-dot-size));
+  grid-template-rows: repeat(5, var(--dmx-dot-size));
+  place-content: center;
+}
+
+.dmx-dot {
+  display: block;
+  flex: none;
+  background: var(--dmx-dot-fill, currentColor);
+  opacity: var(--dmx-opacity-mid);
+  transform: translateZ(0);
+}
+
+.dmx-dot-shape-circle .dmx-dot {
+  border-radius: 999px;
+}
+
+.dmx-dot-shape-square .dmx-dot {
+  border-radius: 1px;
+}
+
+.dmx-dot-shape-diamond .dmx-dot {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.dmx-dot-shape-hearts .dmx-dot {
+  border-radius: 999px 999px 0 999px;
+  transform: rotate(45deg);
+}
+
+.dmx-muted {
+  opacity: 0.72;
+}
+
+.dmx-bloom-dot {
+  filter: drop-shadow(0 0 calc(2px + 5px * var(--dmx-bloom-level)) currentColor);
+}
+
+.dmx-bloom-halo .dmx-dot {
+  filter: drop-shadow(0 0 calc(2px + 8px * var(--dmx-halo-level)) currentColor);
+}
+
+.dmx-dot.dmx-inactive {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+  animation: none !important;
+  filter: none;
+}
+
+.dmx-square6-col-snake {
+  animation: dmx-square6-col-snake calc(var(--dmx-cycle) * var(--dmx-speed, 1)) steps(5, end) infinite;
+  animation-delay: calc(var(--dmx-col-pos, 0) * 0.2 * var(--dmx-cycle) * var(--dmx-speed, 1));
+  will-change: opacity;
+}
+
+@keyframes dmx-square6-col-snake {
+  0%,
+  20% {
+    opacity: calc(0.6 * var(--dmx-opacity-peak) + 0.25 * var(--dmx-opacity-mid) + 0.15 * var(--dmx-opacity-base));
+  }
+
+  20%,
+  40% {
+    opacity: calc(0.3 * var(--dmx-opacity-peak) + 0.5 * var(--dmx-opacity-mid) + 0.2 * var(--dmx-opacity-base));
+  }
+
+  40%,
+  60% {
+    opacity: calc(0.6 * var(--dmx-opacity-mid) + 0.4 * var(--dmx-opacity-base));
+  }
+
+  60%,
+  80% {
+    opacity: calc(0.2 * var(--dmx-opacity-mid) + 0.8 * var(--dmx-opacity-base));
+  }
+
+  80%,
+  100% {
+    opacity: calc(0.625 * var(--dmx-opacity-base));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dmx-dot,
+  .dmx-square6-col-snake {
+    animation: none !important;
+    transition: none !important;
+  }
+}

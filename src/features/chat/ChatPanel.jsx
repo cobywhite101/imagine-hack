@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -15,6 +15,9 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
+import { DotmSquare6 } from "@/components/ui/dotm-square-6";
+import { ChatMessage } from "@/features/chat/ChatMessage";
+import { api } from "@/services/dataClient";
 
 const assistantSections = [
   {
@@ -107,12 +110,12 @@ function TopBar({ mode }) {
   );
 }
 
-function Composer({ onSend, compact = false }) {
+function Composer({ onSend, compact = false, disabled = false }) {
   const [value, setValue] = useState("");
 
   function submit() {
     const text = value.trim();
-    if (!text) return;
+    if (!text || disabled) return;
     onSend(text);
     setValue("");
   }
@@ -136,8 +139,9 @@ function Composer({ onSend, compact = false }) {
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
+        disabled={disabled}
         placeholder="Ask anything..."
-        className={`w-full flex-1 resize-none bg-transparent text-[18px] font-medium leading-[22px] tracking-[-0.18px] text-[#101112] outline-none placeholder:text-black/45 ${
+        className={`w-full flex-1 resize-none bg-transparent text-[18px] font-medium leading-[22px] tracking-[-0.18px] text-[#101112] outline-none placeholder:text-black/45 disabled:cursor-not-allowed disabled:opacity-60 ${
           compact ? "px-5 py-4" : "px-5 py-4"
         }`}
       />
@@ -156,7 +160,7 @@ function Composer({ onSend, compact = false }) {
           onClick={submit}
           aria-label="Submit message"
           className="flex size-7 items-center justify-center rounded-lg bg-[#266df0] p-[7px] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(38,109,240,0.24)] disabled:opacity-40"
-          disabled={!value.trim()}
+          disabled={!value.trim() || disabled}
         >
           <ArrowUp className="size-3.5" strokeWidth={1.9} />
         </button>
@@ -165,7 +169,7 @@ function Composer({ onSend, compact = false }) {
   );
 }
 
-function RecentChatComposer({ onSend }) {
+function RecentChatComposer({ onSend, disabled = false }) {
   return (
     <div className="flex h-[186px] w-[716px] flex-col items-stretch justify-start">
       <a
@@ -176,7 +180,7 @@ function RecentChatComposer({ onSend }) {
         <span>Recent chat · </span>
         <span className="text-black/65">Untitled chat</span>
       </a>
-      <Composer onSend={onSend} />
+      <Composer onSend={onSend} disabled={disabled} />
     </div>
   );
 }
@@ -288,7 +292,7 @@ function TasksBlock() {
   );
 }
 
-function HomeState({ onSend }) {
+function HomeState({ onSend, disabled = false }) {
   return (
     <div className="h-[763px] w-[1165px] overflow-hidden overflow-y-auto text-[#101112]">
       <div className="table h-[686px] w-[1165px]">
@@ -300,7 +304,7 @@ function HomeState({ onSend }) {
           </div>
           <div className="flex h-[534px] w-[716px] max-w-[716px] flex-col items-stretch justify-start gap-10">
             <div className="flex h-[186px] w-[716px] flex-col items-stretch justify-start">
-              <RecentChatComposer onSend={onSend} />
+              <RecentChatComposer onSend={onSend} disabled={disabled} />
             </div>
             <div className="flex h-[308px] w-[716px] flex-col items-stretch justify-start gap-10">
               <MeetingsBlock />
@@ -335,52 +339,51 @@ function AssistantOverview() {
   );
 }
 
-function ChatState({ userText, onSend }) {
+function ChatThinkingIndicator() {
+  return (
+    <div className="flex h-9 items-center text-black/45">
+      <DotmSquare6 size={28} dotSize={4} ariaLabel="Assistant is thinking" />
+    </div>
+  );
+}
+
+function ChatState({ messages, onSend, isThinking }) {
+  const threadEndRef = useRef(null);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isThinking]);
+
   return (
     <div className="flex h-[763px] w-[1165px] flex-col items-center justify-between text-[#101112]">
       <div className="flex h-[637px] w-[1165px] flex-col items-stretch justify-start">
         <div className="relative flex h-[637px] w-[1165px] flex-col items-stretch justify-stretch">
           <div className="relative flex h-[637px] w-[1165px] flex-col overflow-hidden">
             <div className="flex h-[637px] w-[1165px] flex-col overflow-hidden overflow-y-auto">
-              <div className="flex h-[637px] w-[1165px] flex-col items-center">
-                <div className="flex h-[853px] w-[700px] max-w-full flex-col items-stretch justify-start gap-1.5 px-6 py-3">
-                  <div className="flex h-[829px] w-[652px] flex-col items-stretch justify-start">
-                    <div className="flex justify-end">
-                      <div className="rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[16px] font-medium leading-5 tracking-[-0.16px]">
-                        {userText}
-                      </div>
+              <div className="flex min-h-full flex-col items-center justify-end">
+                <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-6 px-6 py-8">
+                  {messages.map((message) => (
+                    <ChatMessage key={message.id} message={message} />
+                  ))}
+                  {isThinking && (
+                    <div className="flex gap-3">
+                      <ChatThinkingIndicator />
                     </div>
-                    <div className="mt-[66px]">
-                      <AssistantOverview />
-                    </div>
-                    <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0">
-                      <IconButton label="Copy">
-                        <Copy className="size-3.5" strokeWidth={1.8} />
-                      </IconButton>
-                      <IconButton label="Helpful">
-                        <ThumbsUp className="size-3.5" strokeWidth={1.8} />
-                      </IconButton>
-                      <IconButton label="Not helpful">
-                        <ThumbsDown className="size-3.5" strokeWidth={1.8} />
-                      </IconButton>
-                      <IconButton label="Try again">
-                        <RotateCcw className="size-3.5" strokeWidth={1.8} />
-                      </IconButton>
-                    </div>
-                  </div>
+                  )}
+                  <div ref={threadEndRef} />
                 </div>
               </div>
             </div>
           </div>
-          <div className="absolute bottom-4 flex h-7 w-[1165px] flex-col items-center justify-center">
-            <button className="flex size-7 items-center justify-center rounded-lg bg-white text-black/70 shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.12)]">
+          <div className="absolute bottom-4 flex h-7 w-[1165px] flex-col items-center justify-center pointer-events-none">
+            <button className="flex size-7 items-center justify-center rounded-lg bg-white text-black/70 shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.12)] pointer-events-auto">
               <ArrowDown className="size-3.5" strokeWidth={1.8} />
             </button>
           </div>
         </div>
       </div>
       <div className="flex h-[126px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[10px]">
-        <Composer onSend={onSend} compact />
+        <Composer onSend={onSend} compact disabled={isThinking} />
       </div>
     </div>
   );
@@ -388,11 +391,35 @@ function ChatState({ userText, onSend }) {
 
 export function ChatPanel() {
   const [started, setStarted] = useState(false);
-  const [userText, setUserText] = useState("hey what can you do");
+  const [messages, setMessages] = useState([]);
+  const [isThinking, setIsThinking] = useState(false);
 
-  function handleSend(text) {
-    setUserText(text);
+  async function handleSend(text) {
+    if (!text.trim() || isThinking) return;
+
+    const userMsg = { id: `u-${Date.now()}`, role: "user", text };
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setStarted(true);
+    setIsThinking(true);
+
+    try {
+      const response = await api.sendChatMessage({ text, history: updatedMessages });
+      if (response) {
+        setMessages((prev) => [...prev, response]);
+      }
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          role: "assistant",
+          text: "Sorry, I had trouble processing that request. Please try again.",
+        },
+      ]);
+    } finally {
+      setIsThinking(false);
+    }
   }
 
   return (
@@ -400,9 +427,9 @@ export function ChatPanel() {
       <TopBar mode={started ? "chat" : "home"} />
       <div className="min-h-0 flex-1 overflow-hidden">
         {started ? (
-          <ChatState userText={userText} onSend={handleSend} />
+          <ChatState messages={messages} onSend={handleSend} isThinking={isThinking} />
         ) : (
-          <HomeState onSend={handleSend} />
+          <HomeState onSend={handleSend} disabled={isThinking} />
         )}
       </div>
       <div className="fixed bottom-3 right-4 flex h-7 w-10 items-center rounded-full bg-[#47556d] p-0.5">

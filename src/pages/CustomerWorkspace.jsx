@@ -2,22 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowDown,
   ArrowUp,
   Brain,
-  Bot,
   CalendarDays,
+  Copy,
   FileText,
   Mail,
   Mic,
   Paperclip,
   Phone,
   Plus,
+  RotateCcw,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   UploadCloud,
   UserRound,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
@@ -134,12 +139,137 @@ async function readFileText(file) {
   }
 }
 
+function CustomerChatIconButton({ label, children, onClick, disabled, className = "" }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex size-7 items-center justify-center rounded-lg text-black/55 transition-colors hover:bg-black/[0.04] disabled:pointer-events-none disabled:opacity-35",
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CustomerChatComposer({
+  customer,
+  value,
+  onChange,
+  onKeyDown,
+  onSubmit,
+  onAttach,
+  onDraft,
+  sending,
+}) {
+  return (
+    <div className="flex h-[126px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[10px]">
+      <div className="relative flex h-[116px] w-full flex-col rounded-[14px] bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] focus-within:shadow-[inset_0_0_0_1px_rgba(38,109,240,0.28),0_8px_24px_rgba(28,40,64,0.08)]">
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={`Ask about ${customer.name}...`}
+          className="w-full flex-1 resize-none bg-transparent px-5 py-4 text-[15px] font-medium leading-5 text-[#101112] outline-none placeholder:text-black/45"
+        />
+        <div className="flex h-11 items-end justify-between gap-3 p-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              className="flex h-7 items-center justify-center rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55"
+            >
+              Auto
+            </button>
+            <CustomerChatIconButton label="Attach file" onClick={onAttach}>
+              <Plus className="size-3.5" strokeWidth={1.9} />
+            </CustomerChatIconButton>
+            <button
+              type="button"
+              onClick={onAttach}
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55 transition-colors hover:bg-black/[0.04]"
+            >
+              <Paperclip className="size-3.5" strokeWidth={1.9} />
+              Minutes
+            </button>
+            <button
+              type="button"
+              onClick={onDraft}
+              disabled={sending}
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium leading-5 text-black/55 transition-colors hover:bg-black/[0.04] disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Sparkles className="size-3.5" strokeWidth={1.9} />
+              Draft
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onSubmit}
+            aria-label="Send message"
+            disabled={!value.trim() || sending}
+            className="flex size-7 items-center justify-center rounded-lg bg-[#266df0] p-[7px] text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06),0_1px_2px_rgba(38,109,240,0.24)] transition-opacity disabled:opacity-40"
+          >
+            <ArrowUp className="size-3.5" strokeWidth={1.9} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomerChatMessage({ message }) {
+  if (message.role === "user") {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[82%] rounded-xl bg-[#f1f1f1] px-3.5 py-2 text-[14px] font-medium leading-5 text-[#101112]">
+          {message.text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group">
+      <div className="whitespace-pre-wrap text-[14px] font-medium leading-6 text-[#101112]">
+        {message.text}
+      </div>
+      <div className="mt-1 flex h-7 items-center justify-start gap-1 text-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+        <CustomerChatIconButton label="Copy">
+          <Copy className="size-3.5" strokeWidth={1.8} />
+        </CustomerChatIconButton>
+        <CustomerChatIconButton label="Helpful">
+          <ThumbsUp className="size-3.5" strokeWidth={1.8} />
+        </CustomerChatIconButton>
+        <CustomerChatIconButton label="Not helpful">
+          <ThumbsDown className="size-3.5" strokeWidth={1.8} />
+        </CustomerChatIconButton>
+        <CustomerChatIconButton label="Try again">
+          <RotateCcw className="size-3.5" strokeWidth={1.8} />
+        </CustomerChatIconButton>
+      </div>
+    </div>
+  );
+}
+
+function CustomerChatThinkingIndicator() {
+  return (
+    <div className="flex items-center gap-2 text-[13px] font-medium leading-6 text-black/50">
+      <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
+      <span>Searching saved memory...</span>
+    </div>
+  );
+}
+
 export function CustomerWorkspace() {
   const { customerId } = useParams();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const customer = fetchedCustomer;
   const inputRef = useRef(null);
+  const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
@@ -170,6 +300,10 @@ export function CustomerWorkspace() {
   useEffect(() => {
     return () => recognitionRef.current?.stop();
   }, []);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, sending]);
 
   if (loading && !customer) {
     return (
@@ -402,7 +536,7 @@ export function CustomerWorkspace() {
     setSending(true);
 
     try {
-      const reply = await api.sendCustomerMessage({ customer, text, memories });
+      const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
       addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
@@ -458,88 +592,39 @@ export function CustomerWorkspace() {
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
-        <section className="flex min-h-0 flex-col border-r">
+        <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end gap-5 px-6 py-8">
-              <div className="mb-auto flex max-w-sm flex-col gap-3 pt-8 text-sm">
-                <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Sparkles className="size-5" />
-                </span>
-                <div>
-                  <h2 className="font-semibold text-foreground">Ask about this customer</h2>
-                  <p className="mt-1 text-muted-foreground">
-                    Use saved interactions, documents, and account details to prepare recaps, next steps, and follow-up drafts.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
+            <div className="flex min-h-full flex-col items-center justify-end">
+              <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
                 {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={cn(
-                      "flex gap-3",
-                      message.role === "user" && "justify-end"
-                    )}
-                  >
-                    {message.role !== "user" && (
-                      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                        <Bot className="size-4" />
-                      </span>
-                    )}
-                    <div
-                      className={cn(
-                        "max-w-[78%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-                        message.role === "user"
-                          ? "rounded-br-md bg-secondary text-secondary-foreground"
-                          : "text-foreground"
-                      )}
-                    >
-                      {message.text}
-                    </div>
-                  </div>
+                  <CustomerChatMessage key={message.id} message={message} />
                 ))}
-                {sending && (
-                  <div className="flex gap-3">
-                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                      <Bot className="size-4" />
-                    </span>
-                    <div className="max-w-[78%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed text-muted-foreground">
-                      Searching saved memory...
-                    </div>
-                  </div>
-                )}
+                {sending && <CustomerChatThinkingIndicator />}
+                <div ref={threadEndRef} />
               </div>
             </div>
           </div>
-
-          <div className="shrink-0 bg-white px-5 pb-4">
-            <div className="mx-auto max-w-3xl rounded-2xl border bg-card p-2 shadow-xs/5 focus-within:ring-2 focus-within:ring-ring/40">
-              <textarea
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                onKeyDown={onKeyDown}
-                rows={3}
-                placeholder={`Ask about ${customer.name}...`}
-                className="max-h-40 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-              />
-              <div className="flex items-center justify-between gap-3 px-1 pt-1">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <Button variant="outline" size="icon-sm" onClick={() => inputRef.current?.click()} aria-label="Attach meeting minutes">
-                    <Plus className="size-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-                    <Paperclip className="size-4" /> Minutes
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={draftFollowUp} loading={sending}>
-                    <Sparkles className="size-4" /> Draft
-                  </Button>
-                </div>
-                <Button size="icon-sm" onClick={submit} disabled={!value.trim() || sending} loading={sending} aria-label="Send message">
-                  <ArrowUp className="size-4" />
-                </Button>
-              </div>
-            </div>
+          <div className="pointer-events-none absolute bottom-[142px] left-0 right-0 flex h-7 items-center justify-center">
+            <button
+              type="button"
+              aria-label="Scroll to latest message"
+              onClick={() => threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })}
+              className="pointer-events-auto flex size-7 items-center justify-center rounded-lg bg-white text-black/70 opacity-0 shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.12)] transition-opacity hover:opacity-100 focus:opacity-100"
+            >
+              <ArrowDown className="size-3.5" strokeWidth={1.8} />
+            </button>
+          </div>
+          <div className="flex shrink-0 justify-center bg-white">
+            <CustomerChatComposer
+              customer={customer}
+              value={value}
+              onChange={setValue}
+              onKeyDown={onKeyDown}
+              onSubmit={submit}
+              onAttach={() => inputRef.current?.click()}
+              onDraft={draftFollowUp}
+              sending={sending}
+            />
           </div>
         </section>
 
