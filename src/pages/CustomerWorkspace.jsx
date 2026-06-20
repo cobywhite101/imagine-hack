@@ -1510,8 +1510,8 @@ function CustomerWorkspaceSkeleton() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto bg-white">
-          <div className="px-6 pt-4">
+        <aside className="min-h-0 overflow-y-auto bg-white px-6">
+          <div className="pt-4">
             <SkeletonBlock width={48} height={48} />
 
             <div className="mt-3 space-y-2">
@@ -1531,7 +1531,7 @@ function CustomerWorkspaceSkeleton() {
             </div>
           </div>
 
-          <div className="px-6 pb-8 pt-4">
+          <div className="pb-8 pt-4">
             <div className="mb-5 flex w-fit gap-1 rounded-lg bg-[#f1f1f3] p-1">
               <SkeletonBlock width={84} height={32} />
               <SkeletonBlock width={84} height={32} />
@@ -2361,10 +2361,12 @@ export function CustomerWorkspace() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto bg-white">
-          <WorkflowHeader customer={customer} />
+        <aside className="min-h-0 overflow-y-auto bg-white px-6">
+          <div className="pt-4">
+            <WorkflowHeader customer={customer} />
+          </div>
 
-          <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
+          <Tabs defaultValue="details" className="gap-0 pb-8 pt-4">
             <TabsList
               variant="ghost"
               className="flex w-fit items-center gap-1 rounded-[6px] bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"

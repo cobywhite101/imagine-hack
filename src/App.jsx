@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Home } from "@/pages/Home";
 import { Chat } from "@/pages/Chat";
 import { CustomerHub } from "@/pages/CustomerHub";
@@ -22,7 +22,6 @@ import {
   PanelLeft,
   Plug,
   Search,
-  Sparkles,
   Users,
   Workflow,
   X,
@@ -31,9 +30,6 @@ import {
 const primaryNav = [
   { to: "/home", label: "Home", icon: House, end: true },
   { to: "/customers", label: "Customer Hub", icon: Users },
-  { to: "/agents", label: "Agent Hub", icon: Bot },
-  { to: "/workflows", label: "Workflows", icon: Workflow },
-  { to: "/mcp", label: "Connectors", icon: Plug },
 ];
 
 const sections = [
@@ -41,14 +37,6 @@ const sections = [
     label: "Client Memory",
     items: [
       { to: "/customers", label: "Client records", icon: Database },
-      { to: "/chat", label: "Advisor companion", icon: MessageCircle, end: true },
-    ],
-  },
-  {
-    label: "Automations",
-    items: [
-      { to: "/workflows", label: "Follow-up workflows", icon: Workflow },
-      { to: "/agents", label: "Agent presets", icon: Sparkles },
     ],
   },
   {
@@ -68,6 +56,12 @@ const quickActions = [
   { to: "/workflows", label: "Open workflows", description: "Build follow-up automations", icon: Workflow },
   { to: "/mcp", label: "Open connectors", description: "Manage knowledge sources", icon: Plug },
 ];
+
+const LAST_CUSTOMER_CHAT_KEY = "client-os-last-customer-chat-id";
+
+function getCustomerIdFromPath(pathname) {
+  return pathname.match(/^\/customers\/([^/]+)/)?.[1] ?? null;
+}
 
 function SidebarLink({ to, label, icon: Icon, end, inset = false, showActive = true }) {
   return (
@@ -205,7 +199,14 @@ function SidebarSection({ label, items }) {
 }
 
 function Sidebar() {
+  const location = useLocation();
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [lastCustomerChatId, setLastCustomerChatId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(LAST_CUSTOMER_CHAT_KEY);
+  });
+  const activeCustomerId = getCustomerIdFromPath(location.pathname);
+  const chatSectionKey = activeCustomerId ?? lastCustomerChatId ?? "Chat";
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -218,6 +219,13 @@ function Sidebar() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!activeCustomerId || typeof window === "undefined") return;
+
+    window.localStorage.setItem(LAST_CUSTOMER_CHAT_KEY, activeCustomerId);
+    setLastCustomerChatId(activeCustomerId);
+  }, [activeCustomerId]);
 
   return (
     <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
@@ -264,7 +272,7 @@ function Sidebar() {
         </div>
         <div className="mt-3 flex flex-col gap-3">
           {sections.map((section) => (
-            <SidebarSection key={section.label} {...section} />
+            <SidebarSection key={section.label === "Chat" ? chatSectionKey : section.label} {...section} />
           ))}
         </div>
       </nav>

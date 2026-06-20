@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-react";
+import { ChevronUp, Code, Info, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
@@ -131,7 +131,7 @@ export function WorkflowHeader({ customer }) {
   const accent = customer?.accent || "#868e96";
 
   return (
-    <div className="px-6 pt-4">
+    <>
       <div
         className="flex size-[48px] items-center justify-center rounded-xl text-[18px] font-semibold text-white"
         style={{ backgroundColor: accent }}
@@ -158,23 +158,7 @@ export function WorkflowHeader({ customer }) {
         </span>
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#1a1a1a] px-3 text-[13px] font-medium text-white transition-colors hover:bg-[#000]"
-        >
-          <Waypoints className="size-3.5" strokeWidth={1.9} />
-          Manage client workflow
-        </button>
-        <button
-          type="button"
-          aria-label="More options"
-          className="flex size-8 items-center justify-center rounded-[8px] bg-[#f1f1f3] text-[#3f3f46] transition-colors hover:bg-[#e8e8ec]"
-        >
-          <MoreHorizontal className="size-4" strokeWidth={2} />
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 

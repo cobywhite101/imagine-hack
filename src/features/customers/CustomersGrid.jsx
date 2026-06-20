@@ -441,35 +441,9 @@ export function CustomersGrid() {
             className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/40"
           />
         </div>
-        <button
-          type="button"
-          onClick={addBlankRow}
-          className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
-          style={{ borderColor: BORDER }}
-        >
-          <Rows3 className="size-3.5" /> Add row
-        </button>
-        <NewColumnDialog
-          column={newColumn}
-          open={newColumnOpen}
-          onOpenChange={setNewColumnOpen}
-          onChange={updateNewColumn}
-          onSubmit={addColumn}
-          existingKeys={new Set(["name", ...columns.map((col) => col.key)])}
-          trigger={
-            <button
-              type="button"
-              onClick={openNewColumnModal}
-              className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
-              style={{ borderColor: BORDER }}
-            >
-              <Columns3 className="size-3.5" /> Add column
-            </button>
-          }
-        />
-        {selected.size > 0 && (
-          <>
-            <span className="text-xs text-black/55">{selected.size} selected</span>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          {selected.size > 0 && <span className="text-xs text-black/55">{selected.size} selected</span>}
+          {selected.size > 0 && (
             <button
               type="button"
               onClick={deleteSelected}
@@ -478,24 +452,50 @@ export function CustomersGrid() {
             >
               <Trash2 className="size-3.5" /> Delete
             </button>
-          </>
-        )}
-        <NewClientDialog
-          client={newClient}
-          open={newClientOpen}
-          onOpenChange={setNewClientOpen}
-          onChange={updateNewClient}
-          onSubmit={addClient}
-          trigger={
-            <button
-              type="button"
-              onClick={openNewClientModal}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-[rgb(38,109,240)] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)]"
-            >
-              <Plus className="size-3.5" /> New client
-            </button>
-          }
-        />
+          )}
+          <button
+            type="button"
+            onClick={addBlankRow}
+            className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+            style={{ borderColor: BORDER }}
+          >
+            <Rows3 className="size-3.5" /> Add row
+          </button>
+          <NewColumnDialog
+            column={newColumn}
+            open={newColumnOpen}
+            onOpenChange={setNewColumnOpen}
+            onChange={updateNewColumn}
+            onSubmit={addColumn}
+            existingKeys={new Set(["name", ...columns.map((col) => col.key)])}
+            trigger={
+              <button
+                type="button"
+                onClick={openNewColumnModal}
+                className="flex h-8 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-sm font-medium text-black/70 transition-colors hover:bg-black/5"
+                style={{ borderColor: BORDER }}
+              >
+                <Columns3 className="size-3.5" /> Add column
+              </button>
+            }
+          />
+          <NewClientDialog
+            client={newClient}
+            open={newClientOpen}
+            onOpenChange={setNewClientOpen}
+            onChange={updateNewClient}
+            onSubmit={addClient}
+            trigger={
+              <button
+                type="button"
+                onClick={openNewClientModal}
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-[rgb(38,109,240)] px-2.5 text-sm font-medium text-white transition-colors hover:bg-[rgb(30,95,220)]"
+              >
+                <Plus className="size-3.5" /> New client
+              </button>
+            }
+          />
+        </div>
       </div>
 
       {/* Grid */}
