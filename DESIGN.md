@@ -111,16 +111,6 @@ Rules of thumb for the hackathon:
 - Don't design flows that *require* real auth, real persistence, or live external APIs to be
   demoable. Those are the swap-later layer.
 
-## Collaboration constraints (don't design around them)
-
-From [COLLAB.md](COLLAB.md): keep **`main` always working/demoable**, favor **small frequent
-commits**, and split work along the folder structure (one person on gamification + Dashboard, the
-other on agents + MCP). Designs should be **modular per feature folder** so two people rarely edit
-the same file. Treat `src/data/mock.js`, `src/services/dataClient.js`, and `src/App.jsx` as shared —
-append/extend, don't reorganize.
-
----
-
 # Design system
 
 Brand reference for this project. Extracted from [devin.ai](https://devin.ai/) and adapted to our

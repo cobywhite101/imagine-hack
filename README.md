@@ -1,83 +1,148 @@
 # Aether
 
-React + Vite + Tailwind v4 + shadcn/ui + Supabase. Runs on **mock data out of
-the box** — no backend needed — and switches to Supabase automatically once you
-add env vars. Built around three themes: **Gamification**, **Agents**, **MCPs**.
+Aether is a client companion and daily operating surface for financial advisors.
+It helps advisors prepare for meetings, remember client context, track follow-ups,
+manage client-related expenses, and use AI-assisted workflows without relying on
+scattered notes or memory alone.
 
-## Quick start
+The app runs with mock data out of the box for demos, then switches to Supabase
+when environment variables are configured. The main product areas are:
+
+- Home briefing with today's meetings, tasks, quiet clients, and a weekly calendar
+- Client hub with client records, memories, sensitivities, articles, and chat
+- Expense tracker with receipt upload, OCR-assisted labeling, and monthly quota
+- Agent and workflow builder surfaces for proactive follow-up automation
+- Connectors/MCP page for showing tool integrations
+
+## Team
+
+**Team name:** Imagine Hack
+
+**Team members:**
+
+- Adrian Lim
+- Gabriella Chua
+- Wei Xiang
+- Jeremy Kiu
+- Ferdinand Sanjaya
+
+## Technologies Used
+
+- React 19
+- Vite 6
+- Tailwind CSS v4
+- shadcn/ui-style local components
+- Radix UI primitives
+- Lucide React icons
+- React Router
+- FullCalendar
+- Supabase client, database tables, storage, and Edge Functions
+- DeepSeek API for AI-generated brief/chat responses when enabled
+- Tesseract.js for receipt OCR
+- Local storage and mock data for offline demos
+- Node.js and npm scripts
+
+## Challenge and Approach
+
+Financial advisors manage many clients at once, and important context often lives
+in scattered notes, emails, spreadsheets, or the advisor's memory. That creates
+risk: missed follow-ups, weak meeting preparation, forgotten sensitivities, and
+loss of continuity when a client is reassigned.
+
+Aether approaches the problem as a single advisor workspace:
+
+- The Home screen gives the advisor a daily brief, task board, calendar, and quiet-client list.
+- Client records combine structured profile data, memory timelines, articles, meetings, and chat history.
+- The customer chat is grounded in saved client context and is designed to say when information is missing instead of inventing facts.
+- Follow-up workflows and agents expose proactive outreach as configurable Trigger -> Condition -> Action flows.
+- The data layer goes through `src/services/dataClient.js`, so components work against mock data first and can use Supabase later without changing UI code.
+
+## Usage Instructions
+
+Install dependencies:
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
 ```
 
-That's it. The header shows a **"● mock data"** badge — you're running fully
-offline on the data in `src/data/mock.js`.
-
-## Going live with Supabase (later)
-
-1. Create a project at supabase.com.
-2. Open the SQL editor and run `supabase/schema.sql`, then `supabase/aag_seed.sql`,
-   then `supabase/advisor_home.sql`.
-3. `cp .env.example .env.local` and fill in:
-   ```
-   VITE_SUPABASE_URL=...
-   VITE_SUPABASE_ANON_KEY=...
-   ```
-4. Deploy the Home brief AI function and set the model key server-side:
-   ```
-   supabase functions deploy home-brief
-   supabase secrets set DEEPSEEK_API_KEY=...
-   ```
-5. Set `VITE_ENABLE_HOME_AI_BRIEF=true` after the function is deployed.
-6. Restart `npm run dev`. The badge flips to **"● live (supabase)"** and every
-   screen now reads real data — no component changes needed.
-
-The magic is in [`src/services/dataClient.js`](src/services/dataClient.js): one
-`api` object that returns mock data or queries Supabase depending on whether the
-env vars exist. **Always import data through `api`, never hit `supabase` or the
-mock arrays directly from components.**
-
-## Where things live
-
-```
-src/
-├── components/ui/      shadcn primitives (button, card, badge, ...)
-├── data/mock.js        ← all mock data (edit this freely)
-├── services/dataClient.js  ← THE swap layer (mock ⇄ supabase)
-├── hooks/useApi.js     tiny async data hook
-├── features/
-│   ├── gamification/   leaderboard, badges, quests, level card
-│   ├── agents/         agent list + live run trace
-│   └── mcp/            MCP server connect/disconnect
-├── pages/              Dashboard, Agents, MCP (one per route)
-└── App.jsx             nav + routes
-```
-
-## How to add a feature (the pattern)
-
-1. Add mock data to `src/data/mock.js`.
-2. Expose it via a method in `src/services/dataClient.js`.
-3. Build a component in `src/features/<area>/` using `useApi(() => api.xxx())`.
-4. Drop it into a page.
-
-Doing it in this order means the UI works on mock data immediately, and wiring
-Supabase later is just filling in the `dataClient` branch.
-
-## Adding more shadcn components
+Run the local development server:
 
 ```bash
-npx shadcn@latest add dialog dropdown-menu input
+npm run dev
 ```
-`components.json` is already configured (JS, `@/` alias, zinc theme).
 
-## Scripts
+Open the app at:
 
-| command | what |
-|---|---|
-| `npm run dev` | dev server |
-| `npm run build` | production build |
-| `npm run preview` | preview the build |
+```text
+http://localhost:5173
+```
 
-See [COLLAB.md](COLLAB.md) for the two-person git workflow.
-# imagine-hack
+Run the project checks:
+
+```bash
+npm test
+```
+
+Build for production:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+## Mock Data and Supabase
+
+The app is demoable without a backend. If Supabase environment variables are not
+configured, Aether reads mock data and local browser state.
+
+To connect Supabase:
+
+1. Copy `.env.example` to `.env.local`.
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Run the SQL files in `supabase/` that match the enabled features, starting with `supabase/schema.sql`.
+4. Deploy optional Edge Functions, such as `supabase/functions/home-brief`.
+5. Set server-side AI secrets with Supabase, for example `DEEPSEEK_API_KEY`.
+6. Restart `npm run dev`.
+
+The main data boundary is `src/services/dataClient.js`. Components should call
+methods on `api` instead of importing Supabase or mock arrays directly.
+
+## Project Structure
+
+```text
+src/
+  components/ui/      Shared UI primitives and loaders
+  data/mock.js        Mock users, clients, memories, tasks, agents, workflows
+  features/           Product feature modules
+  hooks/useApi.js     Async data-loading helper
+  lib/supabase.js     Supabase client setup
+  pages/              Route-level screens
+  services/dataClient.js
+                       Mock/Supabase data access layer
+supabase/             Database SQL and Edge Functions
+scripts/              Project assertion scripts
+```
+
+## AI Tool Attribution
+
+- Code assistance provided by OpenAI Codex (GPT-5) for the `README.md` documentation update and repository structure summary.
+- Runtime AI responses are provided by DeepSeek models when API access is configured, including home brief generation, advisor chat, customer chat, and follow-up drafting.
+- Receipt text extraction uses Tesseract.js OCR to help classify uploaded expense proofs.
+
+Any additional AI tools used in future development should be credited in this
+section with the tool name and the component, function, or workflow it assisted.
+
+## Useful Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server |
+| `npm test` | Run repository assertion scripts |
+| `npm run build` | Create a production build |
+| `npm run preview` | Preview the production build locally |
+| `npm run sync:aag` | Sync AAG seed data |
