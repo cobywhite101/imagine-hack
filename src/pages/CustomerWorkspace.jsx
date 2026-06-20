@@ -108,6 +108,23 @@ async function readFileText(file) {
   }
 }
 
+function isMeetingMinutesUpload(fileName, text) {
+  const haystack = `${fileName} ${text}`.toLowerCase();
+  return /\b(meeting|minutes|transcript|call notes|advisor notes|agenda|action items?)\b/.test(haystack);
+}
+
+function isArticleGenerationRequest(text, hasCandidate = false) {
+  const lower = text.toLowerCase();
+  const asksForArticle = /\b(article|internal article|source file|knowledge article|knowledge base|write[- ]?up)\b/.test(lower);
+  const acceptsPrompt = hasCandidate && /^(yes|yeah|yep|sure|ok|okay|please|do it|go ahead|create it|generate it)\b/.test(lower);
+  return asksForArticle || acceptsPrompt;
+}
+
+function upsertArticleList(articles, article) {
+  const next = [article, ...articles.filter((item) => item.id !== article.id)];
+  return next.sort((a, b) => new Date(b.updatedAt ?? 0) - new Date(a.updatedAt ?? 0));
+}
+
 function CustomerChatIconButton({ label, children, onClick, disabled, className = "" }) {
   return (
     <button
@@ -468,6 +485,7 @@ export function CustomerWorkspace() {
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
+  const { data: fetchedArticles } = useApi(() => api.getCustomerArticles(customerId), [customerId]);
   const customer = fetchedCustomer;
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
@@ -477,7 +495,9 @@ export function CustomerWorkspace() {
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [articles, setArticles] = useState([]);
   const [workflowConfig, setWorkflowConfig] = useState(null);
+  const [articleCandidate, setArticleCandidate] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [listening, setListening] = useState(false);
@@ -500,6 +520,10 @@ export function CustomerWorkspace() {
   useEffect(() => {
     if (fetchedMemories) setMemories(fetchedMemories);
   }, [fetchedMemories]);
+
+  useEffect(() => {
+    if (fetchedArticles) setArticles(fetchedArticles);
+  }, [fetchedArticles]);
 
   useEffect(() => {
     if (fetchedConfig) setWorkflowConfig(fetchedConfig);
@@ -576,6 +600,7 @@ export function CustomerWorkspace() {
       kind,
       title,
       summary: summarizeText(body, fallback),
+      body,
       sourceName,
       sourceMeta,
       createdAt: new Date().toISOString(),
@@ -594,6 +619,64 @@ export function CustomerWorkspace() {
         text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
       },
     ]);
+    return savedEntry;
+  }
+
+  async function saveCustomerArticle(article) {
+    if (!customer) return null;
+    const now = new Date().toISOString();
+    const optimisticArticle = {
+      ...article,
+      id: article.id ?? `article-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      customerId: customer.id,
+      createdAt: article.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    setArticles((prev) => upsertArticleList(prev, optimisticArticle));
+    const savedArticle = await api.saveCustomerArticle(customer.id, optimisticArticle);
+    setArticles((prev) => upsertArticleList(prev, savedArticle));
+    return savedArticle;
+  }
+
+  function getArticleSourceMemory() {
+    if (articleCandidate) {
+      return memories.find((memory) => memory.id === articleCandidate.id) ?? articleCandidate;
+    }
+
+    return memories.find((memory) => {
+      const hasSourceText = memory.body || memory.summary;
+      return hasSourceText && ["meeting", "file", "voice", "note"].includes(memory.kind);
+    });
+  }
+
+  async function createArticleFromLatestMinutes(instruction = "") {
+    const sourceMemory = getArticleSourceMemory();
+    if (!sourceMemory) {
+      addAssistantNotice("Upload meeting minutes or save a client note first, then I can turn it into an internal article.");
+      return null;
+    }
+
+    const generatedArticle = await api.generateCustomerArticle({
+      customer,
+      memory: sourceMemory,
+      memories,
+      workflowConfig,
+      model: selectedModel,
+      instruction,
+    });
+
+    if (!generatedArticle) {
+      addAssistantNotice("I could not generate an article from the saved minutes yet. Try uploading a text transcript or note.");
+      return null;
+    }
+
+    const savedArticle = await saveCustomerArticle(generatedArticle);
+    setArticleCandidate(null);
+    addAssistantNotice(
+      `Created internal article: **${savedArticle.title}**\n\nSaved under Details > Knowledge > Source files.`
+    );
+    return savedArticle;
   }
 
   async function addFiles(fileList) {
@@ -622,15 +705,20 @@ export function CustomerWorkspace() {
     try {
       for (const upload of freshFiles) {
         const body = await readFileText(upload.file);
-        await remember(
+        const meetingMinutes = isMeetingMinutesUpload(upload.name, body);
+        const savedEntry = await remember(
           buildMemoryEntry({
-            kind: "file",
+            kind: meetingMinutes ? "meeting" : "file",
             title: upload.name,
             body,
             sourceName: upload.name,
             sourceMeta: `${formatFileSize(upload.size)} | ${isTextLikeFile(upload.file) ? "Summarized" : "Stored reference"}`,
           })
         );
+        if (meetingMinutes) {
+          setArticleCandidate(savedEntry);
+          addAssistantNotice(`I saved ${upload.name} as meeting context. Want me to turn it into an internal article?`);
+        }
       }
     } finally {
       setSavingMemory(false);
@@ -745,6 +833,11 @@ export function CustomerWorkspace() {
     setSending(true);
 
     try {
+      if (isArticleGenerationRequest(text, !!articleCandidate)) {
+        await createArticleFromLatestMinutes(text);
+        return;
+      }
+
       const reply = await api.sendCustomerMessage({ customer, text, memories, history: messages, workflowConfig, model: selectedModel });
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
@@ -774,25 +867,6 @@ export function CustomerWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon-sm" render={<Link to="/customers" />} aria-label="Back to customers">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <span
-            className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-xs font-semibold text-white"
-            style={{ backgroundColor: customer.accent }}
-          >
-            {customer.avatar}
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold">{customer.name}</h1>
-            <p className="truncate text-[11px] text-muted-foreground">{customer.email}</p>
-          </div>
-        </div>
-
-      </header>
-
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_410px]">
         <section className="relative flex min-h-0 flex-col overflow-hidden border-r bg-white text-[#101112]">
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -857,7 +931,12 @@ export function CustomerWorkspace() {
 
             <TabsContent value="details" className="pt-1">
               {workflowConfig ? (
-                <WorkflowDetails config={workflowConfig} onChange={updateWorkflowConfig} customerId={customer.id} />
+                <WorkflowDetails
+                  config={workflowConfig}
+                  onChange={updateWorkflowConfig}
+                  articles={articles}
+                  onSaveArticle={saveCustomerArticle}
+                />
               ) : (
                 <div className="py-10 text-center text-sm text-muted-foreground">Loading workflow…</div>
               )}
@@ -956,14 +1035,6 @@ export function CustomerWorkspace() {
                   <Button className="mt-4" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
                     <Paperclip className="size-4" /> Choose files
                   </Button>
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.md"
-                    onChange={(event) => addFiles(event.target.files)}
-                  />
                 </div>
 
                 {files.length > 0 && (
@@ -992,6 +1063,17 @@ export function CustomerWorkspace() {
           </Tabs>
         </aside>
       </div>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.log"
+        onChange={(event) => {
+          addFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
     </div>
   );
 }

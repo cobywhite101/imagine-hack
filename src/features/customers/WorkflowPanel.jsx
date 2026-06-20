@@ -3,44 +3,11 @@ import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-r
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
-const ARTICLES_KEY = "client-companion-articles-v1";
-
-const seedArticles = () => [
-  {
-    id: "seed-articles",
-    title: "Articles",
-    subtitle: "Snippets, public, internal, docs",
-    type: "Internal article",
-    body: "",
-  },
-];
-
-function loadArticles(customerId) {
-  if (typeof window === "undefined") return seedArticles();
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(ARTICLES_KEY) ?? "{}");
-    return stored[String(customerId)] ?? seedArticles();
-  } catch {
-    return seedArticles();
-  }
-}
-
-function persistArticles(customerId, articles) {
-  if (typeof window === "undefined") return;
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(ARTICLES_KEY) ?? "{}");
-    stored[String(customerId)] = articles;
-    window.localStorage.setItem(ARTICLES_KEY, JSON.stringify(stored));
-  } catch {
-    /* best-effort local persistence for the demo */
-  }
-}
-
 /* Notion-like workflow configuration panel. Replicates the agent settings layout:
    a pixel app icon, title + status, owner row, action buttons, and a stack of
    collapsible sections (Instructions, Guardrails, Tone, Knowledge, Tools). */
 
-const ACCENT = "#f0641e"; // orange used for active toggles + connect link
+const ACCENT = "#266df0"; // blue used for active toggles + connect link
 
 function Toggle({ checked, onChange, disabled = false, label }) {
   return (
@@ -53,7 +20,7 @@ function Toggle({ checked, onChange, disabled = false, label }) {
       onClick={() => onChange?.(!checked)}
       className={cn(
         "relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full transition-colors duration-150",
-        checked ? "bg-[#f0641e]" : "bg-[#e3e3e6]",
+        checked ? "bg-[#266df0]" : "bg-[#e3e3e6]",
         disabled && "cursor-not-allowed opacity-50"
       )}
       style={checked ? { backgroundColor: ACCENT } : undefined}
@@ -221,8 +188,8 @@ export function WorkflowHeader({ customer }) {
   );
 }
 
-// Controlled: parent owns `config` and persists changes via `onChange`.
-export function WorkflowDetails({ config, onChange, customerId }) {
+// Controlled: parent owns `config` + `articles` and persists changes.
+export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle }) {
   const knowledge = config.knowledge ?? {};
   const tools = config.tools ?? {};
 
@@ -230,21 +197,10 @@ export function WorkflowDetails({ config, onChange, customerId }) {
   const setKnowledge = (key, value) => onChange({ ...config, knowledge: { ...knowledge, [key]: value } });
   const setTools = (key, value) => onChange({ ...config, tools: { ...tools, [key]: value } });
 
-  // Knowledge "source files" — local + localStorage so the demo persists even
-  // though the workflow_configs table normalizes away unknown keys.
-  const [articles, setArticles] = useState(() => loadArticles(customerId));
   const [editing, setEditing] = useState(null); // { article } | { article: null } for new
 
-  function writeArticles(next) {
-    setArticles(next);
-    persistArticles(customerId, next);
-  }
-
-  function saveArticle(article) {
-    const id = article.id ?? `article-${Date.now()}`;
-    const entry = { ...article, id };
-    const exists = articles.some((item) => item.id === id);
-    writeArticles(exists ? articles.map((item) => (item.id === id ? entry : item)) : [...articles, entry]);
+  async function saveArticle(article) {
+    await onSaveArticle?.(article);
     setEditing(null);
   }
 
@@ -298,7 +254,7 @@ export function WorkflowDetails({ config, onChange, customerId }) {
                   <button
                     type="button"
                     onClick={() => setKnowledge("drive", true)}
-                    className="text-[14px] font-medium text-[#f0641e] hover:underline"
+                    className="text-[14px] font-medium text-[#266df0] hover:underline"
                   >
                     Connect Account
                   </button>
@@ -331,14 +287,20 @@ export function WorkflowDetails({ config, onChange, customerId }) {
 
           <div className="mt-3 border-t border-[#ededed] pt-1">
             <p className="py-2 font-mono text-[11px] uppercase tracking-wide text-[#a0a0a6]">Source files</p>
-            {articles.map((article) => (
-              <SourceFileRow
-                key={article.id}
-                title={article.title || "Untitled internal article"}
-                subtitle={article.subtitle || article.type || "Internal article"}
-                onClick={() => setEditing({ article })}
-              />
-            ))}
+            {articles.length > 0 ? (
+              articles.map((article) => (
+                <SourceFileRow
+                  key={article.id}
+                  title={article.title || "Untitled internal article"}
+                  subtitle={article.subtitle || article.type || "Internal article"}
+                  onClick={() => setEditing({ article })}
+                />
+              ))
+            ) : (
+              <p className="py-2 text-[13px] leading-5 text-[#8a8a8f]">
+                No internal articles saved yet.
+              </p>
+            )}
 
             <button
               type="button"

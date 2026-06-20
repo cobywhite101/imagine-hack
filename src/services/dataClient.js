@@ -28,6 +28,7 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const CUSTOMER_MEMORY_KEY = "client-companion-memory-v1";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
+const CUSTOMER_ARTICLES_KEY = "client-companion-articles-v1";
 const useSupabaseCustomerMemory = isSupabaseConfigured;
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
@@ -169,6 +170,27 @@ function setStoredCustomerMemories(customerId, memories) {
   }
 }
 
+function getStoredCustomerArticles(customerId) {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_ARTICLES_KEY) ?? "{}");
+    return stored[String(customerId)] ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function setStoredCustomerArticles(customerId, articles) {
+  if (typeof window === "undefined") return;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_ARTICLES_KEY) ?? "{}");
+    stored[String(customerId)] = articles;
+    window.localStorage.setItem(CUSTOMER_ARTICLES_KEY, JSON.stringify(stored));
+  } catch {
+    /* local persistence is best-effort for the demo */
+  }
+}
+
 function normalizeWorkflowConfig(config) {
   return {
     instructions: config?.instructions ?? mockWorkflowConfig.instructions,
@@ -207,14 +229,138 @@ function normalizeCustomerMemory(memory) {
     kind: memory.kind ?? "note",
     title: memory.title ?? "Client memory",
     summary: memory.summary ?? "",
+    body: memory.body ?? "",
     sourceName: memory.sourceName ?? memory.source_name ?? "",
     sourceMeta: memory.sourceMeta ?? memory.source_meta ?? "",
     createdAt: memory.createdAt ?? memory.created_at ?? new Date().toISOString(),
   };
 }
 
+function normalizeCustomerArticle(article) {
+  const createdAt = article?.createdAt ?? article?.created_at ?? new Date().toISOString();
+  const updatedAt = article?.updatedAt ?? article?.updated_at ?? createdAt;
+
+  return {
+    id: article?.id,
+    customerId: article?.customerId ?? article?.customer_id,
+    title: article?.title?.trim() || "Untitled internal article",
+    subtitle: article?.subtitle ?? article?.sourceName ?? article?.source_name ?? "",
+    type: article?.type ?? article?.article_type ?? "Internal article",
+    body: article?.body ?? "",
+    sourceMemoryId: article?.sourceMemoryId ?? article?.source_memory_id ?? null,
+    sourceName: article?.sourceName ?? article?.source_name ?? "",
+    createdAt,
+    updatedAt,
+  };
+}
+
 function cleanCustomerText(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateCustomerText(text, maxLength = 6000) {
+  const value = String(text ?? "").trim();
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
+}
+
+function escapeArticleHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function textToArticleHtml(text) {
+  const paragraphs = String(text ?? "")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) return "";
+
+  return paragraphs
+    .map((paragraph) => {
+      const lines = paragraph.split("\n").map((line) => line.trim()).filter(Boolean);
+      const isList = lines.length > 1 && lines.every((line) => /^[-*•]\s+/.test(line));
+      if (isList) {
+        return `<ul>${lines
+          .map((line) => `<li>${escapeArticleHtml(line.replace(/^[-*•]\s+/, ""))}</li>`)
+          .join("")}</ul>`;
+      }
+      return `<p>${escapeArticleHtml(paragraph).replace(/\n/g, "<br />")}</p>`;
+    })
+    .join("");
+}
+
+function sanitizeArticleHtml(html) {
+  return String(html ?? "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .trim();
+}
+
+function parseArticleJson(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return null;
+  const withoutFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  const candidates = [withoutFence];
+  const firstBrace = withoutFence.indexOf("{");
+  const lastBrace = withoutFence.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(withoutFence.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* try the next candidate */
+    }
+  }
+
+  return null;
+}
+
+function buildLocalArticleFromMemory({ customer, memory }) {
+  const sourceText = memory?.body || memory?.summary || "";
+  const sourceName = memory?.sourceName || memory?.title || "meeting minutes";
+  const sentences =
+    sourceText
+      .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+      ?.map((sentence) => cleanCustomerText(sentence))
+      .filter(Boolean) ?? [];
+  const highlights = sentences.slice(0, 5);
+  const nextSteps = sentences.filter((sentence) => {
+    const lower = sentence.toLowerCase();
+    return /\b(action|next|follow|renew|schedule|need|risk|concern|deadline|ask)\b/.test(lower);
+  }).slice(0, 5);
+
+  const body = [
+    `<p>Generated from ${escapeArticleHtml(sourceName)} for ${escapeArticleHtml(customer.name)}.</p>`,
+    "<h2>Meeting recap</h2>",
+    highlights.length
+      ? `<ul>${highlights.map((sentence) => `<li>${escapeArticleHtml(sentence)}</li>`).join("")}</ul>`
+      : textToArticleHtml(sourceText),
+    "<h2>Recommended follow-up</h2>",
+    nextSteps.length
+      ? `<ul>${nextSteps.map((sentence) => `<li>${escapeArticleHtml(sentence)}</li>`).join("")}</ul>`
+      : `<p>Confirm the next action with ${escapeArticleHtml(customer.contactName || customer.name)} and keep the advisor workflow updated.</p>`,
+  ].join("");
+
+  return normalizeCustomerArticle({
+    title: `${customer.name} meeting article`,
+    subtitle: sourceName,
+    type: "Internal article",
+    body,
+    sourceMemoryId: memory?.id ?? null,
+    sourceName,
+  });
 }
 
 function getCustomerSearchTerms(text) {
@@ -244,7 +390,7 @@ function rankCustomerMemories(question, memories) {
 
   return memories
     .map((memory) => {
-      const haystack = `${memory.title} ${memory.summary} ${memory.sourceName} ${memory.sourceMeta}`.toLowerCase();
+      const haystack = `${memory.title} ${memory.summary} ${memory.body} ${memory.sourceName} ${memory.sourceMeta}`.toLowerCase();
       const score = terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
       return { memory, score };
     })
@@ -490,6 +636,7 @@ export const api = {
             kind: entry.kind,
             title: entry.title,
             summary: entry.summary,
+            body: entry.body,
             source_name: entry.sourceName,
             source_meta: entry.sourceMeta,
             created_at: entry.createdAt,
@@ -505,6 +652,74 @@ export const api = {
 
     const existing = getStoredCustomerMemories(customerId).filter((item) => item.id !== entry.id);
     setStoredCustomerMemories(customerId, [entry, ...existing]);
+    await delay(120);
+    return entry;
+  },
+
+  getCustomerArticles: async (customerId) => {
+    if (!customerId) return [];
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("customer_articles")
+          .select("*")
+          .eq("customer_id", customerId)
+          .order("updated_at", { ascending: false });
+
+        if (!error) return (data ?? []).map(normalizeCustomerArticle);
+      } catch {
+        /* fall through to local demo articles */
+      }
+    }
+
+    await delay(120);
+    return getStoredCustomerArticles(customerId)
+      .map(normalizeCustomerArticle)
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  },
+
+  saveCustomerArticle: async (customerId, article) => {
+    if (!customerId) return normalizeCustomerArticle(article);
+    const now = new Date().toISOString();
+    const entry = normalizeCustomerArticle({
+      ...article,
+      id: article?.id ?? `article-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      customerId,
+      createdAt: article?.createdAt ?? now,
+      updatedAt: now,
+    });
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("customer_articles")
+          .upsert({
+            id: entry.id,
+            customer_id: customerId,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            article_type: entry.type,
+            body: entry.body,
+            source_memory_id: entry.sourceMemoryId,
+            source_name: entry.sourceName,
+            created_at: entry.createdAt,
+            updated_at: entry.updatedAt,
+          })
+          .select("*")
+          .single();
+
+        if (!error && data) return normalizeCustomerArticle(data);
+      } catch {
+        /* fall through to local demo articles */
+      }
+    }
+
+    const existing = getStoredCustomerArticles(customerId)
+      .map(normalizeCustomerArticle)
+      .filter((item) => item.id !== entry.id);
+    const next = [entry, ...existing].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    setStoredCustomerArticles(customerId, next);
     await delay(120);
     return entry;
   },
@@ -556,7 +771,16 @@ export const api = {
     const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
     if (apiKey) {
       const memoryString = memories.length > 0
-        ? memories.map((m, idx) => `[${idx + 1}] (${m.kind || "note"}): ${m.title || "Note"} - ${m.summary || m.text}`).join("\n")
+        ? memories
+            .map((m, idx) => {
+              const body = truncateCustomerText(m.body, 5000);
+              return [
+                `[${idx + 1}] (${m.kind || "note"}): ${m.title || "Note"}`,
+                `Summary: ${m.summary || m.text || ""}`,
+                body ? `Source text: ${body}` : "",
+              ].filter(Boolean).join("\n");
+            })
+            .join("\n\n")
         : "No saved memories.";
 
       const cfg = workflowConfig ? normalizeWorkflowConfig(workflowConfig) : null;
@@ -622,6 +846,85 @@ Respond to the Advisor's inquiry. Use the client's context and memories to groun
     if (!customer) return null;
     const text = `Draft a follow-up email for ${customer.name} using the latest saved memory and next step.`;
     return api.sendCustomerMessage({ customer, text, memories, history: [], workflowConfig, model });
+  },
+
+  generateCustomerArticle: async ({
+    customer,
+    memory,
+    memories = [],
+    workflowConfig = null,
+    model = "deepseek-chat",
+    instruction = "",
+  }) => {
+    if (!customer) return null;
+    const source = memory ?? memories.find((item) => ["meeting", "file", "voice", "note"].includes(item.kind));
+    if (!source) return null;
+
+    const sourceMemory = normalizeCustomerMemory(source);
+    const sourceText = truncateCustomerText(sourceMemory.body || sourceMemory.summary, 12000);
+    if (!sourceText) return null;
+
+    const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || import.meta.env.DEEPSEEK_API_KEY;
+    if (apiKey) {
+      const cfg = workflowConfig ? normalizeWorkflowConfig(workflowConfig) : null;
+      const workflowGuidance = cfg
+        ? [
+            cfg.instructions ? `Workflow instructions:\n${cfg.instructions}` : "",
+            cfg.guardrails ? `Workflow guardrails:\n${cfg.guardrails}` : "",
+            cfg.tone ? `Preferred tone: ${cfg.tone}` : "",
+          ].filter(Boolean).join("\n\n")
+        : "";
+
+      const systemPrompt = `You convert advisor meeting minutes into a durable internal customer knowledge article.
+Return only valid JSON with these fields:
+{
+  "title": "short specific article title",
+  "subtitle": "source/date/context label",
+  "body": "HTML article body using only h2, p, ul, li, strong, em, br"
+}
+
+Do not invent facts. Preserve commitments, dates, financial goals, risks, objections, family/context signals, and recommended next actions. Keep the article scannable for another advisor.`;
+
+      const userPrompt = [
+        `Customer: ${customer.name}`,
+        `Contact: ${customer.contactName || customer.name}`,
+        `Advisor next action: ${customer.task || customer.nextAction || "None recorded"}`,
+        `Source: ${sourceMemory.sourceName || sourceMemory.title}`,
+        instruction ? `Advisor request: ${instruction}` : "",
+        workflowGuidance,
+        "Meeting minutes / source text:",
+        sourceText,
+      ].filter(Boolean).join("\n\n");
+
+      const reply = await queryDeepSeek([{ role: "user", text: userPrompt }], systemPrompt, model);
+      const parsed = parseArticleJson(reply);
+
+      if (parsed) {
+        const parsedBody = String(parsed.body ?? parsed.bodyHtml ?? "");
+        return normalizeCustomerArticle({
+          title: parsed.title,
+          subtitle: parsed.subtitle || sourceMemory.sourceName || sourceMemory.title,
+          type: "Internal article",
+          body: sanitizeArticleHtml(/<\w+/i.test(parsedBody) ? parsedBody : textToArticleHtml(parsedBody)),
+          sourceMemoryId: sourceMemory.id,
+          sourceName: sourceMemory.sourceName || sourceMemory.title,
+        });
+      }
+
+      if (reply) {
+        return normalizeCustomerArticle({
+          title: `${customer.name} meeting article`,
+          subtitle: sourceMemory.sourceName || sourceMemory.title,
+          type: "Internal article",
+          body: sanitizeArticleHtml(/<\w+/i.test(reply) ? reply : textToArticleHtml(reply)),
+          sourceMemoryId: sourceMemory.id,
+          sourceName: sourceMemory.sourceName || sourceMemory.title,
+        });
+      }
+    }
+
+    await delay(350);
+    return buildLocalArticleFromMemory({ customer, memory: sourceMemory });
   },
 
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
