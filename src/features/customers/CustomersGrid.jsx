@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import {
   Plus,
   User,
+  Camera,
   CircleDot,
   Search,
   ChevronUp,
@@ -54,6 +55,9 @@ const ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8
 const FALLBACK_ACCENT = "#868e96";
 const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 const EMPTY_COLUMN = { label: "", key: "" };
+
+const PROFILE_MIME_PREFIX = "image/";
+const PROFILE_MAX_SIZE_MB = 3;
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
 const DEFAULT_COLS = [
@@ -184,6 +188,19 @@ function getCustomerAccent(customer) {
   return ACCENTS[hash % ACCENTS.length];
 }
 
+function isImageValue(value) {
+  return /^(https?:|data:image\/|blob:)/i.test(String(value ?? "").trim()) || String(value ?? "").startsWith("/");
+}
+
+function asDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function getCellValue(row, col) {
   const value = row[col.key];
   if (Array.isArray(value)) return value.join(", ");
@@ -217,11 +234,25 @@ function normalizeCustomer(customer) {
     ? rawStatus
     : DEAL_STATUS_TO_GRID_STATUS[rawStatus] ?? (customer.overdue ? "Action needed" : "Monitoring");
 
+  const avatarUrl =
+    customer.avatarUrl ??
+    customer.avatar_url ??
+    customer.profileImageUrl ??
+    customer.profile_image_url ??
+    customer.profilePictureUrl ??
+    customer.profile_picture_url ??
+    customer.photoUrl ??
+    customer.photo_url ??
+    customer.imageUrl ??
+    customer.image_url ??
+    (isImageValue(customer.avatar) ? customer.avatar : "");
+
   return {
     ...customer,
     name,
     task: customer.task ?? customer.nextAction ?? customer.next_action ?? "",
     avatar: customer.avatar ?? getInitials(name),
+    avatarUrl,
     accent: getCustomerAccent(customer),
     status,
     email: customer.email ?? customer.contact ?? "",
@@ -254,6 +285,7 @@ export function CustomersGrid() {
   const [newClient, setNewClient] = useState(EMPTY_CLIENT);
   const [newColumnOpen, setNewColumnOpen] = useState(false);
   const [newColumn, setNewColumn] = useState(EMPTY_COLUMN);
+  const [uploadingAvatar, setUploadingAvatar] = useState(new Set());
   const nextId = useRef(1000);
 
   const gridMinWidth = useMemo(
@@ -286,6 +318,60 @@ export function CustomersGrid() {
     return sorted;
   }, [columns, data, query, sort]);
 
+  async function uploadAvatar(id, file) {
+    if (!file) return;
+
+    if (!file.type.startsWith(PROFILE_MIME_PREFIX)) {
+      return;
+    }
+
+    if (file.size > PROFILE_MAX_SIZE_MB * 1024 * 1024) {
+      return;
+    }
+
+    setUploadingAvatar((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+
+    try {
+      const avatarUrl = await asDataURL(file);
+
+      setData((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, avatarUrl } : row))
+      );
+
+      const updated = await api.updateCustomerRecord(id, { avatarUrl });
+      if (updated) {
+        setData((prev) =>
+          prev.map((row) =>
+            row.id === id
+              ? {
+                  ...row,
+                  avatarUrl: updated.avatarUrl ?? row.avatarUrl,
+                }
+              : row
+          )
+        );
+      }
+    } finally {
+      setUploadingAvatar((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  function handleAvatarChange(id, event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+    uploadAvatar(id, file);
+  }
+
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
   }
@@ -317,6 +403,7 @@ export function CustomersGrid() {
         name,
         task,
         avatar: getInitials(name),
+        avatarUrl: "",
         accent: ACCENTS[id % ACCENTS.length],
         status: newClient.status,
         email: newClient.email.trim(),
@@ -337,6 +424,7 @@ export function CustomersGrid() {
         name,
         task: "",
         avatar: getInitials(name),
+        avatarUrl: "",
         accent: ACCENTS[id % ACCENTS.length],
         status: "Monitoring",
         email: "",
@@ -614,11 +702,24 @@ export function CustomersGrid() {
                         <Checkbox checked={isSel} onChange={() => toggleRow(c.id)} />
                       </span>
                       <span
-                        className="flex size-5 shrink-0 items-center justify-center rounded-[5px] text-[10px] font-semibold text-white"
+                        className="relative flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[5px] text-[10px] font-semibold text-white"
                         style={{ backgroundColor: c.accent }}
                       >
-                        {c.avatar}
+                        {c.avatarUrl ? <img src={c.avatarUrl} alt={`${c.name} avatar`} className="size-full object-cover" /> : c.avatar}
+                        <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/45 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
+                          <Camera className="size-3 text-white" />
+                          <span className="sr-only">Upload profile picture</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleAvatarChange(c.id, e)}
+                            className="hidden"
+                          />
+                        </label>
                       </span>
+                      {uploadingAvatar.has(c.id) && (
+                        <span className="font-medium text-[11px] tracking-wide text-black/55">Uploading…</span>
+                      )}
                       <Link
                         to={`/customers/${c.id}`}
                         className="block min-w-0 flex-1 truncate rounded-[5px] font-medium outline outline-1 outline-transparent transition-colors hover:underline focus-visible:outline-[rgb(38,109,240)]"

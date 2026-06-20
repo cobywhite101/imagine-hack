@@ -374,21 +374,37 @@ function Sidebar({ open, onCollapse }) {
       </div>
       <QuickActionsDialog open={quickActionsOpen} onOpenChange={setQuickActionsOpen} />
 
-      <nav className="min-h-0 flex-1 overflow-y-auto pb-4">
-        <div className="flex w-[247px] flex-col gap-px px-2">
-          {primaryNav.map((item) => (
-            <SidebarLink key={item.to} {...item} />
-          ))}
+      <nav className="min-h-0 flex w-[247px] flex-1 flex-col">
+        <div className="h-0 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+          <div className="flex w-full flex-col gap-px">
+            {primaryNav.map((item) => (
+              <SidebarLink key={item.to} {...item} />
+            ))}
+          </div>
+          <div className="mt-3 flex flex-col gap-3">
+            {sections.map((section) => (
+              <SidebarSection key={section.label} {...section} />
+            ))}
+            <SidebarSection
+              label="Chat"
+              items={recentChatItems}
+              emptyText={recentChatsLoading ? "Loading AI chats..." : "No AI customer chats yet"}
+            />
+          </div>
         </div>
-        <div className="mt-3 flex flex-col gap-3">
-          {sections.map((section) => (
-            <SidebarSection key={section.label} {...section} />
-          ))}
-          <SidebarSection
-            label="Chat"
-            items={recentChatItems}
-            emptyText={recentChatsLoading ? "Loading AI chats..." : "No AI customer chats yet"}
-          />
+        <div className="mt-auto border-t border-[#e6e7ea] bg-white px-2 py-3">
+          <div className="mx-0.5 flex items-center gap-2 rounded-md p-1.5">
+            <Avatar className="size-8 shrink-0 rounded-md">
+              <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
+                A
+              </AvatarFallback>
+            </Avatar>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-semibold leading-5 tracking-[-0.01em]">
+                Aether
+              </span>
+            </span>
+          </div>
         </div>
       </nav>
     </aside>
