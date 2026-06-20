@@ -3,82 +3,181 @@ import { Home } from "@/pages/Home";
 import { CustomerHub } from "@/pages/CustomerHub";
 import { CustomerWorkspace } from "@/pages/CustomerWorkspace";
 import { AgentHub } from "@/pages/AgentHub";
+import { McpPage } from "@/pages/McpPage";
+import { Workflows } from "@/pages/Workflows";
 import { dataMode } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ChevronsUpDown, House, Users, Bot } from "lucide-react";
+import {
+  Bot,
+  BookOpenText,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  House,
+  Keyboard,
+  MessageCircle,
+  PanelLeft,
+  Plug,
+  Search,
+  Sparkles,
+  Users,
+  Workflow,
+} from "lucide-react";
 
-const nav = [
+const primaryNav = [
   { to: "/", label: "Home", icon: House, end: true },
   { to: "/customers", label: "Customer Hub", icon: Users },
   { to: "/agents", label: "Agent Hub", icon: Bot },
+  { to: "/workflows", label: "Workflows", icon: Workflow },
+  { to: "/mcp", label: "Connectors", icon: Plug },
 ];
+
+const sections = [
+  {
+    label: "Client Memory",
+    items: [
+      { to: "/customers", label: "Client records", icon: Database },
+      { to: "/", label: "Advisor companion", icon: MessageCircle, end: true },
+    ],
+  },
+  {
+    label: "Automations",
+    items: [
+      { to: "/workflows", label: "Follow-up workflows", icon: Workflow },
+      { to: "/agents", label: "Agent presets", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Signals",
+    items: [
+      { to: "/mcp", label: "Knowledge connectors", icon: Plug },
+      { to: "/customers", label: "Weekly client view", icon: CalendarDays },
+    ],
+  },
+];
+
+function SidebarLink({ to, label, icon: Icon, end, inset = false, showActive = true }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        cn(
+          "group flex h-7 min-w-0 items-center gap-1.5 rounded-[9px] px-2 text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] transition-colors",
+          inset ? "ml-5 w-[212px]" : "w-[232px]",
+          showActive && isActive ? "bg-black/[0.04]" : "hover:bg-black/[0.035]"
+        )
+      }
+      title={label}
+    >
+      <Icon className="size-3.5 shrink-0 text-[#5f6368]" strokeWidth={1.9} />
+      <span className="min-w-0 truncate">{label}</span>
+    </NavLink>
+  );
+}
+
+function SidebarSection({ label, items }) {
+  return (
+    <div className="flex w-[247px] flex-col gap-0.5">
+      <button
+        type="button"
+        className="mx-2 flex h-7 w-[232px] items-center gap-1.5 rounded-md px-2 text-left text-[12px] font-medium leading-4 tracking-[-0.01em] text-black/60 transition-colors hover:bg-black/[0.035]"
+      >
+        <ChevronDown className="size-3.5 shrink-0" strokeWidth={1.8} />
+        <span className="min-w-0 truncate">{label}</span>
+      </button>
+      <div className="relative flex flex-col gap-px px-2 pb-0.5">
+        <div className="absolute left-[27px] top-0 h-full w-px bg-[#d9dade]/60" />
+        {items.map((item) => (
+          <SidebarLink key={`${label}-${item.label}`} {...item} inset showActive={false} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Sidebar() {
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-card">
-      {/* Workspace switcher */}
+    <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-[#fbfbfb] text-[#101112]">
       <button
         type="button"
-        className="flex h-12 w-full items-center gap-3 px-3 text-left transition-colors hover:bg-secondary/60"
+        className="flex h-16 w-full items-center gap-2.5 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
       >
-        <Avatar className="size-6 rounded-[7px]">
-          <AvatarFallback className="rounded-[7px] bg-amber-500 text-[14px] font-medium text-amber-100">
+        <Avatar className="size-9 shrink-0 rounded-[10px]">
+          <AvatarFallback className="rounded-[10px] bg-[#e9a62a] text-[20px] font-medium text-white">
             C
           </AvatarFallback>
         </Avatar>
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-base font-semibold tracking-[-0.02em] text-foreground">
-            Clubhouse.so
+          <span className="truncate text-[18px] font-semibold leading-6 tracking-[-0.02em]">
+            Client OS
           </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+          <ChevronDown className="size-3.5 shrink-0 text-[#101112]" strokeWidth={1.9} />
         </span>
+        <PanelLeft className="size-5 shrink-0 text-black/60" strokeWidth={1.7} />
       </button>
 
-      {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-0.5 px-2">
-        <div className="px-2 pb-1.5 pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Workspace
+      <div className="flex h-11 w-[247px] items-center gap-1.5 px-2.5 pb-2.5 pt-2">
+        <button
+          type="button"
+          className="flex h-7 w-[174px] items-center gap-1.5 rounded-lg bg-white px-1.5 text-left text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
+        >
+          <Keyboard className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
+          <span className="min-w-0 flex-1 truncate">Quick actions</span>
+          <kbd className="flex h-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] leading-none tracking-[0.02em] text-black/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+            ⌘K
+          </kbd>
+        </button>
+        <button
+          type="button"
+          className="flex h-7 w-[44px] items-center gap-1 rounded-lg bg-white px-1.5 shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.10)]"
+          aria-label="Search"
+        >
+          <Search className="size-3.5 shrink-0 text-black/60" strokeWidth={1.8} />
+          <kbd className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md px-1 text-[11px] leading-none tracking-[0.02em] text-black/50 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+            /
+          </kbd>
+        </button>
+      </div>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <div className="flex w-[247px] flex-col gap-px px-2">
+          {primaryNav.map((item) => (
+            <SidebarLink key={item.to} {...item} />
+          ))}
         </div>
-        {nav.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                isActive
-                  ? "bg-secondary font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-              )
-            }
-          >
-            <Icon className="size-4 shrink-0" /> {label}
-          </NavLink>
-        ))}
+        <div className="mt-3 flex flex-col gap-3">
+          {sections.map((section) => (
+            <SidebarSection key={section.label} {...section} />
+          ))}
+        </div>
       </nav>
 
-      {/* Footer: data badge + user */}
-      <div className="flex flex-col gap-3 border-t px-3 py-3">
-        <span
-          className={cn(
-            "inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium",
-            dataMode === "supabase"
-              ? "bg-primary/15 text-primary"
-              : "bg-secondary text-muted-foreground"
-          )}
+      <div className="border-t border-[#e6e7ea] px-4 pb-4 pt-3">
+        <button
+          type="button"
+          className="mb-3 flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[14px] font-medium tracking-[-0.01em] hover:bg-black/[0.035]"
         >
-          {dataMode === "supabase" ? "● live (supabase)" : "● mock data"}
-        </span>
-        <div className="flex items-center gap-2.5">
-          <Avatar className="size-8">
-            <AvatarFallback className="bg-primary/15 text-primary">F</AvatarFallback>
-          </Avatar>
-          <div className="leading-tight">
-            <div className="text-sm font-medium">Ferdinand</div>
-            <div className="text-[11px] text-muted-foreground">Account Executive</div>
+          <BookOpenText className="size-4 shrink-0 text-[#101112]" strokeWidth={1.8} />
+          <span className="truncate">Advisor workspace</span>
+        </button>
+        <div className="flex items-center justify-between border-t border-[#e6e7ea] pt-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Avatar className="size-8 shrink-0 rounded-lg">
+              <AvatarFallback className="rounded-lg bg-primary/15 text-[13px] font-medium text-primary">
+                AL
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-[14px] font-medium">Ada Lovelace</div>
+              <div className="truncate text-[11px] text-black/55">
+                {dataMode === "supabase" ? "live (supabase)" : "mock data"}
+              </div>
+            </div>
           </div>
+          <ChevronRight className="size-4 shrink-0 text-black/45" strokeWidth={1.8} />
         </div>
       </div>
     </aside>
@@ -95,6 +194,8 @@ export default function App() {
           <Route path="/customers" element={<CustomerHub />} />
           <Route path="/customers/:customerId" element={<CustomerWorkspace />} />
           <Route path="/agents" element={<AgentHub />} />
+          <Route path="/workflows" element={<Workflows />} />
+          <Route path="/mcp" element={<McpPage />} />
         </Routes>
       </main>
     </div>

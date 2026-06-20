@@ -45,6 +45,18 @@ create table if not exists mcp_servers (
   tools int default 0
 );
 
+create table if not exists connectors (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  description text,
+  icon_url text,
+  featured boolean default true,
+  connected boolean default false,
+  tools int default 0,
+  category text,
+  created_at timestamptz default now()
+);
+
 create table if not exists agent_runs (
   id uuid primary key default gen_random_uuid(),
   agent text not null,
@@ -70,6 +82,17 @@ create table if not exists customers (
   due text,
   overdue boolean not null default false,
   tags text[] not null default '{}',
+  created_at timestamptz default now()
+);
+
+create table if not exists customer_memories (
+  id text primary key default gen_random_uuid()::text,
+  customer_id text not null references customers(id) on delete cascade,
+  kind text not null default 'note',
+  title text not null,
+  summary text not null,
+  source_name text,
+  source_meta text,
   created_at timestamptz default now()
 );
 
@@ -109,13 +132,18 @@ alter table badges enable row level security;
 alter table quests enable row level security;
 alter table agents enable row level security;
 alter table mcp_servers enable row level security;
+alter table connectors enable row level security;
 alter table agent_runs enable row level security;
 alter table customers enable row level security;
+alter table customer_memories enable row level security;
 
 create policy "public read" on users for select using (true);
 create policy "public read" on badges for select using (true);
 create policy "public read" on quests for select using (true);
 create policy "public read" on agents for select using (true);
 create policy "public read" on mcp_servers for select using (true);
+create policy "public read" on connectors for select using (true);
 create policy "public read" on agent_runs for select using (true);
 create policy "public read" on customers for select using (true);
+create policy "public read" on customer_memories for select using (true);
+create policy "public insert" on customer_memories for insert with check (true);

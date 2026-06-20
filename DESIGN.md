@@ -68,8 +68,8 @@ Make progress feel rewarding and competitive. Surfaces in
 - **Badges** — earned vs. locked, with icons (`api.getBadges`).
 - Points are awarded through `api.awardPoints` (mock mode echoes; Supabase mode persists).
 
-UX intent: bright, immediate, celebratory. Use the **primary blue** for progress/points and the
-**orange accent** sparingly for "earned/unlocked" moments. Lean on `Progress`, `Badge`, and `Card`.
+UX intent: bright, immediate, celebratory. Use the **primary blue** for progress/points and
+"earned/unlocked" moments. Lean on `Progress`, `Badge`, and `Card`.
 
 ### 2. Agents — `/agents`
 
@@ -148,7 +148,6 @@ stack (React 19 · Tailwind v4 · shadcn/ui "new-york"). Tokens live as CSS vari
 | Role | Hex | RGB | Notes |
 |------|-----|-----|-------|
 | Primary | `#317cff` | `49, 124, 255` | Brand blue — primary actions, links, focus |
-| Accent / orange | `#ec5d40` | `236, 93, 64` | Secondary accent, highlights |
 | Surface | `#000000` | `0, 0, 0` | Page background (dark) |
 | Button bg | `#121111` | `18, 17, 17` | Default solid button |
 | Badge bg | `#141414` | `20, 20, 20` | Filled neutral pills |
@@ -228,7 +227,9 @@ stack (React 19 · Tailwind v4 · shadcn/ui "new-york"). Tokens live as CSS vari
 
 ### Links
 - Default brand: `#317cff` · on-dark: `#fcfcfc`
-- Hover: `underline`
+
+### Hover (all interactive elements)
+- Use `filter: brightness(90%)` on hover — no color shifts, no underline.
 
 ---
 
@@ -244,7 +245,6 @@ readability — convert to `oklch()` (or keep hex; Tailwind v4 accepts both) whe
 --card:       #121111;        /* button/card surface */
 --muted-foreground: #989898;  /* secondary text */
 --primary:    #317cff;        /* brand blue */
---accent:     #ec5d40;        /* orange accent */
 --border:     #141414;
 --radius:     1rem;           /* 16px cards; pills use rounded-full */
 ```

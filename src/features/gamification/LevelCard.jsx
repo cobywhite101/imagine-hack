@@ -30,7 +30,7 @@ export function LevelCard() {
             <div className="flex items-center gap-2">
               <Badge>Level {user.level}</Badge>
               <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                <Flame className="size-3 text-orange-500" /> {user.streak}-day streak
+                <Flame className="size-3 text-primary" /> {user.streak}-day streak
               </span>
             </div>
           </div>

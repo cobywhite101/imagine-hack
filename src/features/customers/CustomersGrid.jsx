@@ -41,7 +41,7 @@ const DEAL_STATUS_TO_GRID_STATUS = {
   Won: "Monitoring",
   "Churn-risk": "Action needed",
 };
-const ACCENTS = ["#3bd4cb", "#317cff", "#ec5d40", "#4991e5", "#9b69ff", "#f5a524", "#22b8cf", "#2f9e44"];
+const ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
 const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.

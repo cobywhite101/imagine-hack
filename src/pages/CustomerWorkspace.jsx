@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowUp,
+  Brain,
   Bot,
   CalendarDays,
   FileText,
@@ -33,10 +34,21 @@ const STATUS_STYLE = {
   "Churn-risk": "bg-[#fdeaea] text-[#d4351c]",
 };
 
-const CONTEXT_SUMMARIES = [
-  "Annual review call focused on renewal readiness, premium sensitivity, and confirming the beneficiary sequence before the next policy cycle.",
-  "Customer asked for clearer follow-up timing and wants a concise pre-call summary before committing to the proposed schedule.",
-  "Advisor noted that family trust changes may affect the policy review order and should be checked before drafting the next recommendation.",
+const ACTION_WORDS = [
+  "action",
+  "ask",
+  "budget",
+  "concern",
+  "deadline",
+  "demo",
+  "follow",
+  "meeting",
+  "need",
+  "next",
+  "renew",
+  "risk",
+  "schedule",
+  "want",
 ];
 
 function formatFileSize(size) {
@@ -45,27 +57,99 @@ function formatFileSize(size) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function buildAssistantReply(customer, text, files) {
-  const contextLine = files.length
-    ? `I will use ${files.length} uploaded meeting-minute file${files.length === 1 ? "" : "s"} as context.`
-    : "No meeting-minute files are attached yet, so this is based on the saved account context.";
+function formatMemoryDate(value) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
 
-  return {
-    id: `a-${Date.now()}`,
-    role: "assistant",
-    text: `${contextLine}\n\nFor ${customer.name}, I would focus the next response on: ${customer.task}. A useful next step is to draft a short recap, confirm open questions, and propose one concrete meeting time.`,
-  };
+function cleanText(text) {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function compactPhoneNumber(value) {
+  return String(value ?? "").replace(/[^\d+]/g, "");
+}
+
+function formatCalendarDate(date) {
+  return date.toISOString().replace(/[-:]|\.\d{3}/g, "");
+}
+
+function getScheduleUrl(customer) {
+  const start = new Date();
+  start.setDate(start.getDate() + 1);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + 30);
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `${customer.name} follow-up`,
+    details: `Next step: ${customer.task || customer.nextAction || "Confirm next action"}`,
+    dates: `${formatCalendarDate(start)}/${formatCalendarDate(end)}`,
+  });
+
+  if (customer.email?.includes("@")) params.set("add", customer.email);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function summarizeText(rawText, fallback) {
+  const text = cleanText(rawText);
+  if (!text) return fallback;
+
+  const sentences = text
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((sentence) => cleanText(sentence))
+    .filter(Boolean) ?? [text];
+
+  const priority = sentences.find((sentence) => {
+    const lower = sentence.toLowerCase();
+    return ACTION_WORDS.some((word) => lower.includes(word));
+  });
+  const picked = [priority ?? sentences[0], ...sentences.filter((sentence) => sentence !== priority).slice(0, 1)];
+  const summary = cleanText(picked.join(" "));
+
+  if (summary.length <= 280) return summary;
+  return `${summary.slice(0, 280).replace(/\s+\S*$/, "")}...`;
+}
+
+function isTextLikeFile(file) {
+  return (
+    file.type?.startsWith("text/") ||
+    ["application/json", "application/xml", "application/csv"].includes(file.type) ||
+    /\.(txt|md|csv|json|log)$/i.test(file.name)
+  );
+}
+
+async function readFileText(file) {
+  if (!isTextLikeFile(file)) return "";
+  try {
+    return (await file.text()).slice(0, 24000);
+  } catch {
+    return "";
+  }
 }
 
 export function CustomerWorkspace() {
   const { customerId } = useParams();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
+  const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const customer = fetchedCustomer;
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [value, setValue] = useState("");
   const [files, setFiles] = useState([]);
+  const [memories, setMemories] = useState([]);
+  const [noteText, setNoteText] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [savingMemory, setSavingMemory] = useState(false);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!customer) return;
@@ -78,15 +162,13 @@ export function CustomerWorkspace() {
     ]);
   }, [customer?.id]);
 
-  const discussions = useMemo(() => {
-    if (!customer) return [];
-    return CONTEXT_SUMMARIES.map((text, index) => ({
-      id: `${customer.id}-${index}`,
-      title: index === 0 ? "Renewal review" : index === 1 ? "Follow-up preference" : "Trust context",
-      date: index === 0 ? "Jun 12" : index === 1 ? "May 28" : "May 03",
-      text,
-    }));
-  }, [customer]);
+  useEffect(() => {
+    if (fetchedMemories) setMemories(fetchedMemories);
+  }, [fetchedMemories]);
+
+  useEffect(() => {
+    return () => recognitionRef.current?.stop();
+  }, []);
 
   if (loading && !customer) {
     return (
@@ -136,28 +218,196 @@ export function CustomerWorkspace() {
     );
   }
 
-  function addFiles(fileList) {
+  function buildMemoryEntry({ kind, title, body, sourceName, sourceMeta }) {
+    const fallback =
+      kind === "file"
+        ? `Uploaded ${sourceName}. Text extraction is not available for this file type yet, but the document is saved as client context.`
+        : "Saved client note for future chatbot context.";
+
+    return {
+      id: `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      kind,
+      title,
+      summary: summarizeText(body, fallback),
+      sourceName,
+      sourceMeta,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  async function remember(entry) {
+    setMemories((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
+    const savedEntry = await api.saveCustomerMemory(customer.id, entry);
+    setMemories((prev) => [savedEntry, ...prev.filter((item) => item.id !== savedEntry.id)]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `memory-${savedEntry.id}`,
+        role: "assistant",
+        text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
+      },
+    ]);
+  }
+
+  async function addFiles(fileList) {
     const next = Array.from(fileList ?? []).map((file) => ({
       id: `${file.name}-${file.lastModified}-${file.size}`,
       name: file.name,
       size: file.size,
       type: file.type || "Document",
+      file,
     }));
+    const currentIds = new Set(files.map((file) => file.id));
+    const freshFiles = next.filter((file) => !currentIds.has(file.id));
+    if (!freshFiles.length) return;
+
     setFiles((prev) => {
       const seen = new Set(prev.map((file) => file.id));
-      return [...prev, ...next.filter((file) => !seen.has(file.id))];
+      return [
+        ...prev,
+        ...freshFiles
+          .filter((file) => !seen.has(file.id))
+          .map(({ file, ...upload }) => upload),
+      ];
     });
+
+    setSavingMemory(true);
+    try {
+      for (const upload of freshFiles) {
+        const body = await readFileText(upload.file);
+        await remember(
+          buildMemoryEntry({
+            kind: "file",
+            title: upload.name,
+            body,
+            sourceName: upload.name,
+            sourceMeta: `${formatFileSize(upload.size)} | ${isTextLikeFile(upload.file) ? "Summarized" : "Stored reference"}`,
+          })
+        );
+      }
+    } finally {
+      setSavingMemory(false);
+    }
   }
 
-  function submit() {
-    const text = value.trim();
-    if (!text) return;
+  async function saveNoteMemory() {
+    const body = noteText.trim();
+    if (!body || !customer) return;
+    setSavingMemory(true);
+    try {
+      await remember(
+        buildMemoryEntry({
+          kind: "voice",
+          title: "Voice or typed note",
+          body,
+          sourceName: "Advisor note",
+          sourceMeta: "Summarized",
+        })
+      );
+      setNoteText("");
+      setVoiceError("");
+    } finally {
+      setSavingMemory(false);
+    }
+  }
+
+  function startVoiceCapture() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError("Voice capture is not supported in this browser. Paste the note and summarize it instead.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        if (event.results[index].isFinal) {
+          transcript += `${event.results[index][0].transcript} `;
+        }
+      }
+      if (transcript.trim()) {
+        setNoteText((prev) => cleanText(`${prev} ${transcript}`));
+      }
+    };
+    recognition.onerror = () => {
+      setVoiceError("Could not capture audio. Paste the note and summarize it instead.");
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setVoiceError("");
+    setListening(true);
+  }
+
+  function stopVoiceCapture() {
+    recognitionRef.current?.stop();
+    setListening(false);
+  }
+
+  function addAssistantNotice(text) {
     setMessages((prev) => [
       ...prev,
-      { id: `u-${Date.now()}`, role: "user", text },
-      buildAssistantReply(customer, text, files),
+      {
+        id: `notice-${Date.now()}`,
+        role: "assistant",
+        text,
+      },
     ]);
+  }
+
+  function callCustomer() {
+    const phone = compactPhoneNumber(customer.phone);
+    if (phone) {
+      window.location.href = `tel:${phone}`;
+      return;
+    }
+
+    if (customer.email?.includes("@")) {
+      window.location.href = `mailto:${customer.email}?subject=${encodeURIComponent(`Follow-up with ${customer.name}`)}`;
+      return;
+    }
+
+    addAssistantNotice(`No phone or email is saved for ${customer.name}. Add contact details before starting outreach.`);
+  }
+
+  async function draftFollowUp() {
+    if (!customer || sending) return;
+
+    const prompt = "Draft a follow-up email from this customer's latest memory.";
+    setSending(true);
+    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
+
+    try {
+      const reply = await api.draftCustomerFollowUp({ customer, memories });
+      if (reply) setMessages((prev) => [...prev, reply]);
+    } catch {
+      addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function submit() {
+    const text = value.trim();
+    if (!text || sending) return;
+
+    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setValue("");
+    setSending(true);
+
+    try {
+      const reply = await api.sendCustomerMessage({ customer, text, memories });
+      if (reply) setMessages((prev) => [...prev, reply]);
+    } catch {
+      addAssistantNotice("I could not search this customer record right now. Try again in a moment.");
+    } finally {
+      setSending(false);
+    }
   }
 
   function onKeyDown(event) {
@@ -200,13 +450,13 @@ export function CustomerWorkspace() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end gap-5 px-6 py-8">
               <div className="mb-auto flex max-w-sm flex-col gap-3 pt-8 text-sm">
-                <span className="flex size-9 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Sparkles className="size-5" />
                 </span>
                 <div>
                   <h2 className="font-semibold text-foreground">Ask about this customer</h2>
                   <p className="mt-1 text-muted-foreground">
-                    Use saved account details and uploaded meeting minutes to prepare recaps, next steps, and follow-up drafts.
+                    Use saved account details, client memory, and uploaded meeting minutes to prepare recaps, next steps, and follow-up drafts.
                   </p>
                 </div>
               </div>
@@ -296,6 +546,51 @@ export function CustomerWorkspace() {
             <DetailRow icon={CalendarDays} label="Next step" value={customer.task} />
           </DetailSection>
 
+          <DetailSection title="Client Memory">
+            <div className="rounded-lg border bg-white p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <Brain className="size-4 text-primary" />
+                Summarize into chatbot memory
+              </div>
+              <textarea
+                value={noteText}
+                onChange={(event) => setNoteText(event.target.value)}
+                rows={4}
+                placeholder="Paste notes or dictate client context..."
+                className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  variant={listening ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={listening ? stopVoiceCapture : startVoiceCapture}
+                >
+                  <Mic className="size-4" /> {listening ? "Stop" : "Dictate"}
+                </Button>
+                <Button size="sm" onClick={saveNoteMemory} disabled={!noteText.trim() || savingMemory}>
+                  <Sparkles className="size-4" /> Summarize
+                </Button>
+              </div>
+              {voiceError && <p className="mt-2 text-xs text-destructive-foreground">{voiceError}</p>}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {allMemories.slice(0, 6).map((memory) => (
+                <div key={memory.id} className="border-l-2 border-primary/25 pl-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{memory.title}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {memory.sourceName} | {memory.sourceMeta || "Saved"} | {formatMemoryDate(memory.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+
           <DetailSection title="Meeting Minutes">
             <div
               onDragOver={(event) => {
@@ -350,35 +645,6 @@ export function CustomerWorkspace() {
                 ))}
               </div>
             )}
-          </DetailSection>
-
-          <DetailSection title="Previous Discussions">
-            <div className="space-y-3">
-              {discussions.map((discussion) => (
-                <div key={discussion.id} className="border-l-2 border-primary/25 pl-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">{discussion.title}</p>
-                    <span className="text-[11px] text-muted-foreground">{discussion.date}</span>
-                  </div>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{discussion.text}</p>
-                </div>
-              ))}
-            </div>
-          </DetailSection>
-
-          <DetailSection title="Voice Notes">
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-lg border bg-white px-3 py-3 text-left transition-colors hover:bg-secondary/50"
-            >
-              <span className="flex size-9 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                <Mic className="size-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">Capture call note</span>
-                <span className="block truncate text-xs text-muted-foreground">Add voice context before the next reply</span>
-              </span>
-            </button>
           </DetailSection>
         </aside>
       </div>
