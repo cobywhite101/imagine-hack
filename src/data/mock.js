@@ -221,6 +221,101 @@ export const mockWorkflowConfig = {
   tools: { code: true },
 };
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+export const mockHomeTasks = [
+  {
+    id: "task-goh-mei-ling-planning",
+    customerId: "CL-0048",
+    title: "Prepare Goh Mei Ling will-planning brief",
+    icon: "notepad",
+    priority: "High",
+    category: "Client prep",
+    status: "To Do",
+    dueDate: todayISO(),
+    notes: "Use the saved profile and policy notes before the 9:30 review.",
+    sortOrder: 10,
+  },
+  {
+    id: "task-anand-kyc-reminder",
+    customerId: "CL-0005",
+    title: "Send Anand KYC reminder",
+    icon: "mail",
+    priority: "High",
+    category: "Follow-up",
+    status: "Follow-up",
+    dueDate: todayISO(),
+    notes: "KYC documents are pending; send a concise email reminder.",
+    sortOrder: 20,
+  },
+  {
+    id: "task-farid-life-renewal",
+    customerId: "CL-0050",
+    title: "Confirm Farid life renewal next step",
+    icon: "mail",
+    priority: "Medium",
+    category: "Follow-up",
+    status: "Follow-up",
+    dueDate: todayISO(),
+    notes: "Life renewal lands today. Confirm whether will planning should be paired with the renewal review.",
+    sortOrder: 30,
+  },
+  {
+    id: "task-lim-hui-min-renewal",
+    customerId: "CL-0099",
+    title: "Draft Lim Hui Min renewal talking points",
+    icon: "notepad",
+    priority: "Medium",
+    category: "Renewal",
+    status: "In progress",
+    dueDate: todayISO(),
+    notes: "Life renewal is due soon. Prepare a short agenda and risk update.",
+    sortOrder: 40,
+  },
+  {
+    id: "task-weekly-client-cleanup",
+    title: "Close completed customer profile cleanup",
+    icon: "check",
+    priority: "Low",
+    category: "Ops",
+    status: "Done",
+    dueDate: todayISO(),
+    muted: true,
+    notes: "Profile articles were generated and indexed for the first live clients.",
+    sortOrder: 50,
+  },
+];
+
+export const mockHomeMeetings = [
+  {
+    id: "meeting-goh-mei-ling-review",
+    customerId: "CL-0048",
+    title: "Goh Mei Ling portfolio review",
+    start: `${todayISO()}T09:30`,
+    end: `${todayISO()}T10:15`,
+    allDay: false,
+    notes: "Review life coverage, estate planning status, and current next action.",
+  },
+  {
+    id: "meeting-farid-renewal",
+    customerId: "CL-0050",
+    title: "Farid bin Ismail life renewal",
+    start: `${todayISO()}T11:30`,
+    end: `${todayISO()}T12:00`,
+    allDay: false,
+    notes: "Life policy renewal is due today.",
+  },
+  {
+    id: "meeting-aisyah-review",
+    customerId: "CL-0038",
+    title: "Aisyah binti Yusof policy review",
+    start: `${todayISO()}T14:00`,
+    end: `${todayISO()}T14:45`,
+    allDay: false,
+    notes: "Discuss will planning and upcoming life renewal.",
+  },
+];
+
 // Seed conversation shown on Home. The first assistant message is "rich":
 // it carries a `deal` context card and `signals` (rendered specially). Live
 // replies from api.sendChatMessage are plain `text`.

@@ -47,14 +47,59 @@ const ACTION_WORDS = [
   "want",
 ];
 
-const THINKING_STEPS = [
-  "Pulling from memory...",
-  "Reading internal articles...",
-  "Checking customer context...",
-  "Drafting response...",
-];
 const THINKING_STEP_MS = 950;
-const MIN_THINKING_MS = THINKING_STEPS.length * THINKING_STEP_MS;
+const THINKING_STEPS_BY_INTENT = {
+  memory_update: [
+    "Updating customer memory...",
+    "Resolving correction fields...",
+    "Applying verified memory patch...",
+    "Saving updated client memory...",
+  ],
+  article_generation: [
+    "Analyzing uploaded notes...",
+    "Drafting source-article structure...",
+    "Cross-referencing key commitments...",
+    "Indexing article for retrieval...",
+  ],
+  follow_up: [
+    "Gathering latest customer context...",
+    "Composing follow-up draft...",
+    "Tailoring tone and details...",
+    "Preparing signature and action items...",
+  ],
+  customer_message: [
+    "Reading customer context...",
+    "Running intent analysis...",
+    "Preparing advisor-ready answer...",
+    "Finalizing response draft...",
+  ],
+  general: [
+    "Pulling from memory...",
+    "Reading saved sources...",
+    "Checking customer context...",
+    "Drafting response...",
+  ],
+};
+const MIN_THINKING_MS_BY_INTENT = Object.fromEntries(
+  Object.entries(THINKING_STEPS_BY_INTENT).map(([intent, steps]) => [intent, steps.length * THINKING_STEP_MS])
+);
+const DEFAULT_THINKING_INTENT = "general";
+
+function getThinkingStepsForIntent(intent) {
+  return THINKING_STEPS_BY_INTENT[intent] ?? THINKING_STEPS_BY_INTENT.general;
+}
+
+function pickRandomStepIndex(stepCount, currentIndex = -1) {
+  if (stepCount <= 1) return 0;
+  const next = Math.floor(Math.random() * stepCount);
+  return next === currentIndex ? (next + 1) % stepCount : next;
+}
+
+function getThinkingIntentForPrompt(text, hasArticleCandidate) {
+  if (parseMemoryUpdateRequest(text)) return "memory_update";
+  if (isArticleGenerationRequest(text, hasArticleCandidate)) return "article_generation";
+  return "customer_message";
+}
 const MEMORY_UPDATE_VERB_PATTERN = /\b(update|change|correct|fix|amend|edit|revise)\b/i;
 const MEMORY_TARGET_PATTERN = /\b(memory|remembered|client record|customer record|saved record|profile)\b/i;
 const MEMORY_UPDATE_FIELDS = [
@@ -110,8 +155,8 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function waitForThinkingSequence(startedAt) {
-  const remaining = MIN_THINKING_MS - (Date.now() - startedAt);
+function waitForThinkingSequence(startedAt, intent = DEFAULT_THINKING_INTENT) {
+  const remaining = (MIN_THINKING_MS_BY_INTENT[intent] ?? MIN_THINKING_MS_BY_INTENT.general) - (Date.now() - startedAt);
   if (remaining <= 0) return Promise.resolve();
 
   return new Promise((resolve) => {
@@ -797,16 +842,18 @@ function CustomerChatMessage({ message, onSuggestion }) {
   );
 }
 
-function CustomerChatThinkingIndicator() {
-  const [stepIndex, setStepIndex] = useState(0);
+function CustomerChatThinkingIndicator({ intent = DEFAULT_THINKING_INTENT }) {
+  const steps = getThinkingStepsForIntent(intent);
+  const [stepIndex, setStepIndex] = useState(() => pickRandomStepIndex(steps.length));
 
   useEffect(() => {
+    setStepIndex(pickRandomStepIndex(steps.length));
     const timer = window.setInterval(() => {
-      setStepIndex((current) => (current + 1) % THINKING_STEPS.length);
+      setStepIndex((current) => pickRandomStepIndex(steps.length, current));
     }, THINKING_STEP_MS);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [intent]);
 
   return (
     <div
@@ -815,7 +862,7 @@ function CustomerChatThinkingIndicator() {
     >
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
       <span key={stepIndex} className="inline-block animate-thinking-status-fade whitespace-nowrap ml-1">
-        {THINKING_STEPS[stepIndex]}
+        {steps[stepIndex]}
       </span>
     </div>
   );
@@ -845,6 +892,7 @@ export function CustomerWorkspace() {
   const [voiceError, setVoiceError] = useState("");
   const [savingMemory, setSavingMemory] = useState(false);
   const [sending, setSending] = useState(false);
+  const [thinkingIntent, setThinkingIntent] = useState(DEFAULT_THINKING_INTENT);
   const [selectedModel, setSelectedModel] = useState("deepseek-chat");
 
   useEffect(() => {
@@ -1230,6 +1278,7 @@ export function CustomerWorkspace() {
 
     const prompt = "Draft a follow-up email from this customer's latest saved knowledge.";
     const thinkingStartedAt = Date.now();
+    setThinkingIntent("follow_up");
     setSending(true);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
 
@@ -1242,10 +1291,10 @@ export function CustomerWorkspace() {
         workflowConfig,
         model: selectedModel,
       });
-      await waitForThinkingSequence(thinkingStartedAt);
+      await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       if (reply) setMessages((prev) => [...prev, reply]);
     } catch {
-      await waitForThinkingSequence(thinkingStartedAt);
+      await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
     } finally {
       setSending(false);
@@ -1256,10 +1305,12 @@ export function CustomerWorkspace() {
     if (!text || sending) return;
 
     const memoryUpdateRequest = parseMemoryUpdateRequest(text);
+    const intent = getThinkingIntentForPrompt(text, !!articleCandidate);
     setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
     setValue("");
     const thinkingStartedAt = Date.now();
     setSending(true);
+    setThinkingIntent(intent);
     let attemptedMemoryUpdate = false;
 
     try {
@@ -1267,7 +1318,7 @@ export function CustomerWorkspace() {
         attemptedMemoryUpdate = true;
         const latestKnowledge = await refreshCustomerKnowledge();
         const updateResult = await updateCustomerMemoryFromChat(memoryUpdateRequest, latestKnowledge.memories);
-        await waitForThinkingSequence(thinkingStartedAt);
+        await waitForThinkingSequence(thinkingStartedAt, intent);
 
         if (updateResult.status === "updated") {
           addAssistantNotice(buildMemoryUpdatedMessage(updateResult));
@@ -1281,7 +1332,7 @@ export function CustomerWorkspace() {
 
       if (isArticleGenerationRequest(text, !!articleCandidate)) {
         await createArticleFromLatestMinutes(text);
-        await waitForThinkingSequence(thinkingStartedAt);
+        await waitForThinkingSequence(thinkingStartedAt, intent);
         return;
       }
 
@@ -1295,7 +1346,7 @@ export function CustomerWorkspace() {
         workflowConfig,
         model: selectedModel,
       });
-      await waitForThinkingSequence(thinkingStartedAt);
+      await waitForThinkingSequence(thinkingStartedAt, intent);
       if (reply) {
         setMessages((prev) => [...prev, reply]);
         try {
@@ -1314,7 +1365,7 @@ export function CustomerWorkspace() {
         }
       }
     } catch {
-      await waitForThinkingSequence(thinkingStartedAt);
+      await waitForThinkingSequence(thinkingStartedAt, intent);
       addAssistantNotice(
         attemptedMemoryUpdate
           ? "I found the memory update request, but could not save the change to Supabase."
@@ -1343,11 +1394,12 @@ export function CustomerWorkspace() {
       ]);
       const thinkingStartedAt = Date.now();
       setSending(true);
+      setThinkingIntent("article_generation");
       try {
         await createArticleFromLatestMinutes(suggestion.instruction || "", sourceMemory);
-        await waitForThinkingSequence(thinkingStartedAt);
+        await waitForThinkingSequence(thinkingStartedAt, "article_generation");
       } catch {
-        await waitForThinkingSequence(thinkingStartedAt);
+        await waitForThinkingSequence(thinkingStartedAt, "article_generation");
         addAssistantNotice("I could not generate the internal article right now. Try again from the uploaded minutes.");
       } finally {
         setSending(false);
@@ -1404,7 +1456,7 @@ export function CustomerWorkspace() {
                 {messages.map((message) => (
                   <CustomerChatMessage key={message.id} message={message} onSuggestion={handleSuggestion} />
                 ))}
-                {sending && <CustomerChatThinkingIndicator />}
+                {sending && <CustomerChatThinkingIndicator intent={thinkingIntent} />}
                 <div ref={threadEndRef} />
               </div>
             </div>

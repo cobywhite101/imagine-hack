@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CalendarDays,
@@ -8,12 +8,33 @@ import {
   MailCheck,
 } from "lucide-react";
 import { MeetingsCalendar } from "../features/calendar/MeetingsCalendar";
+import { api } from "@/services/dataClient";
 
 export function Home() {
-  const [todoCards, setTodoCards] = useState(initialTodoCards);
+  const [dashboard, setDashboard] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
+  const [homeError, setHomeError] = useState(null);
+  const todoCards = dashboard?.tasks ?? [];
+  const meetings = dashboard?.meetings ?? [];
+  const brief = dashboard?.brief ?? defaultBrief;
+  const statItems = mergeHomeStats(dashboard?.stats ?? defaultStats);
 
-  function saveTodoTask(task) {
+  const refreshHomeDashboard = useCallback(async () => {
+    try {
+      const next = await api.getHomeDashboard();
+      setDashboard(next);
+      setHomeError(null);
+    } catch (error) {
+      setHomeError(error);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHomeDashboard();
+    return api.subscribeHomeDashboard(refreshHomeDashboard);
+  }, [refreshHomeDashboard]);
+
+  async function saveTodoTask(task) {
     const nextTask = {
       ...task,
       title: task.title.trim(),
@@ -21,25 +42,35 @@ export function Home() {
       muted: task.status === "Done",
     };
 
-    setTodoCards((cards) => {
-      if (!nextTask.id) {
-        return [
-          ...cards,
-          {
-            ...nextTask,
-            id: `task-${Date.now()}`,
-          },
-        ];
-      }
-
-      return cards.map((card) => (card.id === nextTask.id ? nextTask : card));
-    });
-    setEditingTask(null);
+    try {
+      await api.saveHomeTask(nextTask);
+      await refreshHomeDashboard();
+      setEditingTask(null);
+    } catch (error) {
+      setHomeError(error);
+    }
   }
 
-  function deleteTodoTask(taskId) {
-    setTodoCards((cards) => cards.filter((card) => card.id !== taskId));
-    setEditingTask(null);
+  async function deleteTodoTask(taskId) {
+    try {
+      await api.deleteHomeTask(taskId);
+      await refreshHomeDashboard();
+      setEditingTask(null);
+    } catch (error) {
+      setHomeError(error);
+    }
+  }
+
+  async function saveMeeting(event) {
+    const saved = await api.saveAdvisorMeeting(event);
+    await refreshHomeDashboard();
+    return saved;
+  }
+
+  async function deleteMeeting(eventId) {
+    const deleted = await api.deleteAdvisorMeeting(eventId);
+    await refreshHomeDashboard();
+    return deleted;
   }
 
   return (
@@ -48,7 +79,7 @@ export function Home() {
         <div>
           <h1 className="text-sm font-semibold">Home</h1>
           <p className="text-[11px] text-muted-foreground">
-            Morning brief, meetings, and follow-ups for today
+            Morning brief, meetings, and follow-ups synced from Supabase
           </p>
         </div>
         <div className="flex h-7 items-center gap-1.5 rounded-lg bg-[#f7f7f8] px-2 text-[12px] font-medium text-black/55">
@@ -60,16 +91,21 @@ export function Home() {
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
         <div className="w-[1179px] px-4 pt-4">
           <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
-            <h2 className="mb-2.5 text-[22px] font-semibold text-[#317cff]">
-              Good morning, Daniel.
+            <h2 className="mb-2.5 text-[22px] font-semibold text-[#101112]">
+              Good morning, {brief.advisorName}.
             </h2>
             <p className="max-w-[920px] text-[18px] font-medium leading-7 text-[#101112]">
-              You have <span className="font-semibold text-[#317cff]">three meetings today</span>, with <span className="font-semibold text-[#317cff]">two follow-ups slipping</span>. <span className="font-semibold text-[#317cff]">Mei Lin's portfolio review at 9:30</span> is your first priority.
+              You have <span className="font-semibold text-[#101112]">{brief.meetingsText}</span>, with <span className="font-semibold text-[#101112]">{brief.followUpsText}</span>. <span className="font-semibold text-[#101112]">{brief.priorityText}</span> is your first priority.
             </p>
+            {homeError ? (
+              <p className="mt-2 text-[12px] font-medium text-[#d4351c]">
+                Home data is using the latest available local state.
+              </p>
+            ) : null}
           </section>
         </div>
 
-        <AdvisorStatsStrip />
+        <AdvisorStatsStrip stats={statItems} />
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
           <TodoList
@@ -80,7 +116,11 @@ export function Home() {
         </div>
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
-          <MeetingsCalendar />
+          <MeetingsCalendar
+            events={meetings}
+            onSaveEvent={saveMeeting}
+            onDeleteEvent={deleteMeeting}
+          />
         </div>
       </div>
       {editingTask && (
@@ -95,105 +135,40 @@ export function Home() {
   );
 }
 
-const initialTodoCards = [
-  {
-    id: "publish-release-notes",
-    title: "Publish release notes",
-    icon: "notepad",
-    priority: "Low",
-    category: "Feature request",
-    status: "To Do",
-    notes: "Draft and publish the customer-facing release notes.",
-  },
-  {
-    id: "publish-second-notes",
-    title: "Publish second notes",
-    icon: "plus",
-    priority: "",
-    category: "",
-    status: "To Do",
-    notes: "Prepare the second set of notes for review.",
-  },
-  {
-    id: "release-second-notes",
-    title: "Release second notes",
-    icon: "check",
-    priority: "",
-    category: "",
-    status: "To Do",
-    notes: "Confirm release notes have been sent.",
-  },
-  {
-    id: "call-mei-lin-follow-up",
-    title: "Call Mei Lin after review",
-    icon: "mail",
-    priority: "High",
-    category: "Follow-up",
-    status: "Follow-up",
-    notes: "Confirm next steps from the 9:30 portfolio review.",
-  },
-  {
-    id: "send-anand-follow-up",
-    title: "Send Anand KYC reminder",
-    icon: "mail",
-    priority: "Medium",
-    category: "Follow-up",
-    status: "Follow-up",
-    notes: "KYC documents are still pending; send a concise WhatsApp reminder.",
-  },
-  {
-    id: "new-task-placeholder",
-    title: "New task",
-    icon: "check",
-    priority: "",
-    category: "",
-    status: "To Do",
-    muted: true,
-    notes: "",
-  },
-  {
-    id: "in-progress-task",
-    title: "New task",
-    icon: "notepad",
-    priority: "",
-    category: "",
-    status: "In progress",
-    notes: "",
-  },
-  {
-    id: "done-task",
-    title: "New task",
-    icon: "check",
-    priority: "",
-    category: "",
-    status: "Done",
-    notes: "",
-  },
-];
+const defaultBrief = {
+  advisorName: "Daniel",
+  meetingsText: "0 meetings today",
+  followUpsText: "0 follow-ups due",
+  priorityText: "Your client task board",
+};
 
-const stats = [
+const defaultStats = [
   {
+    id: "todo",
     label: "To-do Tasks",
-    value: "1",
-    helper: "Task due today",
+    value: "0",
+    helper: "No tasks due today",
     icon: ListChecks,
     tone: "bg-[#f0fdf4] text-[#22c55e]",
   },
   {
+    id: "meetings",
     label: "Meetings",
-    value: "3",
-    helper: "Client meetings",
+    value: "0",
+    helper: "No meetings today",
     icon: CalendarDays,
     tone: "bg-[#eff6ff] text-[#3b82f6]",
   },
   {
+    id: "followups",
     label: "Follow-ups",
-    value: "2",
-    helper: "Follow-ups due",
+    value: "0",
+    helper: "No follow-ups due",
     icon: MailCheck,
     tone: "bg-[#faf5ff] text-[#a855f7]",
   },
   {
+    id: "completed",
     label: "Completed",
     value: "0",
     helper: "No tasks done yet",
@@ -202,7 +177,14 @@ const stats = [
   },
 ];
 
-function AdvisorStatsStrip() {
+function mergeHomeStats(items) {
+  return defaultStats.map((fallback) => ({
+    ...fallback,
+    ...(items.find((item) => item.id === fallback.id || item.label === fallback.label) ?? {}),
+  }));
+}
+
+function AdvisorStatsStrip({ stats = defaultStats }) {
   return (
     <div className="flex h-[126px] w-[1179px] px-4 pt-4 text-black transition-all">
       <div className="h-[110px] w-[1147px] flex-1 bg-white transition-all">

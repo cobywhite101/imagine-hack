@@ -14,6 +14,8 @@ import {
   mockAgentLog,
   mockCustomers,
   mockCustomerMemories,
+  mockHomeTasks,
+  mockHomeMeetings,
   mockChatSeed,
   mockChatSuggestions,
   mockAgentHub,
@@ -57,6 +59,10 @@ const localCustomers = mockCustomers;
 const localCustomerMemories = mockCustomerMemories;
 const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
 const FALLBACK_CUSTOMER_ACCENT = "#868e96";
+const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
+const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
+const HOME_TASK_STATUSES = ["To Do", "In progress", "Follow-up", "Done"];
+const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
 
 function requireSupabase(feature) {
   if (!isSupabaseConfigured) {
@@ -101,6 +107,373 @@ async function fromTableOrMock(table, mockValue) {
   } catch {
     return mockValue;
   }
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function isValidDate(date) {
+  return date instanceof Date && !Number.isNaN(date.getTime());
+}
+
+function toLocalDateString(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!isValidDate(date)) return toLocalDateString(new Date());
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toLocalTimeString(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!isValidDate(date)) return "";
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function hasExplicitTimezone(value) {
+  return /(?:z|[+-]\d{2}:?\d{2})$/i.test(String(value ?? ""));
+}
+
+function toLocalCalendarValue(value, allDay = false) {
+  if (!value) return allDay ? toLocalDateString() : `${toLocalDateString()}T09:00`;
+  const text = String(value);
+  if (allDay) return text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(text) && !hasExplicitTimezone(text)) {
+    return text.slice(0, 16);
+  }
+
+  const date = new Date(text);
+  if (!isValidDate(date)) return text.slice(0, 16);
+  return `${toLocalDateString(date)}T${toLocalTimeString(date)}`;
+}
+
+function toDbTimestamp(value, allDay = false) {
+  if (!value) return null;
+  const text = String(value);
+  const localValue = allDay && !text.includes("T") ? `${text.slice(0, 10)}T00:00` : text;
+  const date = new Date(localValue);
+  return isValidDate(date) ? date.toISOString() : null;
+}
+
+function isSameLocalDate(value, dateString = toLocalDateString()) {
+  if (!value) return false;
+  const text = String(value);
+  if (!text.includes("T") || !hasExplicitTimezone(text)) return text.slice(0, 10) === dateString;
+  return toLocalDateString(text) === dateString;
+}
+
+function pluralize(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function readStoredArray(key, fallback) {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "null");
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredArray(key, value) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* local persistence is best-effort for the demo */
+  }
+}
+
+function normalizeHomeTaskStatus(status) {
+  return HOME_TASK_STATUSES.includes(status) ? status : "To Do";
+}
+
+function getHomeTaskIcon(task) {
+  const status = normalizeHomeTaskStatus(task?.status);
+  if (status === "Done") return "check";
+  if (status === "In progress") return "notepad";
+  if (status === "Follow-up") return "mail";
+  if (/brief|prep|note|draft/i.test(task?.title ?? "")) return "notepad";
+  return "plus";
+}
+
+function normalizeHomeTask(task = {}) {
+  const status = normalizeHomeTaskStatus(task.status);
+  const title = String(task.title ?? task.task ?? task.next_action ?? "New task").trim() || "New task";
+
+  return {
+    id: String(task.id ?? `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+    customerId: task.customerId ?? task.customer_id ?? null,
+    title,
+    icon: task.icon ?? getHomeTaskIcon({ ...task, title, status }),
+    priority: task.priority ?? "",
+    category: task.category ?? task.task_type ?? "",
+    status,
+    notes: task.notes ?? "",
+    dueDate: task.dueDate ?? task.due_date ?? null,
+    sortOrder: Number(task.sortOrder ?? task.sort_order ?? 0),
+    muted: task.muted ?? status === "Done",
+    createdAt: task.createdAt ?? task.created_at ?? null,
+    updatedAt: task.updatedAt ?? task.updated_at ?? null,
+  };
+}
+
+function homeTaskToRow(task) {
+  const entry = normalizeHomeTask(task);
+  return {
+    id: entry.id,
+    customer_id: entry.customerId,
+    title: entry.title,
+    icon: entry.icon,
+    priority: entry.priority || null,
+    category: entry.category || null,
+    status: entry.status,
+    notes: entry.notes || null,
+    due_date: entry.dueDate || null,
+    sort_order: entry.sortOrder,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function sortHomeTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    const statusDiff =
+      (HOME_TASK_STATUS_ORDER.get(a.status) ?? 99) - (HOME_TASK_STATUS_ORDER.get(b.status) ?? 99);
+    if (statusDiff) return statusDiff;
+    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.title).localeCompare(String(b.title));
+  });
+}
+
+function getStoredHomeTasks() {
+  return sortHomeTasks(readStoredArray(HOME_TASK_STORAGE_KEY, mockHomeTasks).map(normalizeHomeTask));
+}
+
+function setStoredHomeTasks(tasks) {
+  const next = sortHomeTasks(tasks.map(normalizeHomeTask));
+  writeStoredArray(HOME_TASK_STORAGE_KEY, next);
+  return next;
+}
+
+function normalizeAdvisorMeeting(meeting = {}) {
+  const allDay = Boolean(meeting.allDay ?? meeting.all_day);
+  const startValue = meeting.start ?? meeting.startsAt ?? meeting.starts_at ?? meeting.start_at;
+  const endValue = meeting.end ?? meeting.endsAt ?? meeting.ends_at ?? meeting.end_at;
+
+  return {
+    id: String(meeting.id ?? `meeting-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+    customerId: meeting.customerId ?? meeting.customer_id ?? null,
+    title: String(meeting.title ?? "Client meeting").trim() || "Client meeting",
+    start: toLocalCalendarValue(startValue, allDay),
+    end: endValue ? toLocalCalendarValue(endValue, allDay) : undefined,
+    allDay,
+    notes: meeting.notes ?? "",
+    location: meeting.location ?? "",
+    status: meeting.status ?? "scheduled",
+    createdAt: meeting.createdAt ?? meeting.created_at ?? null,
+    updatedAt: meeting.updatedAt ?? meeting.updated_at ?? null,
+  };
+}
+
+function advisorMeetingToRow(meeting) {
+  const entry = normalizeAdvisorMeeting(meeting);
+  return {
+    id: entry.id,
+    customer_id: entry.customerId,
+    title: entry.title,
+    starts_at: toDbTimestamp(entry.start, entry.allDay),
+    ends_at: entry.end ? toDbTimestamp(entry.end, entry.allDay) : null,
+    all_day: entry.allDay,
+    notes: entry.notes || null,
+    location: entry.location || null,
+    status: entry.status || "scheduled",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function sortAdvisorMeetings(meetings) {
+  return [...meetings].sort((a, b) => String(a.start).localeCompare(String(b.start)));
+}
+
+function getStoredHomeMeetings() {
+  return sortAdvisorMeetings(readStoredArray(HOME_MEETING_STORAGE_KEY, mockHomeMeetings).map(normalizeAdvisorMeeting));
+}
+
+function setStoredHomeMeetings(meetings) {
+  const next = sortAdvisorMeetings(meetings.map(normalizeAdvisorMeeting));
+  writeStoredArray(HOME_MEETING_STORAGE_KEY, next);
+  return next;
+}
+
+async function getCustomersForHomeFallback() {
+  if (!isSupabaseConfigured) return localCustomers.map(normalizeCustomerRecord);
+
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) return [];
+  return (data ?? []).map(normalizeCustomerRecord);
+}
+
+function getCustomerTaskCategory(customer) {
+  const task = `${customer.task ?? customer.nextAction ?? ""}`.toLowerCase();
+  if (customer.kycStatus && customer.kycStatus !== "Completed") return "KYC";
+  if (task.includes("will") || task.includes("estate")) return "Estate planning";
+  if (task.includes("renew")) return "Renewal";
+  return "Follow-up";
+}
+
+function getCustomerTaskPriority(customer, dueDate) {
+  if (customer.kycStatus && customer.kycStatus !== "Completed") return "High";
+  if (dueDate && dueDate <= toLocalDateString()) return "High";
+  if (customer.status === "Action needed") return "Medium";
+  return "Low";
+}
+
+function buildCustomerHomeTasks(customers) {
+  const today = toLocalDateString();
+  const candidates = customers
+    .filter((customer) => customer.task || customer.nextAction || customer.status === "Action needed")
+    .sort((a, b) => {
+      const ar = a.nextRenewal || "9999-12-31";
+      const br = b.nextRenewal || "9999-12-31";
+      return ar.localeCompare(br) || String(a.name).localeCompare(String(b.name));
+    })
+    .slice(0, 8);
+
+  return sortHomeTasks(
+    candidates.map((customer, index) => {
+      const category = getCustomerTaskCategory(customer);
+      const dueDate = customer.nextRenewal && customer.nextRenewal < "2030-01-01" ? customer.nextRenewal : today;
+      const status = category === "Renewal" ? "To Do" : "Follow-up";
+      const task = customer.task || customer.nextAction || `Follow up with ${customer.name}`;
+      return normalizeHomeTask({
+        id: `customer-task-${customer.id}`,
+        customerId: customer.id,
+        title: `${task}: ${customer.name}`,
+        priority: getCustomerTaskPriority(customer, dueDate),
+        category,
+        status,
+        dueDate,
+        notes: [
+          customer.preferredCommunicationChannel ? `Preferred channel: ${customer.preferredCommunicationChannel}.` : "",
+          customer.nextRenewal ? `Next renewal: ${customer.nextRenewal}${customer.nextRenewalPolicyType ? ` (${customer.nextRenewalPolicyType})` : ""}.` : "",
+        ].filter(Boolean).join(" "),
+        sortOrder: index * 10,
+      });
+    }),
+  );
+}
+
+function buildCustomerHomeMeetings(customers) {
+  const today = toLocalDateString();
+  const times = [
+    ["09:30", "10:15"],
+    ["11:30", "12:00"],
+    ["14:00", "14:45"],
+  ];
+  const candidates = customers
+    .filter((customer) => customer.status === "Action needed" || customer.nextRenewal)
+    .sort((a, b) => {
+      const ar = a.nextRenewal || "9999-12-31";
+      const br = b.nextRenewal || "9999-12-31";
+      return ar.localeCompare(br) || String(a.name).localeCompare(String(b.name));
+    })
+    .slice(0, 3);
+
+  return sortAdvisorMeetings(
+    candidates.map((customer, index) => {
+      const [startTime, endTime] = times[index] ?? times[0];
+      const meetingLabel = customer.nextRenewalPolicyType
+        ? `${customer.nextRenewalPolicyType} review`
+        : "client review";
+      return normalizeAdvisorMeeting({
+        id: `customer-meeting-${customer.id}`,
+        customerId: customer.id,
+        title: `${customer.name} ${meetingLabel}`,
+        start: `${today}T${startTime}`,
+        end: `${today}T${endTime}`,
+        notes: customer.task || customer.nextAction || "Review the client record and confirm the next action.",
+      });
+    }),
+  );
+}
+
+function buildHomeStats(tasks, meetings) {
+  const today = toLocalDateString();
+  const todoToday = tasks.filter((task) => task.status === "To Do" && (!task.dueDate || task.dueDate <= today)).length;
+  const meetingsToday = meetings.filter((meeting) => isSameLocalDate(meeting.start, today)).length;
+  const followUps = tasks.filter((task) => task.status === "Follow-up").length;
+  const completed = tasks.filter((task) => task.status === "Done").length;
+
+  return [
+    {
+      id: "todo",
+      label: "To-do Tasks",
+      value: String(todoToday),
+      helper: todoToday ? pluralize(todoToday, "task due today", "tasks due today") : "No tasks due today",
+    },
+    {
+      id: "meetings",
+      label: "Meetings",
+      value: String(meetingsToday),
+      helper: meetingsToday ? pluralize(meetingsToday, "client meeting", "client meetings") : "No meetings today",
+    },
+    {
+      id: "followups",
+      label: "Follow-ups",
+      value: String(followUps),
+      helper: followUps ? pluralize(followUps, "follow-up due", "follow-ups due") : "No follow-ups due",
+    },
+    {
+      id: "completed",
+      label: "Completed",
+      value: String(completed),
+      helper: completed ? pluralize(completed, "task done", "tasks done") : "No tasks done yet",
+    },
+  ];
+}
+
+function formatMeetingTime(meeting) {
+  if (!meeting?.start || !String(meeting.start).includes("T")) return "";
+  const [hour, minute] = String(meeting.start).slice(11, 16).split(":").map(Number);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${pad2(minute)} ${suffix}`;
+}
+
+function buildHomeBrief(tasks, meetings) {
+  const today = toLocalDateString();
+  const todayMeetings = meetings
+    .filter((meeting) => isSameLocalDate(meeting.start, today))
+    .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  const followUps = tasks.filter((task) => task.status === "Follow-up");
+  const priority = todayMeetings[0];
+  const priorityTime = formatMeetingTime(priority);
+
+  return {
+    advisorName: "Daniel",
+    meetingsText: pluralize(todayMeetings.length, "meeting today", "meetings today"),
+    followUpsText: pluralize(followUps.length, "follow-up due", "follow-ups due"),
+    priorityText: priority
+      ? `${priority.title}${priorityTime ? ` at ${priorityTime}` : ""}`
+      : "Your client task board",
+  };
+}
+
+function createHomeDashboard({ tasks, meetings, customers = [] }) {
+  const normalizedTasks = sortHomeTasks(tasks.map(normalizeHomeTask));
+  const normalizedMeetings = sortAdvisorMeetings(meetings.map(normalizeAdvisorMeeting));
+
+  return {
+    brief: buildHomeBrief(normalizedTasks, normalizedMeetings, customers),
+    stats: buildHomeStats(normalizedTasks, normalizedMeetings),
+    tasks: normalizedTasks,
+    meetings: normalizedMeetings,
+    syncedAt: new Date().toISOString(),
+  };
 }
 
 function normalizeCustomerRecord(customer) {
@@ -334,7 +707,7 @@ function buildCustomerKnowledgeSources(memories = [], articles = []) {
     .filter(Boolean);
   const memorySources = memories.map(normalizeCustomerMemory);
 
-  return dedupeCustomerKnowledgeSources([...articleSources, ...memorySources]);
+  return dedupeCustomerKnowledgeSources([...memorySources, ...articleSources]);
 }
 
 function escapeArticleHtml(text) {
@@ -519,12 +892,7 @@ function buildLocalCustomerChatReply({ customer, text, memories, articles = [] }
       return {
         id: `a-${Date.now()}`,
         role: "assistant",
-        text: [
-          `Based on ${formatCustomerSource(source)}, ${customer.name}'s latest net worth is ${fact.value}${fact.date ? ` as of ${fact.date}` : ""}.`,
-          source.kind === "article"
-            ? "I used the saved internal article that was indexed for future chatbot answers."
-            : "",
-        ].filter(Boolean).join("\n\n"),
+        text: `Based on ${formatCustomerSource(source)}, ${customer.name}'s latest net worth is ${fact.value}${fact.date ? ` as of ${fact.date}` : ""}.`,
       };
     }
   }
@@ -1155,10 +1523,10 @@ Current Client Context:
 - KYC Status: ${customer.kycStatus || "N/A"}
 - Client Since: ${customer.clientSince || "N/A"}
 
-Saved Knowledge Sources (client memories, meeting summaries, files, and internal articles saved to the database):
+Saved Customer Knowledge Sources (client memories, meeting summaries, files, and saved articles):
 ${memoryString}
 
-Respond to the Advisor's inquiry. Use the client's context and saved knowledge sources to ground your answer. Treat internal articles as authoritative advisor-written context. If an internal article and an older profile memory conflict, prefer the most recently updated internal article and mention the source/date. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
+Respond to the Advisor's inquiry. Use both client memories and saved articles when they are relevant. Do not default to articles; prefer the most recent directly relevant source, whether it is a memory, meeting note, file, or article. If sources conflict, say which source/date you used. When drafting emails or follow-ups, make them clear, warm, professional, and tailored. Keep responses concise, and format them nicely in markdown. Do not prefix the text with "Answer for ${customer.name}:" or similar boilerplate unless explicitly asked.`;
 
       const chatHistory = [...history];
       if (!chatHistory.some((h) => h.role === "user" && h.text === text)) {
@@ -1193,7 +1561,7 @@ Respond to the Advisor's inquiry. Use the client's context and saved knowledge s
 
   draftCustomerFollowUp: async ({ customer, memories = [], articles = [], workflowConfig = null, model }) => {
     if (!customer) return null;
-    const text = `Draft a follow-up email for ${customer.name} using the latest saved memory, internal article, and next step.`;
+    const text = `Draft a follow-up email for ${customer.name} using the latest saved customer knowledge, including memories and articles, plus the next step.`;
     return api.sendCustomerMessage({ customer, text, memories, articles, history: [], workflowConfig, model });
   },
 
@@ -1280,6 +1648,208 @@ Do not invent facts. Preserve commitments, dates, financial goals, risks, object
   getAgentHub: () => fromTableOrMock("agent_hub", mockAgentHub),
 
   getWorkflows: () => fromTableOrMock("workflows", mockWorkflows),
+
+  // --- Home dashboard ----------------------------------------------------
+
+  getHomeTasks: async () => {
+    if (!isSupabaseConfigured) {
+      await delay(120);
+      return getStoredHomeTasks();
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_tasks")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("updated_at", { ascending: false });
+
+      if (error) throw error;
+      if (data?.length) return sortHomeTasks(data.map(normalizeHomeTask));
+    } catch {
+      const stored = readStoredArray(HOME_TASK_STORAGE_KEY, []);
+      if (stored.length) return sortHomeTasks(stored.map(normalizeHomeTask));
+    }
+
+    const customers = await getCustomersForHomeFallback();
+    return buildCustomerHomeTasks(customers);
+  },
+
+  saveHomeTask: async (task) => {
+    const entry = normalizeHomeTask({
+      ...task,
+      title: task?.title?.trim() || "New task",
+      icon: task?.icon ?? getHomeTaskIcon(task),
+      muted: task?.status === "Done",
+    });
+
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      const next = setStoredHomeTasks(
+        getStoredHomeTasks().some((item) => item.id === entry.id)
+          ? getStoredHomeTasks().map((item) => (item.id === entry.id ? entry : item))
+          : [...getStoredHomeTasks(), entry],
+      );
+      return next.find((item) => item.id === entry.id) ?? entry;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_tasks")
+        .upsert(homeTaskToRow(entry), { onConflict: "id" })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      return normalizeHomeTask(data);
+    } catch {
+      const stored = readStoredArray(HOME_TASK_STORAGE_KEY, []);
+      const current = stored.length
+        ? stored.map(normalizeHomeTask)
+        : buildCustomerHomeTasks(await getCustomersForHomeFallback());
+      const next = setStoredHomeTasks(
+        current.some((item) => item.id === entry.id)
+          ? current.map((item) => (item.id === entry.id ? entry : item))
+          : [...current, entry],
+      );
+      return next.find((item) => item.id === entry.id) ?? entry;
+    }
+  },
+
+  deleteHomeTask: async (taskId) => {
+    if (!taskId) return false;
+
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      setStoredHomeTasks(getStoredHomeTasks().filter((task) => task.id !== taskId));
+      return true;
+    }
+
+    try {
+      const { error } = await supabase.from("advisor_tasks").delete().eq("id", taskId);
+      if (error) throw error;
+      return true;
+    } catch {
+      const current = readStoredArray(HOME_TASK_STORAGE_KEY, []).map(normalizeHomeTask);
+      setStoredHomeTasks(current.filter((task) => task.id !== taskId));
+      return true;
+    }
+  },
+
+  getAdvisorMeetings: async () => {
+    if (!isSupabaseConfigured) {
+      await delay(120);
+      return getStoredHomeMeetings();
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_meetings")
+        .select("*")
+        .order("starts_at", { ascending: true });
+
+      if (error) throw error;
+      if (data?.length) return sortAdvisorMeetings(data.map(normalizeAdvisorMeeting));
+    } catch {
+      const stored = readStoredArray(HOME_MEETING_STORAGE_KEY, []);
+      if (stored.length) return sortAdvisorMeetings(stored.map(normalizeAdvisorMeeting));
+    }
+
+    const customers = await getCustomersForHomeFallback();
+    return buildCustomerHomeMeetings(customers);
+  },
+
+  saveAdvisorMeeting: async (meeting) => {
+    const entry = normalizeAdvisorMeeting(meeting);
+
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      const current = getStoredHomeMeetings();
+      const next = setStoredHomeMeetings(
+        current.some((item) => item.id === entry.id)
+          ? current.map((item) => (item.id === entry.id ? entry : item))
+          : [...current, entry],
+      );
+      return next.find((item) => item.id === entry.id) ?? entry;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("advisor_meetings")
+        .upsert(advisorMeetingToRow(entry), { onConflict: "id" })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      return normalizeAdvisorMeeting(data);
+    } catch {
+      const stored = readStoredArray(HOME_MEETING_STORAGE_KEY, []);
+      const current = stored.length
+        ? stored.map(normalizeAdvisorMeeting)
+        : buildCustomerHomeMeetings(await getCustomersForHomeFallback());
+      const next = setStoredHomeMeetings(
+        current.some((item) => item.id === entry.id)
+          ? current.map((item) => (item.id === entry.id ? entry : item))
+          : [...current, entry],
+      );
+      return next.find((item) => item.id === entry.id) ?? entry;
+    }
+  },
+
+  deleteAdvisorMeeting: async (meetingId) => {
+    if (!meetingId) return false;
+
+    if (!isSupabaseConfigured) {
+      await delay(80);
+      setStoredHomeMeetings(getStoredHomeMeetings().filter((meeting) => meeting.id !== meetingId));
+      return true;
+    }
+
+    try {
+      const { error } = await supabase.from("advisor_meetings").delete().eq("id", meetingId);
+      if (error) throw error;
+      return true;
+    } catch {
+      const current = readStoredArray(HOME_MEETING_STORAGE_KEY, []).map(normalizeAdvisorMeeting);
+      setStoredHomeMeetings(current.filter((meeting) => meeting.id !== meetingId));
+      return true;
+    }
+  },
+
+  getHomeDashboard: async () => {
+    const [tasks, meetings, customers] = await Promise.all([
+      api.getHomeTasks(),
+      api.getAdvisorMeetings(),
+      getCustomersForHomeFallback(),
+    ]);
+
+    return createHomeDashboard({ tasks, meetings, customers });
+  },
+
+  subscribeHomeDashboard: (onChange) => {
+    if (typeof onChange !== "function") return () => {};
+
+    if (!isSupabaseConfigured) {
+      const handler = (event) => {
+        if ([HOME_TASK_STORAGE_KEY, HOME_MEETING_STORAGE_KEY].includes(event.key)) onChange();
+      };
+      if (typeof window !== "undefined") window.addEventListener("storage", handler);
+      return () => {
+        if (typeof window !== "undefined") window.removeEventListener("storage", handler);
+      };
+    }
+
+    const channel = supabase
+      .channel("home-dashboard-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "advisor_tasks" }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "advisor_meetings" }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customers" }, onChange)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
 
   // Home chat seed + suggested prompts (presentational — always mock).
   getChatSeed: async () => {
