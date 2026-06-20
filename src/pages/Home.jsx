@@ -101,8 +101,8 @@ export function Home() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white">
-        <div className="w-full px-4 pt-4">
-          <section className="rounded-[8px] bg-white py-5 pl-2 pr-0 text-[#4a4a4a]">
+        <div className="mx-auto w-full max-w-[1440px] px-4 pt-4">
+          <section className="rounded-[8px] bg-white py-4 text-[#4a4a4a]">
             <h2 className="mb-2.5 flex items-center gap-2 text-[22px] font-semibold text-[#101112]">
               {initialLoading ? (
                 <SkeletonBlock width={260} height={28} />
@@ -139,24 +139,28 @@ export function Home() {
           </section>
         </div>
 
-        <TodoList
-          cards={todoCards}
-          loading={initialLoading}
-          onOpenTask={setEditingTask}
-          onNewTask={(status) => setEditingTask(createTodoDraft(status))}
-          onMoveTask={moveTodoTask}
-        />
+        <div className="mx-auto grid w-full max-w-[1440px] gap-4 px-4 pb-6 pt-3 lg:grid-cols-[minmax(420px,1fr)_420px]">
+          <div className="min-w-0">
+            {initialLoading ? (
+              <HomeCalendarSkeleton />
+            ) : (
+              <MeetingsCalendar
+                events={meetings}
+                onSaveEvent={saveMeeting}
+                onDeleteEvent={deleteMeeting}
+                selectedEventId={selectedMeetingId}
+              />
+            )}
+          </div>
 
-        {initialLoading ? (
-          <HomeCalendarSkeleton />
-        ) : (
-          <MeetingsCalendar
-            events={meetings}
-            onSaveEvent={saveMeeting}
-            onDeleteEvent={deleteMeeting}
-            selectedEventId={selectedMeetingId}
+          <TodoList
+            cards={todoCards}
+            loading={initialLoading}
+            onOpenTask={setEditingTask}
+            onNewTask={(status) => setEditingTask(createTodoDraft(status))}
+            onMoveTask={moveTodoTask}
           />
-        )}
+        </div>
       </div>
       {editingTask && (
         <TodoTaskModal
@@ -264,16 +268,6 @@ const boardGroups = [
     addShadow: "shadow-[0_0_0_1px_rgba(42,28,0,0.07)]",
   },
   {
-    status: "Meeting",
-    tone: "blue",
-    background: "bg-[rgba(0,128,213,0.047)]",
-    headerBg: "bg-[rgba(0,118,217,0.204)]",
-    text: "text-[#264a72]",
-    accent: "bg-[#2783de]",
-    addColor: "text-[#2783de]",
-    addShadow: "shadow-[0_0_0_1px_rgba(0,124,215,0.094)]",
-  },
-  {
     status: "in progress",
     tone: "purple",
     background: "bg-[rgba(126,34,206,0.047)]",
@@ -310,48 +304,31 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
   return (
     <div
       data-testid="home-todo-list"
-      className="w-full overflow-x-auto text-[#2c2c2b] transition-all"
+      className="min-w-0 text-[#2c2c2b] transition-all"
     >
-      <div className="relative w-full pl-2 pt-12 transition-all">
-        <div className="absolute left-2 top-0 z-10 h-12 w-full bg-white pt-2">
-          <div className="inline-flex">
-            {boardGroups.map((group) => {
-              const groupCards = cards.filter((card) => card.status === group.status);
-              return (
-                  <BoardHeader
-                  key={`header-${group.status}`}
-                  group={group}
-                  count={groupCards.length}
-                  loading={loading}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="relative flex w-full transition-all">
-          {boardGroups.map((group) => {
-            const groupCards = cards.filter((card) => card.status === group.status);
-            return (
-              <BoardGroup
-                key={`group-${group.status}`}
-                group={group}
-                cards={groupCards}
-                loading={loading}
-                onOpenTask={onOpenTask}
-                onNewTask={onNewTask}
-                onDropTask={handleDrop}
-                onDragStart={setDraggedCardId}
-                onDragEnd={() => {
-                  setDraggedCardId(null);
-                  setDragOverStatus(null);
-                }}
-                onDragOver={setDragOverStatus}
-                isDragTarget={dragOverStatus === group.status && draggedCard?.status !== group.status}
-              />
-            );
-          })}
-        </div>
+      <div className="flex flex-col gap-3 transition-all">
+        {boardGroups.map((group) => {
+          const groupCards = cards.filter((card) => card.status === group.status);
+          return (
+            <BoardGroup
+              key={`group-${group.status}`}
+              group={group}
+              count={groupCards.length}
+              cards={groupCards}
+              loading={loading}
+              onOpenTask={onOpenTask}
+              onNewTask={onNewTask}
+              onDropTask={handleDrop}
+              onDragStart={setDraggedCardId}
+              onDragEnd={() => {
+                setDraggedCardId(null);
+                setDragOverStatus(null);
+              }}
+              onDragOver={setDragOverStatus}
+              isDragTarget={dragOverStatus === group.status && draggedCard?.status !== group.status}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -359,7 +336,7 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
 
 function BoardHeader({ group, count, loading }) {
   return (
-    <div className={`mr-3 flex h-10 w-[276px] shrink-0 items-center rounded-t-[10px] px-2 text-[13px] ${group.background}`}>
+    <div className={`flex h-9 w-full items-center rounded-[8px] px-2 text-[13px] ${group.background}`}>
       <div className="flex items-center rounded-[6px] p-[3px]">
         <div className={`inline-flex h-5 max-w-full items-center rounded-[10px] px-[7px] pr-[9px] text-[13px] leading-[20px] ${group.headerBg} ${group.text}`}>
           <span className={`mr-[5px] size-2 shrink-0 rounded-full ${group.accent}`} />
@@ -376,6 +353,7 @@ function BoardHeader({ group, count, loading }) {
 
 function BoardGroup({
   group,
+  count,
   cards,
   loading,
   onOpenTask,
@@ -400,47 +378,51 @@ function BoardGroup({
         onDropTask(group.status);
       }}
       className={[
-        "mr-3 box-content h-max min-h-[132px] w-[260px] shrink-0 rounded-b-[10px] px-2 pb-2 transition-shadow",
+        "min-h-[132px] rounded-[10px] p-2 transition-shadow",
         group.background,
         isDragTarget ? "shadow-[inset_0_0_0_2px_rgba(70,161,113,0.35)]" : "",
       ].join(" ")}
     >
-      <div className="h-[3px] w-[260px]" />
-      {loading ? (
-        <>
-          <TodoCardSkeleton tall />
-          <TodoCardSkeleton />
-          <div className="h-10 w-[260px] rounded-[10px] bg-white px-3 py-2.5 shadow-[0_0_0_1px_rgba(42,28,0,0.07)]">
-            <SkeletonBlock width={86} height={16} />
-          </div>
-        </>
-      ) : (
-        <>
-          {cards.map((card) => (
-            <TodoCard
-              key={card.id}
-              card={card}
-              onClick={() => onOpenTask(card)}
-              onDragStart={() => onDragStart(card.id)}
-              onDragEnd={onDragEnd}
-            />
-          ))}
-          <button
-            type="button"
-            onClick={() => onNewTask(group.status)}
-            className={[
-              "inline-flex h-10 w-[260px] items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[13px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
-              group.addColor,
-              group.addShadow,
-            ].join(" ")}
-          >
-            <span className="flex size-4 items-center justify-center text-[22px] font-light leading-none">
-              +
-            </span>
-            <span>New task</span>
-          </button>
-        </>
-      )}
+      <BoardHeader group={group} count={count} loading={loading} />
+      <div className="mt-2 flex flex-col gap-2">
+        {loading ? (
+          <>
+            <TodoCardSkeleton tall />
+            <TodoCardSkeleton />
+            <div className="h-10 w-full rounded-[10px] bg-white px-3 py-2.5 shadow-[0_0_0_1px_rgba(42,28,0,0.07)]">
+              <SkeletonBlock width={86} height={16} />
+            </div>
+          </>
+        ) : (
+          <>
+            {cards.map((card) => (
+              <TodoCard
+                key={card.id}
+                card={card}
+                onClick={() => onOpenTask(card)}
+                onDragStart={() => onDragStart(card.id)}
+                onDragEnd={onDragEnd}
+              />
+            ))}
+            {group.status !== "Done" ? (
+              <button
+                type="button"
+                onClick={() => onNewTask(group.status)}
+                className={[
+                  "inline-flex h-10 w-full items-center gap-[9px] rounded-[10px] bg-white px-2.5 text-[13px] leading-[18px] transition-colors hover:bg-[#f8f8f7]",
+                  group.addColor,
+                  group.addShadow,
+                ].join(" ")}
+              >
+                <span className="flex size-4 items-center justify-center text-[22px] font-light leading-none">
+                  +
+                </span>
+                <span>New task</span>
+              </button>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -449,7 +431,7 @@ function TodoCardSkeleton({ tall = false }) {
   return (
     <div
       className={[
-        "mb-2 flex w-[260px] rounded-[10px] bg-white px-4 shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)]",
+        "flex w-full rounded-[10px] bg-white px-3 shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)]",
         tall ? "h-[102px] items-start py-2.5" : "h-10 items-center",
       ].join(" ")}
     >
@@ -530,7 +512,7 @@ function TodoCard({ card, onClick, onDragStart, onDragEnd }) {
       }}
       onDragEnd={onDragEnd}
       className={[
-        "mb-2 flex w-[260px] cursor-grab rounded-[10px] bg-white text-left transition-colors hover:bg-[#f8f8f7] active:cursor-grabbing",
+        "flex w-full cursor-grab rounded-[10px] bg-white text-left transition-colors hover:bg-[#f8f8f7] active:cursor-grabbing",
         hasTags ? "h-[102px] items-start px-4 py-2.5" : "h-10 items-center px-4",
         "shadow-[0_4px_12px_rgba(25,25,25,0.027),0_1px_2px_rgba(25,25,25,0.02),0_0_0_1px_rgba(42,28,0,0.07)]",
       ].join(" ")}
