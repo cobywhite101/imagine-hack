@@ -23,12 +23,10 @@ import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
 
 /**
- * Functional CRM grid styled as a faithful replica of Attio's spreadsheet view.
+ * Functional CRM grid for client records.
  *
- * Uses Attio's light palette and pixel metrics on purpose (rgb(238,239,241)
- * borders, rgb(16,17,18) ink, rgb(38,109,240) links, rgba(38,109,240,0.04)
- * row hover) rather than the app's dark tokens — the goal is visual accuracy
- * to the source design.
+ * Keeps a compact spreadsheet-like surface so advisors can scan and update
+ * next actions without leaving the client hub.
  */
 
 const BORDER = "rgb(238, 239, 241)";
@@ -50,6 +48,7 @@ const DEAL_STATUS_TO_GRID_STATUS = {
   "Churn-risk": "Action needed",
 };
 const ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
+const FALLBACK_ACCENT = "#868e96";
 const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
@@ -172,6 +171,16 @@ function getInitials(name) {
   return initials || "NC";
 }
 
+function getCustomerAccent(customer) {
+  if (customer.accent && customer.accent !== FALLBACK_ACCENT) return customer.accent;
+  const key = String(customer.id ?? customer.name ?? customer.company ?? "");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return ACCENTS[hash % ACCENTS.length];
+}
+
 function getCellValue(row, col) {
   const value = row[col.key];
   if (Array.isArray(value)) return value.join(", ");
@@ -191,7 +200,7 @@ function normalizeCustomer(customer) {
     name,
     task: customer.task ?? customer.nextAction ?? customer.next_action ?? "",
     avatar: customer.avatar ?? getInitials(name),
-    accent: customer.accent ?? "#868e96",
+    accent: getCustomerAccent(customer),
     status,
     email: customer.email ?? customer.contact ?? "",
     occupation: customer.occupation ?? "",

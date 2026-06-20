@@ -58,6 +58,17 @@ export function Home() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+        <div className="w-[1179px] px-4 pt-4">
+          <section className="rounded-[8px] border border-[#eeeeee] bg-white p-5 text-[#4a4a4a]">
+            <h2 className="mb-2.5 text-[22px] font-semibold text-[#317cff]">
+              Good morning, Daniel.
+            </h2>
+            <p className="max-w-[920px] text-[18px] font-medium leading-7 text-[#101112]">
+              You have <span className="font-semibold text-[#317cff]">three meetings today</span>, with <span className="font-semibold text-[#317cff]">two follow-ups slipping</span>. <span className="font-semibold text-[#317cff]">Mei Lin's portfolio review at 9:30</span> is your first priority.
+            </p>
+          </section>
+        </div>
+
         <AdvisorStatsStrip />
 
         <div className="w-[1179px] px-4 pb-6 pt-4">
@@ -111,6 +122,24 @@ const initialTodoCards = [
     category: "",
     status: "To Do",
     notes: "Confirm release notes have been sent.",
+  },
+  {
+    id: "call-mei-lin-follow-up",
+    title: "Call Mei Lin after review",
+    icon: "mail",
+    priority: "High",
+    category: "Follow-up",
+    status: "Follow-up",
+    notes: "Confirm next steps from the 9:30 portfolio review.",
+  },
+  {
+    id: "send-anand-follow-up",
+    title: "Send Anand KYC reminder",
+    icon: "mail",
+    priority: "Medium",
+    category: "Follow-up",
+    status: "Follow-up",
+    notes: "KYC documents are still pending; send a concise WhatsApp reminder.",
   },
   {
     id: "new-task-placeholder",
@@ -230,6 +259,16 @@ const boardGroups = [
     addShadow: "shadow-[0_0_0_1px_rgba(0,124,215,0.094)]",
   },
   {
+    status: "Follow-up",
+    tone: "purple",
+    background: "bg-[rgba(126,34,206,0.047)]",
+    headerBg: "bg-[rgba(126,34,206,0.15)]",
+    text: "text-[#6f3ca6]",
+    accent: "bg-[#a855f7]",
+    addColor: "text-[#8b5cf6]",
+    addShadow: "shadow-[0_0_0_1px_rgba(126,34,206,0.09)]",
+  },
+  {
     status: "Done",
     tone: "green",
     background: "bg-[rgba(3,87,31,0.035)]",
@@ -245,10 +284,10 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
   return (
     <div
       data-testid="home-todo-list"
-      className="h-[549px] w-[1169px] overflow-x-auto text-[#2c2c2b] transition-all"
+      className="w-[1169px] overflow-x-auto text-[#2c2c2b] transition-all"
     >
-      <div className="relative ml-24 h-[549px] w-[872px] pl-2 pt-12 transition-all">
-        <div className="absolute left-2 top-0 z-10 h-12 w-[872px] bg-white pt-2">
+      <div className="relative w-max pl-2 pt-12 transition-all">
+        <div className="absolute left-2 top-0 z-10 h-12 w-max bg-white pt-2">
           <div className="inline-flex">
             {boardGroups.map((group) => {
               const groupCards = cards.filter((card) => card.status === group.status);
@@ -263,7 +302,7 @@ function TodoList({ cards, onOpenTask, onNewTask }) {
           </div>
         </div>
 
-        <div className="relative flex h-[321px] w-[864px] transition-all">
+        <div className="relative flex w-max transition-all">
           {boardGroups.map((group) => {
             const groupCards = cards.filter((card) => card.status === group.status);
             return (
@@ -404,8 +443,8 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="relative my-6 flex max-h-[calc(100vh-3rem)] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_64px_rgba(20,20,20,0.24)]">
-        <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between rounded-t-2xl border-b border-[rgba(39,131,222,0.16)] bg-[rgba(39,131,222,0.08)] px-6 py-4">
-          <h1 className="truncate pr-2 text-[20px] font-semibold leading-8 text-[#264a72]">
+        <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between rounded-t-2xl border-b border-[#e9eae6] bg-white px-6 py-4">
+          <h1 className="truncate pr-2 text-[20px] font-semibold leading-8 text-[#1a1a1a]">
             Task details
           </h1>
           <div className="flex items-center gap-x-2">
@@ -421,7 +460,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
             <button
               type="button"
               onClick={onClose}
-              className="h-8 rounded-full bg-white/80 px-3 text-[14px] font-semibold leading-4 text-[#1a1a1a] transition-colors hover:bg-white"
+              className="h-8 rounded-full bg-[#f8f8f7] px-3 text-[14px] font-semibold leading-4 text-[#1a1a1a] transition-colors hover:bg-[#eeeeec]"
             >
               Cancel
             </button>
@@ -432,18 +471,20 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
               className={[
                 "h-8 rounded-full px-3 text-[14px] font-semibold leading-4 transition-colors",
                 canSave
-                  ? "bg-[#2783de] text-white hover:bg-[#1f73c6]"
-                  : "cursor-not-allowed bg-white/70 text-[#81817e]",
+                  ? "bg-[#1a1a1a] text-white hover:bg-black"
+                  : "cursor-not-allowed bg-[#f8f8f7] text-[#81817e]",
               ].join(" ")}
             >
               Save
             </button>
 
+            <div className="mx-2 h-5 w-px bg-[#e9eae6]" />
+
             <button
               type="button"
               aria-label="Close"
               onClick={onClose}
-              className="ml-2 flex size-8 items-center justify-center rounded-full bg-white/80 text-[#264a72] transition-colors hover:bg-white"
+              className="flex size-8 items-center justify-center rounded-full bg-[#f8f8f7] text-[#1a1a1a] transition-colors hover:bg-[#eeeeec]"
             >
               <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
                 <path d="M13.25 3.95L12.05 2.75L8 6.8L3.95 2.75L2.75 3.95L6.8 8L2.75 12.05L3.95 13.25L8 9.2L12.05 13.25L13.25 12.05L9.2 8L13.25 3.95Z" />
@@ -472,10 +513,11 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                 <select
                   value={status}
                   onChange={(event) => setStatus(event.target.value)}
-                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none focus:border-[#2783de]"
+                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none focus:border-[#1a1a1a]"
                 >
                   <option>To Do</option>
                   <option>In progress</option>
+                  <option>Follow-up</option>
                   <option>Done</option>
                 </select>
               </label>
@@ -486,7 +528,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                 <select
                   value={priority}
                   onChange={(event) => setPriority(event.target.value)}
-                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none focus:border-[#2783de]"
+                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none focus:border-[#1a1a1a]"
                 >
                   <option value="">None</option>
                   <option>Low</option>
@@ -502,7 +544,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                   value={category}
                   onChange={(event) => setCategory(event.target.value)}
                   placeholder="Feature request"
-                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none placeholder:text-[#aaaaa8] focus:border-[#2783de]"
+                  className="h-10 w-full rounded-[8px] border border-[#e9eae6] bg-white px-3 text-[14px] font-medium text-[#1a1a1a] outline-none placeholder:text-[#aaaaa8] focus:border-[#1a1a1a]"
                 />
               </label>
             </div>
@@ -515,7 +557,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 placeholder="Add context..."
-                className="min-h-[160px] w-full resize-none rounded-[12px] border border-[#e9eae6] bg-white p-3 text-[15px] leading-6 text-[#1a1a1a] outline-none placeholder:text-[#aaaaa8] focus:border-[#2783de]"
+                className="min-h-[160px] w-full resize-none rounded-[12px] border border-[#e9eae6] bg-white p-3 text-[15px] leading-6 text-[#1a1a1a] outline-none placeholder:text-[#aaaaa8] focus:border-[#1a1a1a]"
               />
             </label>
           </div>
@@ -547,6 +589,7 @@ function getTaskIcon(task) {
   if (task.status === "Done") return "check";
   if (task.id === "publish-release-notes") return "notepad";
   if (task.status === "In progress") return "notepad";
+  if (task.status === "Follow-up") return "mail";
   return "plus";
 }
 
@@ -587,6 +630,19 @@ function TodoIcon({ type, muted = false, compact = false }) {
         alt=""
         className={iconClass}
       />
+    );
+  }
+
+  if (type === "mail") {
+    return (
+      <span
+        className={[
+          "mr-3 flex shrink-0 items-center justify-center rounded-[6px] bg-[#faf5ff] text-[#8b5cf6]",
+          compact ? "size-5" : "mt-0.5 size-7",
+        ].join(" ")}
+      >
+        <MailCheck className={compact ? "size-3.5" : "size-4"} strokeWidth={2} />
+      </span>
     );
   }
 

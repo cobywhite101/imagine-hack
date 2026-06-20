@@ -3,9 +3,7 @@ import { ChevronUp, Code, Info, MoreHorizontal, Plus, Waypoints } from "lucide-r
 import { cn } from "@/lib/utils";
 import { ArticleEditor, SourceFileRow } from "@/features/customers/ArticleEditor";
 
-/* Notion-like client workflow configuration panel:
-   a customer icon, title + status, owner row, action buttons, and a stack of
-   collapsible sections for workflow guidance, sources, and capabilities. */
+/* Client workflow configuration panel. */
 
 const ACCENT = "#266df0"; // blue used for active toggles + connect link
 
@@ -64,7 +62,7 @@ function Section({ label, defaultOpen = true, children }) {
   );
 }
 
-// Borderless auto-growing textarea — reads like plain text, edits like Notion.
+// Borderless auto-growing textarea for inline workflow notes.
 function EditableText({ value, onChange, placeholder, italic = false, ariaLabel }) {
   const ref = useRef(null);
 
@@ -91,35 +89,27 @@ function EditableText({ value, onChange, placeholder, italic = false, ariaLabel 
   );
 }
 
-function WorkdayLogo() {
+function RecordsMark() {
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[#f5a623] text-[11px] font-bold lowercase text-white">
-      w
+      r
     </span>
   );
 }
 
-function DriveLogo() {
+function DocumentsMark() {
   return (
-    <svg viewBox="0 0 87.3 78" className="size-[18px] shrink-0" aria-hidden="true">
-      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
-      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-      <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-      <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-    </svg>
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[#266df0] text-[11px] font-bold lowercase text-white">
+      d
+    </span>
   );
 }
 
-function SlackLogo() {
+function MessagesMark() {
   return (
-    <svg viewBox="0 0 122.8 122.8" className="size-[18px] shrink-0" aria-hidden="true">
-      <path d="M25.8 77.6c0 7.1-5.8 12.9-12.9 12.9S0 84.7 0 77.6s5.8-12.9 12.9-12.9h12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9z" fill="#e01e5a" />
-      <path d="M45.2 25.8c-7.1 0-12.9-5.8-12.9-12.9S38.1 0 45.2 0s12.9 5.8 12.9 12.9v12.9zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H12.9C5.8 58.1 0 52.3 0 45.2s5.8-12.9 12.9-12.9z" fill="#36c5f0" />
-      <path d="M97 45.2c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V12.9C64.7 5.8 70.5 0 77.6 0s12.9 5.8 12.9 12.9z" fill="#2eb67d" />
-      <path d="M77.6 97c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9z" fill="#ecb22e" />
-    </svg>
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[#7048e8] text-[11px] font-bold lowercase text-white">
+      m
+    </span>
   );
 }
 
@@ -253,16 +243,16 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
         <div className="-mt-1">
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-2.5">
-              <WorkdayLogo />
-              <span className="text-[15px]">Workday</span>
+              <RecordsMark />
+              <span className="text-[15px]">Client records</span>
             </div>
-            <Toggle label="Workday" checked={!!knowledge.workday} onChange={(value) => setKnowledge("workday", value)} />
+            <Toggle label="Client records" checked={!!knowledge.workday} onChange={(value) => setKnowledge("workday", value)} />
           </div>
 
           <div className="flex items-center justify-between py-2">
             <div className="flex min-w-0 items-center gap-2.5">
-              <DriveLogo />
-              <span className={cn("text-[15px]", knowledge.drive ? "" : "italic text-[#a0a0a6]")}>Google Drive</span>
+              <DocumentsMark />
+              <span className={cn("text-[15px]", knowledge.drive ? "" : "italic text-[#a0a0a6]")}>Document vault</span>
               {!knowledge.drive && (
                 <>
                   <span className="text-[#cfcfd4]">•</span>
@@ -277,7 +267,7 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
               )}
             </div>
             <Toggle
-              label="Google Drive"
+              label="Document vault"
               checked={!!knowledge.drive}
               disabled={!knowledge.drive}
               onChange={(value) => setKnowledge("drive", value)}
@@ -286,10 +276,10 @@ export function WorkflowDetails({ config, onChange, articles = [], onSaveArticle
 
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-2.5">
-              <SlackLogo />
-              <span className="text-[15px]">Slack</span>
+              <MessagesMark />
+              <span className="text-[15px]">Team messages</span>
             </div>
-            <Toggle label="Slack" checked={!!knowledge.slack} onChange={(value) => setKnowledge("slack", value)} />
+            <Toggle label="Team messages" checked={!!knowledge.slack} onChange={(value) => setKnowledge("slack", value)} />
           </div>
 
           <button

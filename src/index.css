@@ -140,8 +140,7 @@
   }
 }
 
-/* FullCalendar — scoped to the Home "Today's meetings" card. Matches the
-   minimal card aesthetic (Notion Calendar–like). */
+/* FullCalendar — scoped to the Home "Today's meetings" card. */
 .meetings-calendar {
   --fc-border-color: #eeeeee;
   --fc-today-bg-color: #eff6ff;

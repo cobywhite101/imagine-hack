@@ -2,15 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-/* Knowledge "source file" UI — a faithful port of Intercom's Knowledge Hub:
-   - SourceFileRow: the "Articles · Snippets, public, internal, docs" list row.
-   - ArticleEditor: the full "Internal article" editor that opens on click.
-   Styled to match the light, hardcoded look of the customer workspace panel
-   (not the dark DESIGN.md theme). Colors/icons mirror the captured component.
-   Reference colors: ink #1a1a1a, muted #646462, surface #f8f8f7, line #e9eae6,
-   disabled #81817e, toolbar #222222, hover accent #266df0. */
+/* Knowledge source editor used inside the customer workspace. */
 
-/* The stacked-lines "campaign" glyph Intercom uses for an article folder. */
+/* Stacked-lines glyph for a source file row. */
 export function ArticleStackIcon({ className }) {
   return (
     <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden="true">
@@ -19,7 +13,7 @@ export function ArticleStackIcon({ className }) {
   );
 }
 
-/* One row in the Knowledge "source files" list. */
+/* One row in the knowledge source list. */
 export function SourceFileRow({ title, subtitle, onClick }) {
   return (
     <button
@@ -38,7 +32,7 @@ export function SourceFileRow({ title, subtitle, onClick }) {
   );
 }
 
-/* Toolbar glyphs — exact paths from the captured composer media toolbar. */
+/* Toolbar glyphs for lightweight rich-text editing. */
 const TOOL_ICONS = [
   {
     name: "Image",
@@ -75,7 +69,7 @@ const TOOL_ICONS = [
     ),
   },
   {
-    name: "Messenger card",
+    name: "Embedded card",
     node: (
       <path
         fillRule="evenodd"

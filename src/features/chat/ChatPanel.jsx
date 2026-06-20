@@ -21,7 +21,7 @@ import { api } from "@/services/dataClient";
 
 const assistantSections = [
   {
-    title: "📋 Data Management",
+    title: "Data Management",
     items: [
       "Look up, create, and update records (Companies, People, etc.)",
       "Search and filter your CRM data",
@@ -29,18 +29,18 @@ const assistantSections = [
     ],
   },
   {
-    title: "✅ Tasks",
+    title: "Tasks",
     items: [
       "Create, update, complete, and delete tasks",
       "Assign tasks to workspace members and link them to records",
     ],
   },
   {
-    title: "📧 Emails",
-    items: ["Search through synced emails", "Draft and send emails directly from Attio"],
+    title: "Emails",
+    items: ["Search through synced emails", "Draft follow-up emails for review"],
   },
   {
-    title: "📞 Calls & Meetings",
+    title: "Calls & Meetings",
     items: [
       "Search and summarize call recordings",
       "Pull key snippets and insights from calls",
@@ -48,7 +48,7 @@ const assistantSections = [
     ],
   },
   {
-    title: "⚡ Workflows",
+    title: "Workflows",
     items: [
       "Create and edit workflow automations",
       "Explain existing workflows",
@@ -56,7 +56,7 @@ const assistantSections = [
     ],
   },
   {
-    title: "🔍 Research",
+    title: "Research",
     items: [
       "Search the web for information about companies or people not in your workspace",
     ],
@@ -185,32 +185,21 @@ function RecentChatComposer({ onSend, disabled = false }) {
   );
 }
 
-function ProviderMark({ provider }) {
-  if (provider === "google") {
-    return (
-      <span className="grid size-3.5 place-items-center text-[18px] font-semibold leading-none">
-        <span className="text-[#4285f4]">G</span>
-      </span>
-    );
-  }
-
+function ProviderMark({ label }) {
   return (
-    <span className="grid size-3.5 grid-cols-2 grid-rows-2 overflow-hidden">
-      <span className="bg-[#f25022]" />
-      <span className="bg-[#7fba00]" />
-      <span className="bg-[#00a4ef]" />
-      <span className="bg-[#ffb900]" />
+    <span className="grid size-4 place-items-center rounded bg-[#eef2ff] text-[10px] font-semibold text-[#266df0]">
+      {label.slice(0, 1)}
     </span>
   );
 }
 
-function AccountButton({ provider, children }) {
+function AccountButton({ children }) {
   return (
     <a
       href="#sync"
       className="flex h-8 items-center gap-2 whitespace-nowrap rounded-xl bg-white px-3 text-[14px] font-medium leading-5 tracking-[-0.14px] text-[#101112] shadow-[0_0_0_1px_rgba(28,40,64,0.08),0_2px_8px_rgba(28,40,64,0.08)]"
     >
-      <ProviderMark provider={provider} />
+      <ProviderMark label={children} />
       {children}
     </a>
   );
@@ -248,8 +237,8 @@ function MeetingsBlock() {
           </p>
         </div>
         <div className="flex h-8 w-[383.82px] items-center justify-start gap-2">
-          <AccountButton provider="google">Sync Google Account</AccountButton>
-          <AccountButton provider="microsoft">Sync Microsoft Account</AccountButton>
+          <AccountButton>Connect calendar</AccountButton>
+          <AccountButton>Connect inbox</AccountButton>
         </div>
       </div>
     </section>
@@ -299,7 +288,7 @@ function HomeState({ onSend, disabled = false }) {
         <div className="flex h-[686px] w-[1165px] flex-col items-center justify-stretch px-6 pb-14">
           <div className="mb-6 mt-12 flex h-6 w-[716px] max-w-[716px] flex-col items-start justify-start gap-1 px-2">
             <div className="h-6 w-[300px] whitespace-nowrap text-[20px] font-semibold leading-6 tracking-[-0.4px] text-[#101112]">
-              Good morning, Ferdinand.
+              Good morning, Daniel.
             </div>
           </div>
           <div className="flex h-[534px] w-[716px] max-w-[716px] flex-col items-stretch justify-start gap-10">
@@ -321,7 +310,7 @@ function AssistantOverview() {
   return (
     <div className="text-[16px] font-medium leading-[27px] tracking-[-0.16px] text-[#101112]">
       <p className="mb-3">
-        Hey Ferdinand! Here's a quick overview of what I can help you with in your Attio
+        Hey Daniel! Here's a quick overview of what I can help you with in your client
         workspace:
       </p>
       {assistantSections.map((section) => (

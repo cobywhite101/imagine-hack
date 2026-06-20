@@ -57,8 +57,8 @@ export const mockAgents = [
 ];
 
 export const mockMcpServers = [
-  { id: "m1", name: "GitHub", description: "Repos, issues, and pull requests", connected: true, tools: 42 },
-  { id: "m2", name: "Supabase", description: "Database, auth, and storage", connected: true, tools: 18 },
+  { id: "m1", name: "Code Repository", description: "Repos, issues, and pull requests", connected: true, tools: 42 },
+  { id: "m2", name: "Data Store", description: "Database, auth, and storage", connected: true, tools: 18 },
   { id: "m3", name: "Web Search", description: "Live search and fetch", connected: false, tools: 2 },
   { id: "m4", name: "Analytics", description: "Product and usage metrics", connected: false, tools: 9 },
 ];
@@ -66,9 +66,8 @@ export const mockMcpServers = [
 export const mockConnectors = [
   {
     id: "atlassian",
-    name: "Atlassian",
-    description: "Connect to Confluence and Jira to search, summarize, and perform project actions.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/atlassian.com.png",
+    name: "Project Tracker",
+    description: "Search plans, tasks, and project notes from one workspace source.",
     featured: true,
     connected: false,
     tools: 14,
@@ -76,9 +75,8 @@ export const mockConnectors = [
   },
   {
     id: "bigquery",
-    name: "BigQuery",
-    description: "Explore BigQuery datasets and tables, run SQL queries, and analyze your data.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/bigquery.googleapis.com.svg",
+    name: "Data Warehouse",
+    description: "Explore datasets and tables, run SQL queries, and analyze your data.",
     featured: true,
     connected: false,
     tools: 8,
@@ -86,9 +84,8 @@ export const mockConnectors = [
   },
   {
     id: "box",
-    name: "Box",
-    description: "Search, analyze, and get insights from your files in Box.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/box.com.png",
+    name: "File Archive",
+    description: "Search, analyze, and get insights from archived files.",
     featured: true,
     connected: false,
     tools: 6,
@@ -96,9 +93,8 @@ export const mockConnectors = [
   },
   {
     id: "github",
-    name: "GitHub",
-    description: "Search repositories, review issues, and manage pull requests in GitHub.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/githubcopilot.com.png",
+    name: "Code Repository",
+    description: "Search repositories, review issues, and manage pull requests.",
     featured: true,
     connected: true,
     tools: 42,
@@ -106,9 +102,8 @@ export const mockConnectors = [
   },
   {
     id: "gmail",
-    name: "Gmail",
-    description: "Include your email in your chats.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/mail.google.com.svg",
+    name: "Shared Inbox",
+    description: "Include synced email context in your chats.",
     featured: true,
     connected: false,
     tools: 5,
@@ -116,9 +111,8 @@ export const mockConnectors = [
   },
   {
     id: "google-calendar",
-    name: "Google Calendar",
-    description: "Include your calendar in your chats.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/calendar.google.com.svg",
+    name: "Calendar",
+    description: "Include meeting context in your chats.",
     featured: true,
     connected: false,
     tools: 4,
@@ -126,9 +120,8 @@ export const mockConnectors = [
   },
   {
     id: "google-drive",
-    name: "Google Drive",
+    name: "Document Drive",
     description: "Include your team's files in your chats.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/drive.google.com.svg",
     featured: true,
     connected: true,
     tools: 9,
@@ -136,9 +129,8 @@ export const mockConnectors = [
   },
   {
     id: "linear",
-    name: "Linear",
+    name: "Issue Tracker",
     description: "Search, summarize, and manage issues, projects, and cycles.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/linear.app.png",
     featured: true,
     connected: false,
     tools: 12,
@@ -146,9 +138,8 @@ export const mockConnectors = [
   },
   {
     id: "notion",
-    name: "Notion",
+    name: "Knowledge Base",
     description: "Search, summarize, and author content across your workspace.",
-    iconUrl: "https://static-assets.mistral.ai/integrations/notion_logo.png",
     featured: true,
     connected: false,
     tools: 10,
@@ -156,9 +147,8 @@ export const mockConnectors = [
   },
   {
     id: "outlook",
-    name: "Outlook",
-    description: "Read and send emails with Outlook.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/outlook.png",
+    name: "Mail Client",
+    description: "Read and draft emails from agent workflows.",
     featured: true,
     connected: false,
     tools: 7,
@@ -166,9 +156,8 @@ export const mockConnectors = [
   },
   {
     id: "outlook-calendar",
-    name: "Outlook Calendar",
-    description: "Manage your Outlook Calendar from agent workflows.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/outlook-calendar.png",
+    name: "Team Calendar",
+    description: "Manage calendar events from agent workflows.",
     featured: true,
     connected: false,
     tools: 4,
@@ -176,9 +165,8 @@ export const mockConnectors = [
   },
   {
     id: "sharepoint",
-    name: "SharePoint",
+    name: "Team Library",
     description: "Include your team's files in your chats.",
-    iconUrl: "https://static-assets.mistral.ai/integrations/sharepoint_logo.png",
     featured: true,
     connected: false,
     tools: 8,
@@ -186,9 +174,8 @@ export const mockConnectors = [
   },
   {
     id: "slack",
-    name: "Slack",
+    name: "Team Chat",
     description: "Search messages, read channels, and summarize team discussions.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/slack.com.png",
     featured: true,
     connected: false,
     tools: 11,
@@ -196,9 +183,8 @@ export const mockConnectors = [
   },
   {
     id: "stripe",
-    name: "Stripe",
+    name: "Billing System",
     description: "Access and manage payments, customers, invoices, and subscriptions.",
-    iconUrl: "https://static-assets.mistralai.com/integrations/icons/stripe.com.png",
     featured: true,
     connected: false,
     tools: 13,
@@ -210,7 +196,7 @@ export const mockConnectors = [
 export const mockAgentLog = [
   { id: "l1", agent: "Executor", step: "Read issue #128", at: "12:01" },
   { id: "l2", agent: "Planner", step: "Drafted 3-step plan", at: "12:02" },
-  { id: "l3", agent: "Executor", step: "Opened PR via GitHub MCP", at: "12:04" },
+  { id: "l3", agent: "Executor", step: "Opened PR via code repository", at: "12:04" },
 ];
 
 // ---------------------------------------------------------------------------

@@ -563,7 +563,7 @@ function CustomerChatThinkingIndicator() {
       aria-live="polite"
     >
       <DotmSquare6 size={26} dotSize={4} ariaLabel="Assistant is thinking" />
-      <span key={stepIndex} className="inline-block animate-thinking-status-fade whitespace-nowrap">
+      <span key={stepIndex} className="inline-block animate-thinking-status-fade whitespace-nowrap ml-1">
         {THINKING_STEPS[stepIndex]}
       </span>
     </div>
@@ -955,16 +955,20 @@ export function CustomerWorkspace() {
       await waitForThinkingSequence(thinkingStartedAt);
       if (reply) {
         setMessages((prev) => [...prev, reply]);
-        await remember(
-          buildMemoryEntry({
-            kind: "chat",
-            title: "Advisor chat turn",
-            body: `Advisor: ${text}\n\nAssistant: ${reply.text}`,
-            sourceName: "Customer chat",
-            sourceMeta: selectedModel,
-          }),
-          { notify: false }
-        );
+        try {
+          await remember(
+            buildMemoryEntry({
+              kind: "chat",
+              title: "Advisor chat turn",
+              body: `Advisor: ${text}\n\nAssistant: ${reply.text}`,
+              sourceName: "Customer chat",
+              sourceMeta: selectedModel,
+            }),
+            { notify: false }
+          );
+        } catch {
+          addAssistantNotice("I answered, but could not save this chat turn to Supabase memory.");
+        }
       }
     } catch {
       await waitForThinkingSequence(thinkingStartedAt);

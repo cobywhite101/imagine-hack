@@ -26,7 +26,6 @@ import {
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
-const CUSTOMER_MEMORY_KEY = "client-companion-memory-v1";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
 const CUSTOMER_ARTICLES_KEY = "client-companion-articles-v1";
 const useSupabaseCustomerMemory = isSupabaseConfigured;
@@ -57,6 +56,18 @@ const CUSTOMER_CHAT_STOP_WORDS = new Set([
 ]);
 const localCustomers = mockCustomers;
 const localCustomerMemories = mockCustomerMemories;
+const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff", "#7048e8", "#22b8cf", "#2f9e44"];
+const FALLBACK_CUSTOMER_ACCENT = "#868e96";
+
+function getCustomerAccent(customer) {
+  if (customer.accent && customer.accent !== FALLBACK_CUSTOMER_ACCENT) return customer.accent;
+  const key = String(customer.id ?? customer.name ?? customer.company ?? "");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return CUSTOMER_ACCENTS[hash % CUSTOMER_ACCENTS.length];
+}
 
 async function fromTable(table, mockValue, orderBy) {
   if (!isSupabaseConfigured) {
@@ -99,7 +110,7 @@ function normalizeCustomerRecord(customer) {
     nextAction: customer.nextAction ?? customer.next_action ?? mockCustomer?.nextAction,
     task: customer.task ?? customer.nextAction ?? customer.next_action ?? mockCustomer?.task ?? mockCustomer?.nextAction ?? "",
     avatar: customer.avatar ?? mockCustomer?.avatar ?? getInitials(name),
-    accent: customer.accent ?? mockCustomer?.accent ?? "#868e96",
+    accent: getCustomerAccent({ ...customer, accent: customer.accent ?? mockCustomer?.accent }),
     email: customer.email ?? mockCustomer?.email ?? customer.contact ?? "",
     phone: customer.phone ?? mockCustomer?.phone ?? "",
     tags: customer.tags ?? mockCustomer?.tags ?? [],
@@ -152,27 +163,6 @@ function normalizeCustomerRecord(customer) {
     createdAt: customer.createdAt ?? customer.created_at ?? mockCustomer?.createdAt,
     updatedAt: customer.updatedAt ?? customer.updated_at ?? mockCustomer?.updatedAt,
   };
-}
-
-function getStoredCustomerMemories(customerId) {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_MEMORY_KEY) ?? "{}");
-    return stored[String(customerId)] ?? [];
-  } catch {
-    return [];
-  }
-}
-
-function setStoredCustomerMemories(customerId, memories) {
-  if (typeof window === "undefined") return;
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_MEMORY_KEY) ?? "{}");
-    stored[String(customerId)] = memories;
-    window.localStorage.setItem(CUSTOMER_MEMORY_KEY, JSON.stringify(stored));
-  } catch {
-    /* local persistence is best-effort for the demo */
-  }
 }
 
 function getStoredCustomerArticles(customerId) {
@@ -383,11 +373,7 @@ function getMockCustomerMemories(customerId) {
 }
 
 function getAllLocalCustomerMemories(customerId) {
-  const stored = getStoredCustomerMemories(customerId).map(normalizeCustomerMemory);
-  const storedIds = new Set(stored.map((memory) => memory.id));
-  const seeded = getMockCustomerMemories(customerId).filter((memory) => !storedIds.has(memory.id));
-
-  return [...stored, ...seeded].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return getMockCustomerMemories(customerId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function rankCustomerMemories(question, memories) {
@@ -659,9 +645,10 @@ export const api = {
           .eq("customer_id", customerId)
           .order("created_at", { ascending: false });
 
-        if (!error) return (data ?? []).map(normalizeCustomerMemory);
-      } catch {
-        /* fall through to local demo memory */
+        if (error) throw error;
+        return (data ?? []).map(normalizeCustomerMemory);
+      } catch (error) {
+        throw error;
       }
     }
 
@@ -782,8 +769,8 @@ export const api = {
           .eq("customer_id", customerId)
           .order("updated_at", { ascending: false });
 
-        if (!error) {
-          if (data && data.length === 0) {
+        if (error) throw error;
+        if (data && data.length === 0) {
             const customer = localCustomers.find((item) => String(item.id) === String(customerId));
             if (customer) {
               const bodyText = formatCustomerProfileToArticleBody(customer);
@@ -809,11 +796,10 @@ export const api = {
               });
               return [normalizeCustomerArticle(initialArticle)];
             }
-          }
-          return (data ?? []).map(normalizeCustomerArticle);
         }
-      } catch {
-        /* fall through to local demo articles */
+        return (data ?? []).map(normalizeCustomerArticle);
+      } catch (error) {
+        throw error;
       }
     }
 
@@ -871,9 +857,10 @@ export const api = {
           .select("*")
           .single();
 
-        if (!error && data) return normalizeCustomerArticle(data);
-      } catch {
-        /* fall through to local demo articles */
+        if (error) throw error;
+        if (data) return normalizeCustomerArticle(data);
+      } catch (error) {
+        throw error;
       }
     }
 
@@ -897,9 +884,10 @@ export const api = {
           .eq("id", articleId)
           .eq("customer_id", customerId);
 
-        if (!error) return true;
-      } catch {
-        /* fall through to local demo articles */
+        if (error) throw error;
+        return true;
+      } catch (error) {
+        throw error;
       }
     }
 

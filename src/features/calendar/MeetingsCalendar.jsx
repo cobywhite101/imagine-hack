@@ -172,7 +172,7 @@ export function MeetingsCalendar() {
   );
 }
 
-// --- Notion-style segmented control (Calendar / List) ---
+// --- Segmented control (Calendar / List) ---
 function ViewSwitcher({ viewMode, setViewMode }) {
   const tabs = [
     { id: "calendar", label: "Calendar", icon: CalendarDays },
