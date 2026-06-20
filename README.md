@@ -130,7 +130,7 @@ scripts/              Project assertion scripts
 
 ## AI Tool Attribution
 
-- Code assistance provided by OpenAI Codex (GPT-5) for the `README.md` documentation update and repository structure summary.
+- Code assistance provided by OpenAI Codex (GPT-5) for coding.
 - Runtime AI responses are provided by DeepSeek models when API access is configured, including home brief generation, advisor chat, customer chat, and follow-up drafting.
 - Receipt text extraction uses Tesseract.js OCR to help classify uploaded expense proofs.
 
