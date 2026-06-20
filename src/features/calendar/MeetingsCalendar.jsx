@@ -1,44 +1,14 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { CalendarDays, List, Plus, Trash2, X } from "lucide-react";
+import { api } from "@/services/dataClient";
 
-// --- Local seed events (today = demo). Replace with backend data later. ---
 const todayISO = () => new Date().toISOString().slice(0, 10);
-
-const seedEvents = () => {
-  const d = todayISO();
-  return [
-    {
-      id: "seed-1",
-      title: "Greenleaf renewal review",
-      start: `${d}T09:00`,
-      end: `${d}T09:45`,
-    },
-    {
-      id: "seed-2",
-      title: "Northwind ROI walkthrough",
-      start: `${d}T11:30`,
-      end: `${d}T12:15`,
-    },
-    {
-      id: "seed-3",
-      title: "Quanta sponsor re-engagement",
-      start: `${d}T14:00`,
-      end: `${d}T14:30`,
-    },
-  ];
-};
-
-const uid = () => `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 // Build a combined ISO local string the calendar understands; "" time => all-day.
 const toISO = (date, time) => (time ? `${date}T${time}` : date);
-const pad = (n) => String(n).padStart(2, "0");
-const toDateInputValue = (dt) =>
-  dt ? `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}` : todayISO();
-const toTimeInputValue = (dt) => (dt ? `${pad(dt.getHours())}:${pad(dt.getMinutes())}` : "");
 
 const emptyDraft = (date) => ({
   id: null,
@@ -46,15 +16,34 @@ const emptyDraft = (date) => ({
   date: date || todayISO(),
   startTime: "09:00",
   endTime: "",
+  customerId: "",
+  notes: "",
+  location: "",
 });
 
-export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDeleteEvent }) {
+export function MeetingsCalendar() {
   const calendarRef = useRef(null);
-  const [localEvents, setLocalEvents] = useState(seedEvents);
+  const [events, setEvents] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [draft, setDraft] = useState(null); // null = modal closed
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
-  const [calendarError, setCalendarError] = useState(null);
-  const events = controlledEvents ?? localEvents;
+
+  // Load meetings + customer options from the shared data layer. Both calls
+  // resolve in Supabase mode and in the mock/localStorage fallback mode.
+  useEffect(() => {
+    let active = true;
+    api
+      .getAdvisorMeetings()
+      .then((data) => active && setEvents(data))
+      .catch(() => {});
+    api
+      .getCustomers()
+      .then((data) => active && setCustomers(data))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const scheduledCount = events.length;
 
@@ -69,21 +58,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
     setDraft(emptyDraft(info.dateStr.slice(0, 10)));
   }, []);
 
-  // --- Open modal to edit an existing event ---
-  const handleEventClick = useCallback((info) => {
-    const e = info.event;
-    const start = e.start;
-    const end = e.end;
-    setDraft({
-      id: e.id,
-      title: e.title,
-      date: toDateInputValue(start),
-      startTime: e.allDay ? "" : toTimeInputValue(start),
-      endTime: e.allDay ? "" : toTimeInputValue(end),
-    });
-  }, []);
-
-  // --- Open the editor from a stored event object (used by the list view) ---
+  // --- Open the editor from a stored meeting object (list + calendar views) ---
   const editStored = useCallback((e) => {
     setDraft({
       id: e.id,
@@ -91,49 +66,52 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
       date: e.start.slice(0, 10),
       startTime: e.allDay || !e.start.includes("T") ? "" : e.start.slice(11, 16),
       endTime: e.end && e.end.includes("T") ? e.end.slice(11, 16) : "",
+      customerId: e.customerId ?? "",
+      notes: e.notes ?? "",
+      location: e.location ?? "",
     });
   }, []);
+
+  // --- Open modal to edit an existing event (look up the full stored record so
+  // customerId/notes/location survive the round-trip) ---
+  const handleEventClick = useCallback(
+    (info) => {
+      const stored = events.find((e) => String(e.id) === String(info.event.id));
+      if (stored) editStored(stored);
+    },
+    [events, editStored],
+  );
 
   const closeModal = () => setDraft(null);
 
   const saveDraft = async () => {
     if (!draft || !draft.title.trim()) return;
     const allDay = !draft.startTime;
-    const next = {
-      id: draft.id || uid(),
+    const payload = {
+      id: draft.id || undefined,
+      customerId: draft.customerId || null,
       title: draft.title.trim(),
       start: toISO(draft.date, draft.startTime),
       end: draft.endTime ? toISO(draft.date, draft.endTime) : undefined,
       allDay,
+      notes: draft.notes ?? "",
+      location: draft.location ?? "",
     };
-    try {
-      setCalendarError(null);
-      if (onSaveEvent) {
-        await onSaveEvent(next);
-      } else {
-        setLocalEvents((prev) =>
-          draft.id ? prev.map((e) => (e.id === draft.id ? next : e)) : [...prev, next],
-        );
-      }
-      closeModal();
-    } catch (error) {
-      setCalendarError(error);
-    }
+    const saved = await api.saveAdvisorMeeting(payload);
+    setEvents((prev) => {
+      const exists = prev.some((e) => String(e.id) === String(saved.id));
+      return exists
+        ? prev.map((e) => (String(e.id) === String(saved.id) ? saved : e))
+        : [...prev, saved];
+    });
+    closeModal();
   };
 
   const deleteDraft = async () => {
     if (!draft?.id) return;
-    try {
-      setCalendarError(null);
-      if (onDeleteEvent) {
-        await onDeleteEvent(draft.id);
-      } else {
-        setLocalEvents((prev) => prev.filter((e) => e.id !== draft.id));
-      }
-      closeModal();
-    } catch (error) {
-      setCalendarError(error);
-    }
+    await api.deleteAdvisorMeeting(draft.id);
+    setEvents((prev) => prev.filter((e) => String(e.id) !== String(draft.id)));
+    closeModal();
   };
 
   const headerToolbar = useMemo(
@@ -160,11 +138,6 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
           </button>
         </div>
       </div>
-      {calendarError ? (
-        <p className="mb-3 text-[12px] font-medium text-[#d4351c]">
-          Could not sync the calendar change.
-        </p>
-      ) : null}
 
       {viewMode === "calendar" ? (
         <FullCalendar
@@ -190,6 +163,7 @@ export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDele
         <EventModal
           draft={draft}
           setDraft={setDraft}
+          customers={customers}
           onClose={closeModal}
           onSave={saveDraft}
           onDelete={deleteDraft}
@@ -292,7 +266,7 @@ function EventList({ events, onSelect }) {
   );
 }
 
-function EventModal({ draft, setDraft, onClose, onSave, onDelete }) {
+function EventModal({ draft, setDraft, customers = [], onClose, onSave, onDelete }) {
   const isEditing = Boolean(draft.id);
   const update = (patch) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -333,6 +307,22 @@ function EventModal({ draft, setDraft, onClose, onSave, onDelete }) {
           </label>
 
           <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Customer</span>
+            <select
+              value={draft.customerId ?? ""}
+              onChange={(e) => update({ customerId: e.target.value })}
+              className="w-full rounded-[6px] border border-[#e6e6e9] bg-white px-2.5 py-1.5 text-[14px] text-[#101112] outline-none focus:border-[#317cff]"
+            >
+              <option value="">No customer</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
             <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Date</span>
             <input
               type="date"
@@ -365,6 +355,28 @@ function EventModal({ draft, setDraft, onClose, onSave, onDelete }) {
           <p className="text-[11px] leading-4 text-[#a3a3a3]">
             Leave Start empty for an all-day event.
           </p>
+
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Location</span>
+            <input
+              type="text"
+              value={draft.location}
+              onChange={(e) => update({ location: e.target.value })}
+              placeholder="Optional — call link or address"
+              className="w-full rounded-[6px] border border-[#e6e6e9] px-2.5 py-1.5 text-[14px] text-[#101112] outline-none focus:border-[#317cff]"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-[#7b7b7b]">Notes</span>
+            <textarea
+              value={draft.notes}
+              onChange={(e) => update({ notes: e.target.value })}
+              rows={2}
+              placeholder="Optional"
+              className="w-full resize-none rounded-[6px] border border-[#e6e6e9] px-2.5 py-1.5 text-[14px] text-[#101112] outline-none focus:border-[#317cff]"
+            />
+          </label>
         </div>
 
         <div className="mt-4 flex items-center justify-between">

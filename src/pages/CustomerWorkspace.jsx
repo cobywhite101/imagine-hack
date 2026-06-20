@@ -193,8 +193,7 @@ function formatMeetingTime(meeting) {
 
 function truncateMeetingNotes(notes) {
   const text = String(notes ?? "").trim();
-  if (text.length <= 120) return text;
-  return `${text.slice(0, 120).replace(/\s+\S*$/, "")}...`;
+  return text.length > 120 ? `${text.slice(0, 120).trimEnd()}…` : text;
 }
 
 // Upcoming meetings (start >= now) ascending, then past meetings descending.
@@ -916,8 +915,6 @@ export function CustomerWorkspace() {
   const { data: fetchedMeetings } = useApi(() => api.getAdvisorMeetings(), [customerId]);
   const customer = fetchedCustomer;
 
-  // Meetings linked to this customer, upcoming first. Read-only consumer of the
-  // shared meeting data layer — no writes happen here.
   const customerMeetings = useMemo(() => {
     if (!fetchedMeetings || !customer) return [];
     const linked = fetchedMeetings.filter(
@@ -926,8 +923,6 @@ export function CustomerWorkspace() {
     return sortMeetingsUpcomingFirst(linked);
   }, [fetchedMeetings, customer]);
 
-  // Navigate to the main calendar (lives on /home). The deep-link param lets a
-  // later phase scroll to / focus this event without reworking the call site.
   const openMeetingInCalendar = (meeting) => navigate(`/home?meeting=${meeting.id}`);
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
