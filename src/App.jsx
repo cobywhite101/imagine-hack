@@ -387,7 +387,7 @@ function Sidebar({ open, onCollapse }) {
               <SidebarLink key={item.to} {...item} />
             ))}
           </div>
-          <div className="mt-3 -ml-1 flex flex-col gap-3">
+          <div className="mt-3 -ml-2 flex flex-col gap-3">
             {sections.map((section) => (
               <SidebarSection key={section.label} {...section} />
             ))}

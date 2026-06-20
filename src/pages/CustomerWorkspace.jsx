@@ -20,6 +20,7 @@ import {
   Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { DotmSquare6 } from "@/components/ui/dotm-square-6";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerProfileCard, WorkflowDetails, WorkflowHeader } from "@/features/customers/WorkflowPanel";
@@ -47,6 +48,8 @@ const ACTION_WORDS = [
 
 const THINKING_STEP_MS = 950;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS =
+  "h-9 flex-1 rounded-lg px-4 text-[14px] font-semibold text-[#8a7f80] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:!bg-[#fff8ff] data-[selected]:!text-[#1f1220] data-[selected]:!shadow-[0_1px_5px_rgba(60,38,55,0.12)] aria-selected:!bg-[#fff8ff] aria-selected:!text-[#1f1220] aria-selected:!shadow-[0_1px_5px_rgba(60,38,55,0.12)]";
 const THINKING_STEPS_BY_INTENT = {
   memory_update: [
     "Updating customer memory...",
@@ -279,66 +282,41 @@ function getCustomerRenewalPrompt(customer, today = new Date()) {
   };
 }
 
-function buildCustomerPromptSuggestions(customer) {
-  const promptName = getPromptCustomerName(customer);
-  const birthday = getNextAnnualDate(customer?.dateOfBirth);
-  const renewal = getCustomerRenewalPrompt(customer);
-  const lastContactDate = parseDateOnly(customer?.lastContactDate);
-  const policyLabel = getPolicyLabel(renewal?.policyType || customer?.nextRenewalPolicyType);
-  const suggestions = [];
+// Builds the "Upcoming" summary chips. Prefers events within the next 45 days,
+// sorted soonest-first; if nothing is imminent, falls back to the single
+// soonest upcoming event so the section stays relevant without going stale.
+function getUpcomingSummaryItems(customer, today = new Date()) {
+  const todayUtc = getTodayUtc(today);
+  const todayYear = todayUtc.getUTCFullYear();
+  const events = [];
 
-  if (renewal) {
-    const renewalVerb = renewal.isPast ? "renewed" : "renews";
-    const showRenewalYear = renewal.date.getUTCFullYear() !== getTodayUtc().getUTCFullYear();
-    const renewalDateLabel = formatPromptDate(renewal.date, { year: showRenewalYear });
-    suggestions.push({
-      id: "renewal",
-      label: `Plan ${renewalVerb} ${renewalDateLabel}`,
-      prompt: `What should I know about ${promptName}'s ${policyLabel || "policy"} renewal?`,
-      summaryLabel: `plan ${renewalVerb} ${renewalDateLabel}`,
-    });
-  }
-
+  const birthday = getNextAnnualDate(customer?.dateOfBirth, today);
   if (birthday) {
-    suggestions.push({
-      id: "birthday",
-      label: `Birthday ${formatPromptDate(birthday.date)}`,
-      prompt: `What should I say to ${promptName} for the birthday check-in?`,
-      summaryLabel: `Birthday ${formatPromptDate(birthday.date, { weekday: true })}`,
+    const showYear = birthday.date.getUTCFullYear() !== todayYear;
+    events.push({
+      daysUntil: birthday.daysUntil,
+      label: `Birthday ${formatPromptDate(birthday.date, { weekday: true, year: showYear })}`,
     });
   }
 
-  if (customer?.riskTolerance) {
-    suggestions.push({
-      id: "risk",
-      label: `${titleCaseText(customer.riskTolerance)} risk`,
-      prompt: `Summarize ${promptName}'s risk profile and what it means for the next recommendation.`,
+  const renewal = getCustomerRenewalPrompt(customer, today);
+  if (renewal && !renewal.isPast) {
+    const daysUntil = Math.round((renewal.date.getTime() - todayUtc.getTime()) / DAY_MS);
+    const showYear = renewal.date.getUTCFullYear() !== todayYear;
+    events.push({
+      daysUntil,
+      label: `plan renews ${formatPromptDate(renewal.date, { year: showYear })}`,
     });
   }
 
-  if (lastContactDate) {
-    suggestions.push({
-      id: "last-contact",
-      label: `Last met ${formatPromptDate(lastContactDate)}`,
-      prompt: `Recap the last contact with ${promptName} and the next best action.`,
-    });
-  }
+  const upcoming = events
+    .filter((event) => event.daysUntil >= 0)
+    .sort((a, b) => a.daysUntil - b.daysUntil);
+  if (!upcoming.length) return [];
 
-  if (policyLabel) {
-    suggestions.push({
-      id: "policy",
-      label: policyLabel,
-      prompt: `Explain ${promptName}'s ${policyLabel.toLowerCase()} context and any follow-up risks.`,
-    });
-  }
-
-  const seen = new Set();
-  return suggestions.filter((suggestion) => {
-    const key = suggestion.label.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const nearTerm = upcoming.filter((event) => event.daysUntil <= 45);
+  const selected = nearTerm.length ? nearTerm : upcoming.slice(0, 1);
+  return selected.slice(0, 2).map((event) => event.label);
 }
 
 function getCustomerPronouns(customer) {
@@ -412,6 +390,53 @@ function formatPolicyPremium(policy) {
   return `RM${Math.round(amount).toLocaleString("en-US")}${suffix}`;
 }
 
+function formatCoverageAmount(amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  if (amount >= 1_000_000) {
+    const millions = amount / 1_000_000;
+    return `RM${millions % 1 === 0 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+  }
+  if (amount >= 1_000) return `RM${Math.round(amount / 1_000)}k`;
+  return `RM${Math.round(amount)}`;
+}
+
+// Holdings card, rendered as a "metric" format (big number). Built only from
+// real investment-linked plans - returns null when there is nothing
+// market-exposed on file. No fabricated performance numbers.
+function buildPortfolioMomentCard(customer, promptName, pronouns) {
+  const policies = Array.isArray(customer?.policies) ? customer.policies : [];
+  const investmentPolicies = policies.filter((policy) =>
+    /investment|education savings/i.test(cleanText(getPolicyField(policy, "policyType", "policy_type")))
+  );
+  if (!investmentPolicies.length) return null;
+
+  const coverage = investmentPolicies.reduce(
+    (sum, policy) => sum + (Number(getPolicyField(policy, "sumAssured", "sum_assured")) || 0),
+    0
+  );
+  const risk = cleanText(customer?.riskTolerance);
+  const horizon = Number(customer?.investmentHorizonYears);
+  const detailParts = [
+    risk ? `${risk.toLowerCase()} risk` : "",
+    Number.isFinite(horizon) && horizon > 0 ? `${horizon}-year horizon` : "",
+  ].filter(Boolean);
+
+  const coverageLabel = formatCoverageAmount(coverage);
+  const planLabel = `${investmentPolicies.length} investment-linked ${investmentPolicies.length === 1 ? "plan" : "plans"}`;
+
+  return {
+    id: "portfolio-moment",
+    variant: "metric",
+    label: "Holdings",
+    badge: risk ? titleCaseText(risk) : "Review",
+    metric: coverageLabel || `${investmentPolicies.length}`,
+    metricCaption: coverageLabel ? `across ${planLabel}` : planLabel,
+    detail: detailParts.length ? detailParts.join(" · ") : "Confirm the allocation still fits.",
+    actionLabel: "Review the holdings",
+    prompt: `Give ${promptName} a simple update on ${pronouns.possessive} investment-linked holdings (${[coverageLabel ? `${coverageLabel} across ${planLabel}` : planLabel, ...detailParts].join(", ")}), using the customer record context and an advisor-friendly tone.`,
+  };
+}
+
 function formatLastContactDetail(customer) {
   const topic = cleanText(customer?.task || customer?.nextAction || customer?.policySummary)
     .replace(/^(?:discuss|review|prepare|complete|send|confirm)\s+/i, "")
@@ -421,70 +446,301 @@ function formatLastContactDetail(customer) {
   return "Recap the conversation and the next best action.";
 }
 
+// Pick the 4 strongest moments while keeping format variety - no single card
+// format is allowed to dominate unless there genuinely aren't alternatives.
+function selectMomentCards(candidates, limit = 4) {
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const picked = [];
+  const variantCount = {};
+  const variantCap = 2;
+
+  for (const item of sorted) {
+    if (picked.length >= limit) break;
+    const variant = item.card.variant || "default";
+    if ((variantCount[variant] || 0) >= variantCap) continue;
+    picked.push(item);
+    variantCount[variant] = (variantCount[variant] || 0) + 1;
+  }
+  // Backfill if the cap left us short (e.g. only one format had candidates).
+  if (picked.length < limit) {
+    for (const item of sorted) {
+      if (picked.length >= limit) break;
+      if (picked.includes(item)) continue;
+      picked.push(item);
+    }
+  }
+  return picked.map((item) => item.card).slice(0, limit);
+}
+
+// Smart suggestions for the moment grid. Each card type is generated only when
+// it is actually significant for THIS client right now (a birthday months away
+// is not a moment), carries its own visual format (countdown / metric / note /
+// task), and is scored by urgency. We then pick the 4 strongest with format
+// variety, so different clients see a different, curated, non-repetitive set.
 function buildCustomerMomentCards(customer) {
   const promptName = getPromptCustomerName(customer);
   const pronouns = getCustomerPronouns(customer);
+  const todayUtc = getTodayUtc();
+  const candidates = [];
+
+  // Birthday - countdown format, only when genuinely near.
   const birthday = getNextAnnualDate(customer?.dateOfBirth);
+  if (birthday && birthday.daysUntil >= 0 && birthday.daysUntil <= 30) {
+    candidates.push({
+      score: 88 - birthday.daysUntil,
+      card: {
+        id: "birthday-moment",
+        variant: "countdown",
+        label: "Birthday",
+        badge: formatRelativeBadge(birthday.daysUntil) || formatPromptDate(birthday.date),
+        title: `${pronouns.possessiveCap} birthday is ${formatUpcomingDatePhrase(birthday.date, birthday.daysUntil)}`,
+        detail: "A short, personal note goes a long way.",
+        actionLabel: "Draft a birthday message",
+        prompt: `Draft a warm, concise birthday message for ${promptName}.`,
+      },
+    });
+  }
+
+  // Renewal - countdown format, overdue or within the next quarter.
   const renewal = getCustomerRenewalPrompt(customer);
-  const lastContactDate = parseDateOnly(customer?.lastContactDate);
-  const cards = [];
-
-  if (birthday) {
-    cards.push({
-      id: "birthday-moment",
-      label: "Birthday",
-      accent: "#c47b2d",
-      badge: formatRelativeBadge(birthday.daysUntil) || formatPromptDate(birthday.date),
-      title: `${pronouns.possessiveCap} birthday is ${formatUpcomingDatePhrase(birthday.date, birthday.daysUntil)}`,
-      detail: "A short, personal note goes a long way.",
-      actionLabel: "Draft a birthday message",
-      prompt: `Draft a warm, concise birthday message for ${promptName}.`,
-    });
-  }
-
+  let renewalSurfaced = false;
   if (renewal) {
-    const renewalPolicy = getRenewalPolicy(customer, renewal);
-    const policyLabel = getPolicyLabel(renewal.policyType || customer?.nextRenewalPolicyType) || "plan";
-    const details = [
-      formatPolicyPremium(renewalPolicy),
-      customer?.riskTolerance ? `${cleanText(customer.riskTolerance).toLowerCase()} risk` : "",
-    ].filter(Boolean);
+    const renewalDays = Math.round((renewal.date.getTime() - todayUtc.getTime()) / DAY_MS);
+    if (renewal.isPast || renewalDays <= 90) {
+      renewalSurfaced = true;
+      const renewalPolicy = getRenewalPolicy(customer, renewal);
+      const policyLabel = getPolicyLabel(renewal.policyType || customer?.nextRenewalPolicyType) || "plan";
+      const details = [
+        formatPolicyPremium(renewalPolicy),
+        customer?.riskTolerance ? `${cleanText(customer.riskTolerance).toLowerCase()} risk` : "",
+      ].filter(Boolean);
+      candidates.push({
+        score: renewal.isPast ? 96 : 90 - renewalDays * 0.5,
+        card: {
+          id: "renewal-moment",
+          variant: "countdown",
+          label: "Renewal",
+          badge: renewal.isPast ? `overdue ${formatPromptDate(renewal.date)}` : `due ${formatPromptDate(renewal.date)}`,
+          title: `${pronouns.possessiveCap} ${policyLabel.toLowerCase()} is up for renewal`,
+          detail: details.length ? details.join(" · ") : cleanText(customer?.policySummary) || "Review coverage, premium, and next steps.",
+          actionLabel: "Summarize the options",
+          prompt: `Summarize the options for ${promptName}'s ${policyLabel.toLowerCase()} renewal and call out any follow-up risks.`,
+        },
+      });
+    }
+  }
 
-    cards.push({
-      id: "renewal-moment",
-      label: "Renewal",
-      accent: "#5268e8",
-      badge: renewal.isPast ? formatPromptDate(renewal.date) : `due ${formatPromptDate(renewal.date)}`,
-      title: `${pronouns.possessiveCap} ${policyLabel.toLowerCase()} is up for renewal`,
-      detail: details.length ? details.join(" · ") : cleanText(customer?.policySummary) || "Review coverage, premium, and next steps.",
-      actionLabel: "Summarize the options",
-      prompt: `Summarize the options for ${promptName}'s ${policyLabel.toLowerCase()} renewal and call out any follow-up risks.`,
+  // Compliance - task format, KYC that is not yet complete.
+  const kyc = cleanText(customer?.kycStatus);
+  if (kyc && kyc.toLowerCase() !== "completed") {
+    candidates.push({
+      score: 84,
+      card: {
+        id: "kyc-moment",
+        variant: "task",
+        label: "Compliance",
+        badge: titleCaseText(kyc),
+        title: `KYC is still ${kyc.toLowerCase()}`,
+        detail: "Clear it to keep the account in good standing.",
+        actionLabel: "Plan the follow-up",
+        prompt: `Outline how to close out the outstanding KYC for ${promptName}, using the customer record context and an advisor-friendly tone.`,
+      },
     });
   }
 
+  // Upcoming life event - countdown format, on the horizon.
+  const lifeEventDate = parseDateOnly(customer?.nextLifeEventDate);
+  const nextLifeEvent = cleanText(customer?.nextLifeEvent);
+  const lifeEventDays = getDaysUntilDate(customer?.nextLifeEventDate);
+  if (nextLifeEvent && lifeEventDate && lifeEventDays !== null && lifeEventDays >= 0 && lifeEventDays <= 120) {
+    candidates.push({
+      score: 80 - lifeEventDays * 0.3,
+      card: {
+        id: "life-event-moment",
+        variant: "countdown",
+        label: "Life event",
+        badge: formatRelativeBadge(lifeEventDays) || formatPromptDate(lifeEventDate),
+        title: nextLifeEvent,
+        detail: "A timely note shows you're paying attention.",
+        actionLabel: "Prepare for it",
+        prompt: `Suggest how to support ${promptName} around ${nextLifeEvent.toLowerCase()}, using the customer record context and an advisor-friendly tone.`,
+      },
+    });
+  }
+
+  // Open next action - task format. Skipped if it just restates the renewal.
+  const task = cleanText(customer?.task || customer?.nextAction).replace(/[.]+$/g, "");
+  const isEstateTask = /will|estate|legacy|heir/i.test(task);
+  if (task && !(renewalSurfaced && /renew/i.test(task))) {
+    candidates.push({
+      score: isEstateTask ? 70 : 62,
+      card: {
+        id: "next-action-moment",
+        variant: "task",
+        label: isEstateTask ? "Estate planning" : "Next step",
+        badge: "Open item",
+        title: task,
+        detail: "On your list for this client.",
+        actionLabel: "Plan the next move",
+        prompt: `Outline the next best step for ${promptName} on "${task}", using the customer record context and an advisor-friendly tone.`,
+      },
+    });
+  }
+
+  // Reconnect - countdown format, only once it has been a real gap.
+  const lastContactDate = parseDateOnly(customer?.lastContactDate);
   if (lastContactDate) {
-    cards.push({
-      id: "last-spoke-moment",
-      label: "Last spoke",
-      accent: "#7c58df",
-      badge: formatPromptDate(lastContactDate),
-      title: `You last spoke ${formatElapsedContact(lastContactDate)}`,
-      detail: formatLastContactDetail(customer),
-      actionLabel: "Recap it",
-      prompt: `Recap the last contact with ${promptName} and recommend the next best action.`,
+    const daysSince = Math.round((todayUtc.getTime() - lastContactDate.getTime()) / DAY_MS);
+    if (daysSince >= 75) {
+      candidates.push({
+        score: Math.min(74, 40 + Math.floor(daysSince / 30) * 7),
+        card: {
+          id: "reengage-moment",
+          variant: "countdown",
+          label: "Reconnect",
+          badge: formatPromptDate(lastContactDate),
+          title: `You last spoke ${formatElapsedContact(lastContactDate)}`,
+          detail: formatLastContactDetail(customer),
+          actionLabel: "Draft a check-in",
+          prompt: `Draft a light, personal check-in to reconnect with ${promptName} after a gap, using the customer record context.`,
+        },
+      });
+    }
+  }
+
+  // Estate readiness - task format, when there are dependents but no will yet.
+  const dependents = Number(customer?.dependents);
+  if (customer?.hasWill === false && Number.isFinite(dependents) && dependents > 0 && !isEstateTask) {
+    candidates.push({
+      score: 58,
+      card: {
+        id: "will-gap-moment",
+        variant: "task",
+        label: "Estate gap",
+        badge: "No will",
+        title: `No will on file - ${dependents} ${dependents === 1 ? "dependent" : "dependents"}`,
+        detail: "A will protects who depends on them.",
+        actionLabel: "Raise it gently",
+        prompt: `Suggest a tactful way to raise estate and will planning with ${promptName}, who has ${dependents} ${dependents === 1 ? "dependent" : "dependents"} and no will on file.`,
+      },
     });
   }
 
-  cards.push({
-    id: "portfolio-moment",
-    label: "Portfolio",
-    accent: "#c66e4e",
-    badge: "-6% YTD",
-    title: "Down about 6% so far this year",
-    detail: `In line with the market - ${pronouns.subject} may have questions.`,
-    actionLabel: "Explain it simply",
-    prompt: `Explain simply how to discuss a portfolio being down about 6% YTD with ${promptName}, using the customer record context and an advisor-friendly tone.`,
-  });
+  // Rapport opener - note format, a personal hook from the record.
+  const rapportInsight = extractRapportInsight(customer);
+  if (rapportInsight) {
+    const cleanInsight = rapportInsight.replace(/[.!?]+$/g, "");
+    candidates.push({
+      score: 50,
+      card: {
+        id: "rapport-moment",
+        variant: "note",
+        label: "Rapport",
+        badge: "Personal",
+        title: "A personal opener you can use",
+        detail: cleanInsight,
+        actionLabel: "Work it in",
+        prompt: `Suggest a warm way to bring up "${cleanInsight}" with ${promptName} before getting to business.`,
+      },
+    });
+  }
+
+  // Holdings - metric format, from real investment-linked plans.
+  const portfolioCard = buildPortfolioMomentCard(customer, promptName, pronouns);
+  if (portfolioCard) {
+    candidates.push({ score: 46, card: portfolioCard });
+  }
+
+  // --- Evergreen bench: lower-priority, still profile-specific. These keep the
+  // grid full (4 cards) and give the selector variety to draw from. ---
+
+  // Protection picture - metric format, dependents relying on cover.
+  if (Number.isFinite(dependents) && dependents > 0) {
+    candidates.push({
+      score: 36,
+      card: {
+        id: "protection-moment",
+        variant: "metric",
+        label: "Protection",
+        badge: "Dependents",
+        metric: String(dependents),
+        metricCaption: dependents === 1 ? "dependent relies on this cover" : "dependents rely on this cover",
+        detail: "Sanity-check the coverage still fits the household.",
+        actionLabel: "Review the gap",
+        prompt: `Assess whether ${promptName}'s current cover is adequate for ${dependents} ${dependents === 1 ? "dependent" : "dependents"}, using the customer record context.`,
+      },
+    });
+  }
+
+  // Risk profile - note format, a quick framing of how they invest.
+  const risk = cleanText(customer?.riskTolerance);
+  const horizon = Number(customer?.investmentHorizonYears);
+  if (risk) {
+    const horizonPart = Number.isFinite(horizon) && horizon > 0 ? ` over a ${horizon}-year horizon` : "";
+    candidates.push({
+      score: 30,
+      card: {
+        id: "risk-moment",
+        variant: "note",
+        label: "Risk profile",
+        badge: titleCaseText(risk),
+        title: "How they like to invest",
+        detail: `${titleCaseText(risk)} risk appetite${horizonPart}.`,
+        actionLabel: "Frame the next idea",
+        prompt: `Summarize ${promptName}'s ${risk.toLowerCase()} risk profile and what it means for the next recommendation.`,
+      },
+    });
+  }
+
+  // Tenure - metric format, the length of the relationship.
+  const clientSinceDate = parseDateOnly(customer?.clientSince);
+  if (clientSinceDate) {
+    const years = todayUtc.getUTCFullYear() - clientSinceDate.getUTCFullYear();
+    candidates.push({
+      score: 24,
+      card: {
+        id: "tenure-moment",
+        variant: "metric",
+        label: "Relationship",
+        badge: `since ${clientSinceDate.getUTCFullYear()}`,
+        metric: years >= 1 ? `${years}` : "<1",
+        metricCaption: years === 1 ? "year as a client" : "years as a client",
+        detail: "A long relationship is worth nurturing.",
+        actionLabel: "Plan a check-in",
+        prompt: `Suggest a thoughtful way to acknowledge ${promptName}'s ${years >= 1 ? `${years}-year ` : ""}relationship and keep it warm.`,
+      },
+    });
+  }
+
+  const cards = selectMomentCards(candidates, 4);
+
+  // Guarantee 4 cards even for a thin record - pad with gentle, generic touches.
+  const fillers = [
+    {
+      id: "catch-up-moment",
+      variant: "note",
+      label: "Catch up",
+      badge: "Anytime",
+      title: "Keep the relationship warm",
+      detail: `A quick, no-agenda check-in with ${promptName} goes a long way.`,
+      actionLabel: "Draft a check-in",
+      prompt: `Draft a light, personal check-in for ${promptName}, using the customer record context.`,
+    },
+    {
+      id: "review-moment",
+      variant: "task",
+      label: "Review",
+      badge: "Housekeeping",
+      title: `Refresh ${promptName}'s file`,
+      detail: "Confirm the details on record are still current.",
+      actionLabel: "Run a quick review",
+      prompt: `Review ${promptName}'s record for anything out of date or worth following up on.`,
+    },
+  ];
+  for (const filler of fillers) {
+    if (cards.length >= 4) break;
+    if (!cards.some((card) => card.id === filler.id)) cards.push(filler);
+  }
 
   return cards.slice(0, 4);
 }
@@ -1275,17 +1531,12 @@ function summarizeText(rawText, fallback) {
     const lower = sentence.toLowerCase();
     return ACTION_WORDS.some((word) => lower.includes(word));
   });
-  const picked = [priority ?? sentences[0], ...sentences.filter((sentence) => sentence !== priority).slice(0, 1)];
+  const firstPick = priority ?? sentences[0];
+  const picked = [firstPick, ...sentences.filter((sentence) => sentence !== firstPick).slice(0, 1)];
   const summary = cleanText(picked.join(" "));
 
   if (summary.length <= 280) return summary;
   return `${summary.slice(0, 280).replace(/\s+\S*$/, "")}...`;
-}
-
-function truncateConversationSummaryText(text, maxLength = 120) {
-  const cleaned = cleanText(text);
-  if (cleaned.length <= maxLength) return cleaned;
-  return `${cleaned.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
 }
 
 function stripConversationSummaryMarkdown(text) {
@@ -1346,6 +1597,7 @@ function buildCurrentConversationTurns(messages = []) {
     .map((message) => ({
       role: message.role === "user" ? "advisor" : "assistant",
       text: stripConversationSummaryMarkdown(message.text),
+      createdAt: message.createdAt ?? message.created_at,
     }))
     .filter((turn) => turn.text);
 }
@@ -1359,114 +1611,126 @@ function buildSavedConversationTurns(memories = []) {
     .flatMap((memory) => buildConversationTurnsFromMemory(memory));
 }
 
-function getConversationSentences(text) {
-  return stripConversationSummaryMarkdown(text)
-    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
-    ?.map((sentence) => cleanText(sentence))
-    .filter(Boolean) ?? [];
-}
-
-function inferConversationTopics(text) {
-  const rules = [
-    ["Renewal", /\b(renew|renewal|policy|premium|coverage|life insurance|medical card|rider)\b/i],
-    ["Risk", /\b(risk|kyc|suitability|compliance|liabilit|debt)\b/i],
-    ["Follow-up", /\b(follow[- ]?up|email|draft|reply|message|call|meeting)\b/i],
-    ["Planning", /\b(plan|strategy|next step|action|prepare|review)\b/i],
-    ["Client profile", /\b(net worth|income|birthday|rapport|preference|family|occupation)\b/i],
-  ];
-
-  return rules
-    .filter(([, pattern]) => pattern.test(text))
-    .map(([label]) => label)
-    .slice(0, 3);
-}
-
-function getConversationActionText(turns) {
-  const sentences = turns
-    .filter((turn) => turn.role === "assistant")
-    .flatMap((turn) => getConversationSentences(turn.text));
-  const actionSentence = sentences.find((sentence) => {
-    const lower = sentence.toLowerCase();
-    return ACTION_WORDS.some((word) => lower.includes(word)) || /\b(recommended|confirm|schedule|send|review|update)\b/i.test(sentence);
-  });
-
-  if (actionSentence) return truncateConversationSummaryText(actionSentence, 160);
-
-  const latestAdvisor = [...turns].reverse().find((turn) => turn.role === "advisor")?.text;
-  if (latestAdvisor && turns.at(-1)?.role === "advisor") {
-    return `Waiting for the assistant response to: ${truncateConversationSummaryText(latestAdvisor, 120)}`;
+function parseActivityDate(value, { preserveTime = false } = {}) {
+  if (preserveTime && String(value ?? "").includes("T")) {
+    const dateTime = new Date(value);
+    if (!Number.isNaN(dateTime.getTime())) return dateTime;
   }
 
-  return "";
+  const parsedDate = parseDateOnly(value);
+  if (parsedDate) return parsedDate;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getConversationKeyPoints(turns) {
-  const assistantSentences = turns
-    .filter((turn) => turn.role === "assistant")
-    .flatMap((turn) => getConversationSentences(turn.text));
-  const advisorSentences = turns
-    .filter((turn) => turn.role === "advisor")
-    .flatMap((turn) => getConversationSentences(turn.text));
-  const picked = [
-    advisorSentences.at(-1),
-    ...assistantSentences.filter((sentence) => /\b(status|next|action|risk|renew|plan|source|recommend)\b/i.test(sentence)),
-    assistantSentences.at(-1),
-  ]
-    .filter(Boolean)
-    .map((sentence) => truncateConversationSummaryText(sentence, 140));
-
-  return Array.from(new Set(picked)).slice(0, 3);
+function getActivitySortTime(value) {
+  const date = parseActivityDate(value, { preserveTime: true });
+  return date ? date.getTime() : 0;
 }
 
-function buildCustomerConversationSummary({ customer, messages = [], memories = [] }) {
-  const currentTurns = buildCurrentConversationTurns(messages);
-  const savedTurns = buildSavedConversationTurns(memories);
-  const turns = currentTurns.length ? currentTurns : savedTurns;
-  const fullText = turns.map((turn) => turn.text).join(" ");
-  const advisorTurns = turns.filter((turn) => turn.role === "advisor");
-  const assistantTurns = turns.filter((turn) => turn.role === "assistant");
-  const topics = inferConversationTopics(fullText);
-  const latestAdvisor = advisorTurns.at(-1)?.text ?? "";
-  const latestAssistant = assistantTurns.at(-1)?.text ?? "";
-  const sourceLabel = currentTurns.length ? "Current conversation" : "Saved conversation";
-  const turnCount = turns.length;
+function formatActivityDate(value) {
+  const hasTime = String(value ?? "").includes("T");
+  const date = parseActivityDate(value, { preserveTime: hasTime });
+  if (!date) return "RECENT";
 
-  if (!turns.length) {
-    return {
-      isEmpty: true,
-      sourceLabel: "No conversation yet",
-      turnCount: 0,
-      overview: `No advisor conversation has been summarized for ${customer?.name ?? "this customer"} yet.`,
-      advisorFocus: "No advisor request yet.",
-      assistantSummary: "No assistant response yet.",
-      keyPoints: [],
-      nextAction: customer?.task || customer?.nextAction || "No next action captured yet.",
-      topics: [],
-    };
-  }
+  const datePart = new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    ...(hasTime ? {} : { timeZone: "UTC" }),
+  })
+    .format(date)
+    .toUpperCase();
 
-  const topicText = topics.length ? ` around ${topics.join(", ").toLowerCase()}` : "";
-  const advisorCount = advisorTurns.length;
-  const assistantCount = assistantTurns.length;
-  const overview = `${customer?.name ?? "This customer"}'s ${sourceLabel.toLowerCase()} includes ${advisorCount} advisor ${
-    advisorCount === 1 ? "request" : "requests"
-  } and ${assistantCount} assistant ${assistantCount === 1 ? "response" : "responses"}${topicText}.`;
+  if (!hasTime) return datePart;
 
+  const timePart = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  })
+    .format(date)
+    .toUpperCase();
+
+  return `${datePart} · ${timePart}`;
+}
+
+function compactActivityText(text, maxLength = 160) {
+  const cleaned = stripConversationSummaryMarkdown(text);
+  if (!cleaned) return "";
+
+  const truncated =
+    cleaned.length <= maxLength
+      ? cleaned
+      : `${cleaned.slice(0, maxLength).replace(/\s+\S*$/, "")}...`;
+
+  return /[.!?]$/.test(truncated) ? truncated : `${truncated}.`;
+}
+
+function buildActivityEntry({ id, date, text, sequence }) {
+  const itemText = compactActivityText(text);
+  if (!itemText) return null;
+
+  const dateValue = date ?? new Date().toISOString();
   return {
-    isEmpty: false,
-    sourceLabel,
-    turnCount,
-    overview,
-    advisorFocus: latestAdvisor
-      ? summarizeText(latestAdvisor, "No advisor request yet.")
-      : "No advisor request yet.",
-    assistantSummary: latestAssistant
-      ? summarizeText(latestAssistant, "No assistant response yet.")
-      : "No assistant response yet.",
-    keyPoints: getConversationKeyPoints(turns),
-    nextAction: getConversationActionText(turns) || customer?.task || customer?.nextAction || "No next action captured yet.",
-    topics,
+    id,
+    date: dateValue,
+    dateLabel: formatActivityDate(dateValue),
+    sortTime: getActivitySortTime(dateValue),
+    sequence,
+    text: itemText,
   };
+}
+
+function summarizeChatExchange(advisorTurn, assistantTurn) {
+  const ask = stripConversationSummaryMarkdown(advisorTurn?.text);
+  const takeaway = summarizeText(stripConversationSummaryMarkdown(assistantTurn?.text), "");
+  const segments = [];
+  if (ask) segments.push(`Advisor asked: ${ask}`);
+  if (takeaway) segments.push(`Assistant: ${takeaway}`);
+  return segments.join(" — ");
+}
+
+function buildCustomerActivityTimeline({ customer, messages = [], memories = [], meetings = [], articles = [] }) {
+  const currentTurns = buildCurrentConversationTurns(messages);
+  const conversationTurns = currentTurns.length ? currentTurns.slice(-4) : buildSavedConversationTurns(memories).slice(-4);
+  const entries = [];
+  let sequence = 0;
+
+  const pushEntry = (id, date, text) => {
+    const entry = buildActivityEntry({ id, date, text, sequence: sequence++ });
+    if (entry) entries.push(entry);
+  };
+
+  // Chat history log: condense each notable advisor/assistant exchange into a
+  // single dated + timed entry so future sessions can scan what was discussed.
+  for (let index = 0; index < conversationTurns.length; index += 1) {
+    const turn = conversationTurns[index];
+    const next = conversationTurns[index + 1];
+
+    if (turn.role === "advisor" && next?.role === "assistant") {
+      pushEntry(
+        `chat-${index}`,
+        next.createdAt ?? turn.createdAt ?? new Date().toISOString(),
+        summarizeChatExchange(turn, next)
+      );
+      index += 1;
+      continue;
+    }
+
+    const label = turn.role === "advisor" ? "Advisor noted" : "Assistant noted";
+    pushEntry(`chat-${index}`, turn.createdAt ?? new Date().toISOString(), `${label}: ${turn.text}`);
+  }
+
+  const seen = new Set();
+  return entries
+    .filter((entry) => {
+      const key = `${entry.dateLabel}:${entry.text.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.sortTime - a.sortTime || b.sequence - a.sequence)
+    .slice(0, 10);
 }
 
 function isTextLikeFile(file) {
@@ -1566,51 +1830,17 @@ function CustomerChatIconButton({ label, children, onClick, disabled, className 
 
 function CustomerPromptStart({ customer, onSendPrompt, sending }) {
   const promptName = getPromptCustomerName(customer);
-  const suggestions = buildCustomerPromptSuggestions(customer);
-  const summaryItems = suggestions
-    .filter((suggestion) => suggestion.id === "birthday" || suggestion.id === "renewal")
-    .sort((a, b) => (a.id === "birthday" ? -1 : 1) - (b.id === "birthday" ? -1 : 1))
-    .map((suggestion) => suggestion.summaryLabel || suggestion.label)
-    .slice(0, 2);
-  const visibleSuggestions = suggestions.slice(0, 5);
 
   return (
     <div className="flex w-[660px] max-w-full flex-col items-center self-center px-5 py-6 text-center xl:py-7">
-      {summaryItems.length ? (
-        <div className="mb-3 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12px] font-medium leading-5 text-black/45 xl:mb-4">
-          <span className="inline-flex items-center gap-1.5 font-semibold text-[#266df0]">
-            <span className="size-1.5 rounded-full bg-[#266df0]" aria-hidden="true" />
-            Upcoming
-          </span>
-          <span className="text-black/20" aria-hidden="true">
-            /
-          </span>
-          <span className="min-w-0 text-center text-black/50">{summaryItems.join(" · ")}</span>
-        </div>
-      ) : null}
-
-      <h2 className="max-w-[600px] text-[27px] font-semibold leading-[1.14] text-[#171717] sm:text-[31px] xl:text-[34px]">
+      <h2 className="max-w-[600px] text-[27px] font-semibold leading-[1.14] text-[#101112] sm:text-[31px] xl:text-[34px]">
         What would you like to know about {promptName}?
       </h2>
       <p className="mt-4 text-[14px] font-medium leading-6 text-black/38 xl:text-[15px]">
         Ask in your own words, or pick something I already remember.
       </p>
 
-      {visibleSuggestions.length ? (
-        <div className="mt-3 flex max-w-[560px] flex-wrap items-center justify-center gap-1.5 xl:mt-4">
-          {visibleSuggestions.map((suggestion) => (
-            <button
-              key={suggestion.id}
-              type="button"
-              onClick={() => onSendPrompt?.(suggestion.prompt)}
-              disabled={sending}
-              className="flex h-8 max-w-full items-center rounded-full border border-black/[0.06] bg-[#f7f8fa] px-3 text-[12px] font-normal leading-none text-[#4f5961] transition-colors hover:border-black/[0.08] hover:bg-[#eef1f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-45"
-            >
-              <span className="truncate">{suggestion.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <CustomerMomentCards customer={customer} onSendPrompt={onSendPrompt} sending={sending} />
     </div>
   );
 }
@@ -1620,34 +1850,91 @@ function CustomerMomentCards({ customer, onSendPrompt, sending }) {
   if (!cards.length) return null;
 
   return (
-    <div className="flex max-h-[340px] shrink-0 justify-center overflow-y-auto bg-[#fbf4f8] px-4 py-4">
-      <div className="flex w-[700px] max-w-full flex-col gap-3">
+    <div className="mt-5 w-full max-w-[660px] text-left xl:mt-6">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {cards.map((card) => (
           <button
             key={card.id}
             type="button"
             onClick={() => onSendPrompt?.(card.prompt)}
             disabled={sending}
-            className="group w-full rounded-[8px] border border-[#eadce4] bg-[#fff9fd] px-5 py-4 text-left shadow-[0_1px_2px_rgba(28,40,64,0.03)] transition-colors hover:border-[#ddc9d4] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-50"
+            className="group flex min-h-24 w-full flex-col rounded-lg border border-border bg-card px-3.5 py-3 text-left text-card-foreground transition hover:brightness-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60"
           >
             <span className="flex min-w-0 items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2 text-[10px] font-semibold uppercase leading-none" style={{ color: card.accent }}>
-                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: card.accent }} aria-hidden="true" />
+              <span className="flex min-w-0 items-center gap-2 font-mono text-xs font-medium uppercase leading-none text-muted-foreground">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                 <span className="truncate">{card.label}</span>
               </span>
-              <span className="shrink-0 rounded-full bg-[#f2e8ef] px-3 py-1 text-[12px] font-medium leading-none text-[#9a6b7f]">
+              <Badge variant="secondary" size="sm" className="shrink-0 font-mono uppercase">
                 {card.badge}
-              </span>
+              </Badge>
             </span>
-            <span className="mt-3 block text-[17px] font-semibold leading-6 text-[#16151a]">{card.title}</span>
-            <span className="mt-1 block text-[14px] leading-5 text-[#817178]">
-              {card.detail}{" "}
-              <span className="font-semibold text-[#3159ff] transition-colors group-hover:text-[#2147e8]">{card.actionLabel} -&gt;</span>
-            </span>
+            <MomentCardBody card={card} />
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+// Each suggestion type renders in its own format so the grid never feels like
+// one repeated template: metric (big number), note (quoted insight), task
+// (checklist item), or countdown/default (event line).
+function MomentCardBody({ card }) {
+  const action = <span className="font-medium text-primary">{card.actionLabel} -&gt;</span>;
+
+  if (card.variant === "metric") {
+    return (
+      <>
+        <span className="mt-2 flex items-baseline gap-1.5">
+          <span className="text-[26px] font-semibold leading-none tabular-nums text-foreground">{card.metric}</span>
+          <span className="min-w-0 text-xs leading-4 text-muted-foreground">{card.metricCaption}</span>
+        </span>
+        <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
+          {card.detail} {action}
+        </span>
+      </>
+    );
+  }
+
+  if (card.variant === "note") {
+    return (
+      <>
+        {card.title ? (
+          <span className="mt-1.5 block font-mono text-[11px] uppercase tracking-wide text-muted-foreground/80">
+            {card.title}
+          </span>
+        ) : null}
+        <span className="mt-1 block border-l-2 border-primary/40 pl-2.5 text-sm italic leading-5 text-foreground">
+          &ldquo;{card.detail}&rdquo;
+        </span>
+        <span className="mt-auto block pt-2 text-xs leading-5">{action}</span>
+      </>
+    );
+  }
+
+  if (card.variant === "task") {
+    return (
+      <>
+        <span className="mt-1.5 flex items-start gap-2">
+          <span className="mt-0.5 size-3.5 shrink-0 rounded-sm border border-primary/50 bg-primary/5" aria-hidden="true" />
+          <span className="min-w-0 text-sm font-medium leading-5 text-foreground">{card.title}</span>
+        </span>
+        <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
+          {card.detail} {action}
+        </span>
+      </>
+    );
+  }
+
+  // countdown / default - event line.
+  return (
+    <>
+      <span className="mt-1.5 block text-sm font-medium leading-5 text-foreground">{card.title}</span>
+      <span className="mt-auto block pt-2 text-xs leading-5 text-muted-foreground">
+        {card.detail} {action}
+      </span>
+    </>
   );
 }
 
@@ -2402,6 +2689,7 @@ export function CustomerWorkspace() {
           {
             id: `memory-${savedEntry.id}`,
             role: "assistant",
+            createdAt: new Date().toISOString(),
             text: `Saved to ${customer.name}'s memory:\n\n${savedEntry.summary}`,
           },
         ]);
@@ -2736,6 +3024,7 @@ export function CustomerWorkspace() {
       {
         id: `notice-${Date.now()}`,
         role: "assistant",
+        createdAt: new Date().toISOString(),
         ...message,
       },
     ]);
@@ -2760,7 +3049,7 @@ export function CustomerWorkspace() {
     const thinkingStartedAt = Date.now();
     setThinkingIntent("follow_up");
     setSending(true);
-    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt }]);
+    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: prompt, createdAt: new Date().toISOString() }]);
 
     try {
       const latestKnowledge = await refreshCustomerKnowledge();
@@ -2772,7 +3061,7 @@ export function CustomerWorkspace() {
         model: apiModel,
       });
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
-      if (reply) setMessages((prev) => [...prev, { ...reply, animateText: true }]);
+      if (reply) setMessages((prev) => [...prev, { createdAt: new Date().toISOString(), ...reply, animateText: true }]);
     } catch {
       await waitForThinkingSequence(thinkingStartedAt, "follow_up");
       addAssistantNotice("I could not draft a follow-up right now. Try again after saving the latest client memory.");
@@ -2787,7 +3076,7 @@ export function CustomerWorkspace() {
     const customerRecordUpdateRequest = parseCustomerRecordUpdateRequest(text, customer, messages);
     const memoryUpdateRequest = parseMemoryUpdateRequest(text);
     const intent = getThinkingIntentForPrompt(text, !!articleCandidate, customer, messages);
-    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
+    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text, createdAt: new Date().toISOString() }]);
     setValue("");
     const thinkingStartedAt = Date.now();
     setSending(true);
@@ -2852,7 +3141,7 @@ export function CustomerWorkspace() {
       });
       await waitForThinkingSequence(thinkingStartedAt, intent);
       if (reply) {
-        setMessages((prev) => [...prev, { ...reply, animateText: true }]);
+        setMessages((prev) => [...prev, { createdAt: new Date().toISOString(), ...reply, animateText: true }]);
         try {
           await remember(
             buildMemoryEntry({
@@ -2890,7 +3179,7 @@ export function CustomerWorkspace() {
     if (suggestion.action === "create-article") {
       setMessages((prev) => [
         ...prev,
-        { id: `u-${Date.now()}`, role: "user", text: suggestion.label },
+        { id: `u-${Date.now()}`, role: "user", text: suggestion.label, createdAt: new Date().toISOString() },
       ]);
       const thinkingStartedAt = Date.now();
       setSending(true);
@@ -2944,10 +3233,12 @@ export function CustomerWorkspace() {
     });
   }
 
-  const conversationSummary = buildCustomerConversationSummary({
+  const activityItems = buildCustomerActivityTimeline({
     customer,
     messages: visibleMessages,
     memories: safeMemories,
+    meetings: customerMeetings,
+    articles,
   });
   const hasStartedChat = visibleMessages.some((message) => message.id !== "seed-1");
   const showStartPrompt = !hasStartedChat && !sending;
@@ -3023,7 +3314,6 @@ export function CustomerWorkspace() {
 	              onModelChange={setSelectedModel}
 	            />
 	          </div>
-	          <CustomerMomentCards customer={customer} onSendPrompt={sendCustomerPrompt} sending={sending} />
 	        </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white px-6">
@@ -3034,23 +3324,23 @@ export function CustomerWorkspace() {
           <Tabs defaultValue="details" className="gap-0 pb-8 pt-4">
             <TabsList
               variant="ghost"
-              className="flex w-fit items-center gap-1 rounded-[6px] bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"
+              className="flex w-full items-center gap-1 rounded-xl bg-[#eee4e3] p-1 [&_[data-slot=tab-indicator]]:hidden"
             >
               <TabsTrigger
                 value="details"
-                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className={CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS}
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
-                value="summary"
-                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                value="activity"
+                className={CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS}
               >
-                Summary
+                Activity
               </TabsTrigger>
               <TabsTrigger
                 value="meetings"
-                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className={CUSTOMER_WORKSPACE_TAB_TRIGGER_CLASS}
               >
                 Meetings
               </TabsTrigger>
@@ -3072,13 +3362,8 @@ export function CustomerWorkspace() {
               )}
             </TabsContent>
 
-            <TabsContent value="summary" className="pt-5">
-              <CustomerConversationSummaryPanel
-                summary={conversationSummary}
-                memoriesLoading={memoriesLoading}
-                onStartNewChat={startNewCustomerChat}
-                sending={sending}
-              />
+            <TabsContent value="activity" className="pt-6">
+              <CustomerActivityTimeline items={activityItems} loading={memoriesLoading && !fetchedMemories} />
             </TabsContent>
 
             <TabsContent value="meetings" className="pt-5">
@@ -3102,82 +3387,49 @@ export function CustomerWorkspace() {
   );
 }
 
-function ConversationSummaryItem({ label, value }) {
-  return (
-    <div className="border-b border-black/[0.06] pb-3 last:border-b-0 last:pb-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">{label}</dt>
-      <dd className="mt-1 text-sm leading-6 text-[#101112]">{value}</dd>
-    </div>
-  );
-}
-
-function CustomerConversationSummaryPanel({ summary, memoriesLoading, onStartNewChat, sending }) {
-  const turnLabel = summary.turnCount === 1 ? "1 turn" : `${summary.turnCount} turns`;
+function CustomerActivityTimeline({ items, loading }) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
 
   return (
-    <section aria-labelledby="conversation-summary-heading">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 id="conversation-summary-heading" className="text-sm font-semibold">
-          Conversation summary
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onStartNewChat}
-            disabled={sending}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2 text-[12px] font-medium leading-none text-[#101112] shadow-[0_1px_2px_rgba(28,40,64,0.04)] transition-colors hover:bg-[#f6f7f9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#266df0]/20 disabled:pointer-events-none disabled:opacity-45"
-          >
-            <Plus className="size-3.5 text-[#266df0]" strokeWidth={1.9} />
-            <span>New chat</span>
-          </button>
-          <span className="text-xs text-muted-foreground" aria-label={`Conversation summary source: ${summary.sourceLabel}`}>
-            {memoriesLoading && summary.isEmpty ? "Loading" : summary.sourceLabel}
-          </span>
-        </div>
-      </div>
+    <section aria-labelledby="customer-activity-heading">
+      <h3 id="customer-activity-heading" className="sr-only">
+        Activity timeline
+      </h3>
 
-      {memoriesLoading && summary.isEmpty ? (
-        <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground" role="status">
-          Summarizing conversation...
+      {loading && !safeItems.length ? (
+        <div className="rounded-lg border border-[#eadfe1] bg-white/70 p-4 text-sm text-[#8a7f80]" role="status">
+          Loading activity...
         </div>
+      ) : safeItems.length ? (
+        <ol className="space-y-0" aria-label="Customer activity timeline">
+          {safeItems.map((item, index) => (
+            <li key={item.id} className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3 pb-6 last:pb-0">
+              <div className="relative flex justify-center pt-[7px]" aria-hidden="true">
+                <span
+                  className={cn(
+                    "relative z-10 size-2.5 rounded-full",
+                    index === 0 ? "bg-[#5e6de8]" : "bg-[#d9d1d2]"
+                  )}
+                />
+                {index < safeItems.length - 1 ? (
+                  <span className="absolute bottom-[-14px] top-[18px] w-px bg-[#dfd6d7]" />
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <time
+                  dateTime={String(item.date ?? "")}
+                  className="block text-[11px] font-semibold uppercase tracking-[0.09em] text-[#aaa0a6]"
+                >
+                  {item.dateLabel}
+                </time>
+                <p className="mt-1 text-[15px] leading-[1.45] text-[#27182b]">{item.text}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       ) : (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-black/[0.07] bg-white p-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#266df0]">
-                <Sparkles className="size-3.5" strokeWidth={1.9} />
-                Summary
-              </span>
-              <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {turnLabel}
-              </span>
-            </div>
-            <p className="text-sm leading-6 text-[#101112]">{summary.overview}</p>
-          </div>
-
-          <dl className="rounded-lg border border-black/[0.07] bg-white p-4">
-            <ConversationSummaryItem label="Advisor focus" value={summary.advisorFocus} />
-            <ConversationSummaryItem label="Assistant covered" value={summary.assistantSummary} />
-            <ConversationSummaryItem label="Next action" value={summary.nextAction} />
-            <ConversationSummaryItem
-              label="Topics"
-              value={summary.topics.length ? summary.topics.join(", ") : "No topics detected yet."}
-            />
-          </dl>
-
-          {summary.keyPoints.length ? (
-            <div className="rounded-lg border border-black/[0.07] bg-white p-4">
-              <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40">Key points</h4>
-              <ul className="mt-2 space-y-2">
-                {summary.keyPoints.map((point) => (
-                  <li key={point} className="flex gap-2 text-sm leading-6 text-[#101112]">
-                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#266df0]" aria-hidden="true" />
-                    <span>{point}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+        <div className="rounded-lg border border-[#eadfe1] bg-white/70 p-4 text-sm text-[#8a7f80]">
+          No customer activity has been saved yet.
         </div>
       )}
     </section>

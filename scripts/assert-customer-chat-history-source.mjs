@@ -5,33 +5,38 @@ const source = readFileSync(new URL("../src/pages/CustomerWorkspace.jsx", import
 
 assert.match(
   source,
-  /function buildCustomerConversationSummary\(\{ customer, messages = \[\], memories = \[\] \}\)/,
-  "CustomerWorkspace must build a conversation summary for the customer sidebar."
+  /function buildCustomerActivityTimeline\(\{ customer, messages = \[\], memories = \[\], meetings = \[\], articles = \[\] \}\)/,
+  "CustomerWorkspace must build an activity timeline for the customer sidebar."
 );
 assert.match(
   source,
   /const currentTurns = buildCurrentConversationTurns\(messages\);/,
-  "CustomerWorkspace conversation summary should read the active conversation first."
+  "CustomerWorkspace activity timeline should read the active conversation first."
 );
 assert.match(
   source,
-  /const savedTurns = buildSavedConversationTurns\(memories\);/,
-  "CustomerWorkspace conversation summary should fall back to saved customer conversation turns."
+  /const conversationTurns = currentTurns\.length \? currentTurns\.slice\(-4\) : buildSavedConversationTurns\(memories\)\.slice\(-4\);/,
+  "CustomerWorkspace activity timeline should fall back to saved customer conversation turns."
 );
 assert.match(
   source,
-  /const turns = currentTurns\.length \? currentTurns : savedTurns;/,
-  "CustomerWorkspace conversation summary must prefer the current conversation over saved turns."
+  /<TabsTrigger[\s\S]*value="activity"[\s\S]*Activity/,
+  "CustomerWorkspace should label the middle sidebar tab as Activity."
 );
 assert.match(
   source,
-  /aria-labelledby="conversation-summary-heading"/,
-  "CustomerWorkspace should expose the sidebar as a conversation summary section."
+  /aria-labelledby="customer-activity-heading"/,
+  "CustomerWorkspace should expose the sidebar as an activity timeline section."
 );
 assert.match(
   source,
-  /<h3 id="conversation-summary-heading"[\s\S]*Conversation summary/,
-  "CustomerWorkspace should label the sidebar section as a conversation summary."
+  /aria-label="Customer activity timeline"/,
+  "CustomerWorkspace should render Activity as a timeline list."
+);
+assert.doesNotMatch(
+  source,
+  /Conversation summary/,
+  "CustomerWorkspace should not render the old conversation summary label."
 );
 assert.doesNotMatch(
   source,
@@ -51,5 +56,5 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   source,
   /api\.getAdvisorChatThreads\(\{ limit: 8 \}\)/,
-  "CustomerWorkspace should not load global advisor chat threads for the customer summary."
+  "CustomerWorkspace should not load global advisor chat threads for customer activity."
 );
