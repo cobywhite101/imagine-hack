@@ -320,6 +320,28 @@ function setStoredCustomerOverride(customerId, patch) {
   }
 }
 
+// Drop a local override once Supabase accepts the same write, so the database
+// becomes the source of truth again for those fields. Pass `fields` to clear
+// only the columns that were successfully persisted.
+function clearStoredCustomerOverride(customerId, fields) {
+  if (typeof window === "undefined" || !customerId) return;
+  try {
+    const stored = getStoredCustomerOverrides();
+    const key = String(customerId);
+    if (!stored[key]) return;
+    if (Array.isArray(fields) && fields.length) {
+      for (const field of fields) delete stored[key][field];
+      const remaining = Object.keys(stored[key]).filter((name) => name !== "updatedAt");
+      if (!remaining.length) delete stored[key];
+    } else {
+      delete stored[key];
+    }
+    window.localStorage.setItem(CUSTOMER_RECORD_STORAGE_KEY, JSON.stringify(stored));
+  } catch {
+    // Best-effort cleanup; ignore storage failures.
+  }
+}
+
 function normalizeAdvisorMeeting(meeting = {}) {
   const allDay = Boolean(meeting.allDay ?? meeting.all_day);
   const startValue = meeting.start ?? meeting.startsAt ?? meeting.starts_at ?? meeting.start_at;
@@ -1388,7 +1410,9 @@ export const api = {
 
   getCustomers: async () => {
     const rows = await fromTable("customers", localCustomers, { column: "name" });
-    const overrides = isSupabaseConfigured ? {} : getStoredCustomerOverrides();
+    // Apply local overrides in both modes: in live mode they hold edits that
+    // Supabase rejected (missing table / RLS), so the list still reflects them.
+    const overrides = getStoredCustomerOverrides();
     return rows.map((row) => normalizeCustomerRecord({ ...row, ...(overrides[String(row.id)] ?? {}) }));
   },
 
@@ -1409,18 +1433,35 @@ export const api = {
       .maybeSingle();
 
     if (error) throw error;
-    return data ? normalizeCustomerRecord(data) : null;
+
+    // Merge any locally-stored override on top, and fall back to mock data if
+    // the row isn't in Supabase yet, so an edit that Supabase rejected still
+    // shows after a reload.
+    const override = getStoredCustomerOverrides()[String(customerId)] ?? {};
+    const base = data ?? localCustomers.find((item) => String(item.id) === String(customerId));
+    return base ? normalizeCustomerRecord({ ...base, ...override }) : null;
   },
 
   updateCustomerRecord: async (customerId, patch) => {
     if (!customerId || !patch || typeof patch !== "object") return null;
 
+    // Persist the edit to a local override store and return the merged record.
+    // Used offline, and as a fallback in live mode when the customers table is
+    // missing or the row is not writable (e.g. RLS blocks anon updates), so the
+    // change always sticks for the demo. Mirrors fromTableOrMock's philosophy:
+    // try Supabase first, but never let a missing/locked table break the flow.
+    const persistLocalOverride = async () => {
+      const override = setStoredCustomerOverride(customerId, patch) ?? patch;
+      const current = isSupabaseConfigured
+        ? await api.getCustomerById(customerId)
+        : localCustomers.find((item) => String(item.id) === String(customerId));
+      if (!current) return null;
+      return normalizeCustomerRecord({ ...current, ...override });
+    };
+
     if (!isSupabaseConfigured) {
       await delay();
-      const current = localCustomers.find((item) => String(item.id) === String(customerId));
-      if (!current) return null;
-      const override = setStoredCustomerOverride(customerId, patch) ?? patch;
-      return normalizeCustomerRecord({ ...current, ...override });
+      return persistLocalOverride();
     }
 
     const rowPatch = {};
@@ -1433,15 +1474,26 @@ export const api = {
     if (!Object.keys(rowPatch).length) return api.getCustomerById(customerId);
     rowPatch.updated_at = new Date().toISOString();
 
-    const { data, error } = await supabase
-      .from("customers")
-      .update(rowPatch)
-      .eq("id", customerId)
-      .select("*")
-      .single();
+    try {
+      // maybeSingle (not single) so a 0-row update — e.g. the row is hidden by
+      // RLS — resolves to null instead of throwing, letting us fall back.
+      const { data, error } = await supabase
+        .from("customers")
+        .update(rowPatch)
+        .eq("id", customerId)
+        .select("*")
+        .maybeSingle();
 
-    if (error) throw error;
-    return normalizeCustomerRecord(data);
+      if (!error && data) {
+        // Supabase accepted the write — it owns these fields now.
+        clearStoredCustomerOverride(customerId, Object.keys(patch));
+        return normalizeCustomerRecord(data);
+      }
+    } catch {
+      // Table missing or write rejected — fall through to the local override.
+    }
+
+    return persistLocalOverride();
   },
 
   getCustomerMemories: async (customerId) => {
