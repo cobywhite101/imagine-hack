@@ -30,6 +30,8 @@ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 export const dataMode = isSupabaseConfigured ? "supabase" : "mock";
 const WORKFLOW_CONFIG_KEY = "client-companion-workflow-v1";
 const CUSTOMER_RECORD_STORAGE_KEY = "client-os-customer-overrides-v1";
+const CUSTOMER_MEMORY_STORAGE_KEY = "client-os-customer-memories-v1";
+const CUSTOMER_CHAT_UPDATED_EVENT = "client-os-customer-chat-updated";
 const useSupabaseCustomerChat =
   isSupabaseConfigured && import.meta.env.VITE_ENABLE_CUSTOMER_CHAT_FUNCTION === "true";
 const CUSTOMER_CHAT_STOP_WORDS = new Set([
@@ -114,6 +116,10 @@ function getCustomerAccent(customer) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
   }
   return CUSTOMER_ACCENTS[hash % CUSTOMER_ACCENTS.length];
+}
+
+function isImageAvatarValue(value) {
+  return /^(https?:|data:image\/|blob:)/i.test(String(value ?? "").trim());
 }
 
 async function fromTable(table, mockValue, orderBy) {
@@ -341,6 +347,44 @@ function clearStoredCustomerOverride(customerId, fields) {
   } catch {
     // Best-effort cleanup; ignore storage failures.
   }
+}
+
+function getStoredCustomerMemories(customerId = null) {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_MEMORY_STORAGE_KEY) ?? "{}");
+    const entries = customerId ? stored[String(customerId)] ?? [] : Object.values(stored).flat();
+    return entries.map(normalizeCustomerMemory);
+  } catch {
+    return [];
+  }
+}
+
+function setStoredCustomerMemory(customerId, memory) {
+  if (typeof window === "undefined" || !customerId) return normalizeCustomerMemory(memory);
+  const entry = normalizeCustomerMemory({
+    ...memory,
+    customerId,
+    createdAt: memory.createdAt ?? new Date().toISOString(),
+  });
+
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CUSTOMER_MEMORY_STORAGE_KEY) ?? "{}");
+    const key = String(customerId);
+    const current = stored[key] ?? [];
+    stored[key] = [entry, ...current.filter((item) => String(item.id) !== String(entry.id))];
+    window.localStorage.setItem(CUSTOMER_MEMORY_STORAGE_KEY, JSON.stringify(stored));
+  } catch {
+    /* local persistence is best-effort for the demo */
+  }
+
+  if (entry.kind === "chat") {
+    window.dispatchEvent(
+      new CustomEvent(CUSTOMER_CHAT_UPDATED_EVENT, { detail: { customerId: entry.customerId } })
+    );
+  }
+
+  return entry;
 }
 
 function normalizeAdvisorMeeting(meeting = {}) {
@@ -718,6 +762,18 @@ function normalizeCustomerRecord(customer) {
     nextAction: customer.nextAction ?? customer.next_action ?? mockCustomer?.nextAction,
     task: customer.task ?? customer.nextAction ?? customer.next_action ?? mockCustomer?.task ?? mockCustomer?.nextAction ?? "",
     avatar: customer.avatar ?? mockCustomer?.avatar ?? getInitials(name),
+    avatarUrl:
+      customer.avatarUrl ??
+      customer.avatar_url ??
+      customer.profileImageUrl ??
+      customer.profile_image_url ??
+      customer.profilePictureUrl ??
+      customer.profile_picture_url ??
+      customer.photoUrl ??
+      customer.photo_url ??
+      customer.imageUrl ??
+      customer.image_url ??
+      (isImageAvatarValue(customer.avatar) ? customer.avatar : mockCustomer?.avatarUrl),
     accent: getCustomerAccent({ ...customer, accent: customer.accent ?? mockCustomer?.accent }),
     email: customer.email ?? mockCustomer?.email ?? customer.contact ?? "",
     phone: customer.phone ?? mockCustomer?.phone ?? "",
@@ -1503,7 +1559,15 @@ export const api = {
 
   getCustomerMemories: async (customerId) => {
     if (!customerId) return [];
-    requireSupabase("Customer memories");
+
+    if (!isSupabaseConfigured) {
+      await delay();
+      return [...getStoredCustomerMemories(customerId), ...localCustomerMemories]
+        .filter((memory) => String(memory.customerId) === String(customerId))
+        .map(normalizeCustomerMemory)
+        .filter((memory) => !isArticleBackedMemory(memory))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
 
     try {
       const { data, error } = await supabase
@@ -1513,21 +1577,83 @@ export const api = {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return (data ?? [])
+      return [...getStoredCustomerMemories(customerId), ...(data ?? [])]
         .map(normalizeCustomerMemory)
-        .filter((memory) => !isArticleBackedMemory(memory));
+        .filter((memory) => !isArticleBackedMemory(memory))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     } catch (error) {
-      throw error;
+      return getStoredCustomerMemories(customerId)
+        .filter((memory) => !isArticleBackedMemory(memory))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
   },
 
+  getRecentCustomerChatThreads: async () => {
+    const customers = await api.getCustomers();
+    const customersById = new Map(customers.map((customer) => [String(customer.id), customer]));
+    let chatMemories = [];
+
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from("customer_memories")
+          .select("*")
+          .eq("kind", "chat")
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+        chatMemories = [...getStoredCustomerMemories(), ...(data ?? [])]
+          .map(normalizeCustomerMemory)
+          .filter((memory) => memory.kind === "chat");
+      } catch {
+        chatMemories = getStoredCustomerMemories().filter((memory) => memory.kind === "chat");
+      }
+    } else {
+      await delay();
+      chatMemories = [...getStoredCustomerMemories(), ...localCustomerMemories.map(normalizeCustomerMemory)].filter(
+        (memory) => memory.kind === "chat"
+      );
+    }
+
+    const latestByCustomer = new Map();
+    chatMemories
+      .filter((memory) => memory.customerId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .forEach((memory) => {
+        const key = String(memory.customerId);
+        if (!latestByCustomer.has(key)) latestByCustomer.set(key, memory);
+      });
+
+    return Array.from(latestByCustomer.values()).map((memory) => {
+      const customer = customersById.get(String(memory.customerId));
+      const customerName = customer?.name || customer?.company || `Customer ${memory.customerId}`;
+      const summary = cleanCustomerText(memory.summary || memory.body || "Recent AI chat");
+
+      return {
+        id: memory.id,
+        customerId: memory.customerId,
+        customerName,
+        avatar: isImageAvatarValue(customer?.avatar) ? getInitials(customerName) : customer?.avatar || getInitials(customerName),
+        avatarUrl: customer?.avatarUrl || (isImageAvatarValue(customer?.avatar) ? customer.avatar : ""),
+        accent: customer?.accent || getCustomerAccent({ id: memory.customerId, name: customerName }),
+        summary: truncateCustomerText(summary, 72),
+        createdAt: memory.createdAt,
+      };
+    });
+  },
+
   saveCustomerMemory: async (customerId, memory) => {
-    requireSupabase("Saving customer memory");
     const entry = normalizeCustomerMemory({
       ...memory,
       customerId,
       createdAt: memory.createdAt ?? new Date().toISOString(),
     });
+
+    if (!isSupabaseConfigured) {
+      await delay();
+      return setStoredCustomerMemory(customerId, entry);
+    }
 
     try {
       const { data, error } = await supabase
@@ -1547,12 +1673,20 @@ export const api = {
         .single();
 
       if (error) throw error;
-      if (!error && data) return normalizeCustomerMemory(data);
+      if (!error && data) {
+        const savedEntry = normalizeCustomerMemory(data);
+        if (savedEntry.kind === "chat" && typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent(CUSTOMER_CHAT_UPDATED_EVENT, { detail: { customerId: savedEntry.customerId } })
+          );
+        }
+        return savedEntry;
+      }
     } catch (error) {
-      throw error;
+      return setStoredCustomerMemory(customerId, entry);
     }
 
-    return entry;
+    return setStoredCustomerMemory(customerId, entry);
   },
 
   updateCustomerMemory: async (customerId, memory) => {

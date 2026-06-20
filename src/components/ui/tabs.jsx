@@ -58,7 +58,7 @@ export function TabsTab(
   return (
     <TabsPrimitive.Tab
       className={cn(
-        "relative flex h-9 shrink-0 grow cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-[calc(--spacing(2.5)-1px)] font-medium text-base outline-none focus:outline-none focus-visible:outline-none transition-[color,background-color,box-shadow] hover:text-muted-foreground data-disabled:pointer-events-none data-[orientation=vertical]:w-full data-[orientation=vertical]:justify-start data-[selected]:bg-blue-600 data-[selected]:text-white data-disabled:opacity-64 sm:h-8 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
+        "relative flex h-9 shrink-0 grow cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-[calc(--spacing(2.5)-1px)] font-medium text-base outline-none focus:outline-none focus-visible:outline-none transition-[color,background-color,box-shadow,filter] data-disabled:pointer-events-none data-[orientation=vertical]:w-full data-[orientation=vertical]:justify-start data-[selected]:bg-blue-600 data-[selected]:text-white data-disabled:opacity-64 hover:brightness-90 hover:filter sm:h-8 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
         className
       )}
       data-slot="tabs-tab"

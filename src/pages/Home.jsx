@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Clock3,
   House,
@@ -11,12 +12,14 @@ import { api } from "@/services/dataClient";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 
 export function Home() {
+  const [searchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [homeError, setHomeError] = useState(null);
   const todoCards = dashboard?.tasks ?? [];
   const meetings = dashboard?.meetings ?? [];
   const brief = dashboard?.brief;
+  const selectedMeetingId = searchParams.get("meeting");
   const initialLoading = dashboard === null && !homeError;
   const briefHeadline = brief?.headline ?? defaultBrief.headline;
 
@@ -142,6 +145,7 @@ export function Home() {
               events={meetings}
               onSaveEvent={saveMeeting}
               onDeleteEvent={deleteMeeting}
+              selectedEventId={selectedMeetingId}
             />
           )}
         </div>
@@ -596,7 +600,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
               className={[
                 "h-8 rounded-full px-3 text-[14px] font-semibold leading-4 transition-colors",
                 canSave
-                  ? "bg-[#1a1a1a] text-white hover:bg-black"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : "cursor-not-allowed bg-[#f8f8f7] text-[#81817e]",
               ].join(" ")}
             >

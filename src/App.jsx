@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom";
 import { Home } from "@/pages/Home";
 import { Chat } from "@/pages/Chat";
 import { CustomerHub } from "@/pages/CustomerHub";
@@ -8,22 +8,17 @@ import { CustomerWorkspace } from "@/pages/CustomerWorkspace";
 import { AgentHub } from "@/pages/AgentHub";
 import { McpPage } from "@/pages/McpPage";
 import { Workflows } from "@/pages/Workflows";
-import { dataMode } from "@/services/dataClient";
+import { api } from "@/services/dataClient";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Bot,
-  CalendarDays,
   ChevronDown,
   Database,
   House,
   Keyboard,
-  MessageCircle,
   PanelLeft,
-  Plug,
   Search,
   Users,
-  Workflow,
   X,
 } from "lucide-react";
 
@@ -39,46 +34,63 @@ const sections = [
       { to: "/customers", label: "Client records", icon: Database },
     ],
   },
-  {
-    label: "Chat",
-    items: [
-      { to: "/mcp", label: "Knowledge connectors", icon: Plug },
-      { to: "/customers", label: "Weekly client view", icon: CalendarDays },
-    ],
-  },
 ];
 
 const quickActions = [
   { to: "/home", label: "Open home", description: "Review today and follow-ups", icon: House },
   { to: "/customers", label: "Open customer hub", description: "Find and manage client records", icon: Users },
-  { to: "/chat", label: "Open advisor companion", description: "Draft notes and client outreach", icon: MessageCircle },
-  { to: "/agents", label: "Open agent hub", description: "Run agent presets", icon: Bot },
-  { to: "/workflows", label: "Open workflows", description: "Build follow-up automations", icon: Workflow },
-  { to: "/mcp", label: "Open connectors", description: "Manage knowledge sources", icon: Plug },
 ];
 
-const LAST_CUSTOMER_CHAT_KEY = "client-os-last-customer-chat-id";
+const SIDEBAR_OPEN_KEY = "client-os-sidebar-open";
+const CUSTOMER_CHAT_UPDATED_EVENT = "client-os-customer-chat-updated";
 
-function getCustomerIdFromPath(pathname) {
-  return pathname.match(/^\/customers\/([^/]+)/)?.[1] ?? null;
-}
-
-function SidebarLink({ to, label, icon: Icon, end, inset = false, showActive = true }) {
+function SidebarLink({
+  to,
+  label,
+  description,
+  icon: Icon,
+  avatar,
+  avatarUrl,
+  accent,
+  end,
+  inset = false,
+  showActive = true,
+}) {
   return (
     <NavLink
       to={to}
       end={end}
       className={({ isActive }) =>
         cn(
-          "group flex h-7 min-w-0 items-center gap-1.5 rounded-[9px] px-2 text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] transition-colors",
+          "group flex min-w-0 items-center gap-1.5 rounded-[9px] px-2 text-[14px] font-medium leading-5 tracking-[-0.01em] text-[#101112] transition-colors",
+          description ? "min-h-10 py-1" : "h-7",
           inset ? "ml-5 w-[212px]" : "w-[232px]",
           showActive && isActive ? "bg-black/[0.04]" : "hover:bg-black/[0.035]"
         )
       }
-      title={label}
+      title={description ? `${label} · ${description}` : label}
     >
-      <Icon className="size-3.5 shrink-0 text-[#5f6368]" strokeWidth={1.9} />
-      <span className="min-w-0 truncate">{label}</span>
+      {avatar || avatarUrl ? (
+        <Avatar className="size-6 rounded-full">
+          {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
+          <AvatarFallback
+            className="rounded-full text-[9px] font-semibold leading-none text-white"
+            style={{ backgroundColor: accent }}
+          >
+            {avatar}
+          </AvatarFallback>
+        </Avatar>
+      ) : Icon ? (
+        <Icon className="size-3.5 shrink-0 text-[#5f6368]" strokeWidth={1.9} />
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {description ? (
+          <span className="block truncate text-[11px] font-medium leading-4 tracking-normal text-black/45">
+            {description}
+          </span>
+        ) : null}
+      </span>
     </NavLink>
   );
 }
@@ -178,7 +190,7 @@ function QuickActionsDialog({ open, onOpenChange }) {
   );
 }
 
-function SidebarSection({ label, items }) {
+function SidebarSection({ label, items, emptyText }) {
   return (
     <div className="flex w-[247px] flex-col gap-0.5">
       <button
@@ -190,23 +202,42 @@ function SidebarSection({ label, items }) {
       </button>
       <div className="relative flex flex-col gap-px px-2 pb-0.5">
         <div className="absolute left-[27px] top-0 h-full w-px bg-[#d9dade]/60" />
-        {items.map((item) => (
-          <SidebarLink key={`${label}-${item.label}`} {...item} inset showActive={false} />
-        ))}
+        {items.length ? (
+          items.map((item) => (
+            <SidebarLink
+              key={`${label}-${item.to}-${item.label}`}
+              {...item}
+              inset
+              showActive={item.showActive ?? false}
+            />
+          ))
+        ) : (
+          <div className="ml-5 w-[212px] px-2 py-1.5 text-[12px] font-medium leading-4 text-black/40">
+            {emptyText}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function Sidebar() {
-  const location = useLocation();
+function Sidebar({ onCollapse }) {
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
-  const [lastCustomerChatId, setLastCustomerChatId] = useState(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(LAST_CUSTOMER_CHAT_KEY);
-  });
-  const activeCustomerId = getCustomerIdFromPath(location.pathname);
-  const chatSectionKey = activeCustomerId ?? lastCustomerChatId ?? "Chat";
+  const [recentCustomerChats, setRecentCustomerChats] = useState([]);
+  const [recentChatsLoading, setRecentChatsLoading] = useState(true);
+  const recentChatItems = useMemo(
+    () =>
+      recentCustomerChats.map((chat) => ({
+        to: `/customers/${chat.customerId}`,
+        label: chat.customerName,
+        description: chat.summary,
+        avatar: chat.avatar,
+        avatarUrl: chat.avatarUrl,
+        accent: chat.accent,
+        showActive: true,
+      })),
+    [recentCustomerChats]
+  );
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -221,31 +252,64 @@ function Sidebar() {
   }, []);
 
   useEffect(() => {
-    if (!activeCustomerId || typeof window === "undefined") return;
+    let alive = true;
 
-    window.localStorage.setItem(LAST_CUSTOMER_CHAT_KEY, activeCustomerId);
-    setLastCustomerChatId(activeCustomerId);
-  }, [activeCustomerId]);
+    async function loadRecentCustomerChats() {
+      setRecentChatsLoading(true);
+      try {
+        const threads = await api.getRecentCustomerChatThreads();
+        if (alive) setRecentCustomerChats(threads);
+      } catch {
+        if (alive) setRecentCustomerChats([]);
+      } finally {
+        if (alive) setRecentChatsLoading(false);
+      }
+    }
+
+    function onStorage(event) {
+      if (event.key === "client-os-customer-memories-v1") loadRecentCustomerChats();
+    }
+
+    loadRecentCustomerChats();
+    window.addEventListener(CUSTOMER_CHAT_UPDATED_EVENT, loadRecentCustomerChats);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      alive = false;
+      window.removeEventListener(CUSTOMER_CHAT_UPDATED_EVENT, loadRecentCustomerChats);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   return (
     <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
-      <button
-        type="button"
-        className="flex h-[49px] w-full shrink-0 items-center gap-2 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
-      >
-        <Avatar className="size-6 shrink-0 rounded-md">
-          <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
-            C
-          </AvatarFallback>
-        </Avatar>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
-            Client OS
+      <div className="flex h-[49px] w-full shrink-0 items-center gap-2 border-b border-[#e6e7ea] px-3 text-left">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-black/[0.025]"
+        >
+          <Avatar className="size-6 shrink-0 rounded-md">
+            <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
+              C
+            </AvatarFallback>
+          </Avatar>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
+              Client OS
+            </span>
+            <ChevronDown className="size-3 shrink-0 text-[#101112]" strokeWidth={1.9} />
           </span>
-          <ChevronDown className="size-3 shrink-0 text-[#101112]" strokeWidth={1.9} />
-        </span>
-        <PanelLeft className="size-4 shrink-0 text-black/60" strokeWidth={1.7} />
-      </button>
+        </button>
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-black/60 transition-colors hover:bg-black/[0.05] hover:text-[#101112] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Collapse sidebar"
+          title="Collapse sidebar"
+        >
+          <PanelLeft className="size-4 shrink-0" strokeWidth={1.7} />
+        </button>
+      </div>
 
       <div className="flex h-11 w-[247px] items-center px-2.5 pb-2.5 pt-2">
         <button
@@ -272,8 +336,13 @@ function Sidebar() {
         </div>
         <div className="mt-3 flex flex-col gap-3">
           {sections.map((section) => (
-            <SidebarSection key={section.label === "Chat" ? chatSectionKey : section.label} {...section} />
+            <SidebarSection key={section.label} {...section} />
           ))}
+          <SidebarSection
+            label="Chat"
+            items={recentChatItems}
+            emptyText={recentChatsLoading ? "Loading AI chats..." : "No AI customer chats yet"}
+          />
         </div>
       </nav>
     </aside>
@@ -281,9 +350,31 @@ function Sidebar() {
 }
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(sidebarOpen));
+  }, [sidebarOpen]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar />
+      {sidebarOpen ? (
+        <Sidebar onCollapse={() => setSidebarOpen(false)} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-3 top-3 z-40 flex size-9 items-center justify-center rounded-lg border bg-card text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <PanelLeft className="size-4" strokeWidth={1.8} />
+        </button>
+      )}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />

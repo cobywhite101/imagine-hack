@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowDown,
@@ -132,6 +132,42 @@ function formatMemoryDate(value) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatMeetingDate(iso) {
+  const [year, month, day] = String(iso ?? "").slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatMeetingTime(meeting) {
+  if (meeting.allDay || !String(meeting.start ?? "").includes("T")) return "All day";
+  const [hours, minutes] = String(meeting.start).slice(11, 16).split(":").map(Number);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const hour = hours % 12 || 12;
+  return `${hour}:${String(minutes).padStart(2, "0")} ${ampm}`;
+}
+
+function truncateMeetingNotes(notes) {
+  const text = String(notes ?? "").trim();
+  return text.length > 120 ? `${text.slice(0, 120).trimEnd()}...` : text;
+}
+
+function sortMeetingsUpcomingFirst(meetings = []) {
+  const now = Date.now();
+  const withTime = meetings.map((meeting) => ({
+    meeting,
+    time: new Date(meeting.start).getTime(),
+  }));
+  const upcoming = withTime.filter((item) => Number.isNaN(item.time) || item.time >= now);
+  const past = withTime.filter((item) => !Number.isNaN(item.time) && item.time < now);
+  upcoming.sort((a, b) => a.time - b.time);
+  past.sort((a, b) => b.time - a.time);
+  return [...upcoming, ...past].map((item) => item.meeting);
 }
 
 function cleanText(text) {
@@ -1588,10 +1624,12 @@ function WorkflowDetailsSkeleton() {
 
 export function CustomerWorkspace() {
   const { customerId } = useParams();
+  const navigate = useNavigate();
   const { data: fetchedCustomer, loading, error } = useApi(() => api.getCustomerById(customerId), [customerId]);
   const { data: fetchedMemories } = useApi(() => api.getCustomerMemories(customerId), [customerId]);
   const { data: fetchedConfig } = useApi(() => api.getWorkflowConfig(customerId), [customerId]);
   const { data: fetchedArticles } = useApi(() => api.getCustomerArticles(customerId), [customerId]);
+  const { data: fetchedMeetings } = useApi(() => api.getAdvisorMeetings(), [customerId]);
   const inputRef = useRef(null);
   const threadEndRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -1614,6 +1652,13 @@ export function CustomerWorkspace() {
   const [selectedModel, setSelectedModel] = useState("base");
   const customer = customerOverride ?? fetchedCustomer;
   const apiModel = selectedModel === "reasoning" ? "deepseek-reasoner" : "deepseek-chat";
+  const customerMeetings = useMemo(() => {
+    if (!fetchedMeetings || !customer) return [];
+    const linked = fetchedMeetings.filter((meeting) => String(meeting.customerId) === String(customer.id));
+    return sortMeetingsUpcomingFirst(linked);
+  }, [customer, fetchedMeetings]);
+
+  const openMeetingInCalendar = (meeting) => navigate(`/home?meeting=${meeting.id}`);
 
   useEffect(() => {
     setCustomerOverride(null);
@@ -2384,6 +2429,12 @@ export function CustomerWorkspace() {
               >
                 Activity
               </TabsTrigger>
+              <TabsTrigger
+                value="meetings"
+                className="h-8 rounded-[4px] px-4 text-[13px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+              >
+                Meetings
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="details" className="pt-1">
@@ -2518,6 +2569,10 @@ export function CustomerWorkspace() {
                 )}
               </div>
             </TabsContent>
+
+            <TabsContent value="meetings" className="pt-5">
+              <CustomerMeetingsTab meetings={customerMeetings} onOpen={openMeetingInCalendar} />
+            </TabsContent>
           </Tabs>
         </aside>
       </div>
@@ -2532,6 +2587,53 @@ export function CustomerWorkspace() {
           event.target.value = "";
         }}
       />
+    </div>
+  );
+}
+
+function MeetingRow({ meeting, onOpen }) {
+  const notes = truncateMeetingNotes(meeting.notes);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen?.(meeting)}
+      className="block w-full rounded-lg border bg-white p-3 text-left transition-colors hover:border-primary/40 hover:bg-neutral-50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 truncate text-sm font-medium text-foreground">{meeting.title}</p>
+        <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          {formatMeetingTime(meeting)}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <CalendarDays className="size-3.5 shrink-0" />
+        <span>{formatMeetingDate(meeting.start)}</span>
+        {meeting.location ? <span className="truncate">| {meeting.location}</span> : null}
+      </div>
+      {notes ? <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{notes}</p> : null}
+    </button>
+  );
+}
+
+function CustomerMeetingsTab({ meetings, onOpen }) {
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Linked meetings</h3>
+        <span className="text-xs text-muted-foreground">{meetings.length} scheduled</span>
+      </div>
+      {meetings.length ? (
+        <div className="space-y-2">
+          {meetings.map((meeting) => (
+            <MeetingRow key={meeting.id} meeting={meeting} onOpen={onOpen} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
+          No meetings linked to this customer yet.
+        </div>
+      )}
     </div>
   );
 }
