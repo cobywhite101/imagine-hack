@@ -160,6 +160,45 @@ alter table customers add column if not exists next_life_event text;
 alter table customers add column if not exists next_life_event_date date;
 alter table customers add column if not exists updated_at timestamptz;
 
+create table if not exists advisor_tasks (
+  id text primary key default gen_random_uuid()::text,
+  customer_id text references customers(id) on delete set null,
+  title text not null,
+  icon text,
+  priority text,
+  category text,
+  status text not null default 'To Do',
+  notes text,
+  due_date date,
+  sort_order int not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists advisor_tasks_customer_id_idx
+  on advisor_tasks (customer_id);
+create index if not exists advisor_tasks_status_due_date_idx
+  on advisor_tasks (status, due_date);
+
+create table if not exists advisor_meetings (
+  id text primary key default gen_random_uuid()::text,
+  customer_id text references customers(id) on delete set null,
+  title text not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz,
+  all_day boolean not null default false,
+  location text,
+  notes text,
+  status text not null default 'scheduled',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists advisor_meetings_customer_id_idx
+  on advisor_meetings (customer_id);
+create index if not exists advisor_meetings_starts_at_idx
+  on advisor_meetings (starts_at);
+
 -- Customer seed data lives in supabase/aag_clients.sql.
 -- Run supabase/aag_seed.sql after this schema to ingest the AAG dataset.
 
@@ -178,6 +217,8 @@ alter table mcp_servers enable row level security;
 alter table connectors enable row level security;
 alter table agent_runs enable row level security;
 alter table customers enable row level security;
+alter table advisor_tasks enable row level security;
+alter table advisor_meetings enable row level security;
 
 drop policy if exists "public read" on users;
 drop policy if exists "public read" on badges;
@@ -187,6 +228,14 @@ drop policy if exists "public read" on mcp_servers;
 drop policy if exists "public read" on connectors;
 drop policy if exists "public read" on agent_runs;
 drop policy if exists "public read" on customers;
+drop policy if exists "public read" on advisor_tasks;
+drop policy if exists "public insert" on advisor_tasks;
+drop policy if exists "public update" on advisor_tasks;
+drop policy if exists "public delete" on advisor_tasks;
+drop policy if exists "public read" on advisor_meetings;
+drop policy if exists "public insert" on advisor_meetings;
+drop policy if exists "public update" on advisor_meetings;
+drop policy if exists "public delete" on advisor_meetings;
 
 create policy "public read" on users for select using (true);
 create policy "public read" on badges for select using (true);
@@ -196,3 +245,11 @@ create policy "public read" on mcp_servers for select using (true);
 create policy "public read" on connectors for select using (true);
 create policy "public read" on agent_runs for select using (true);
 create policy "public read" on customers for select using (true);
+create policy "public read" on advisor_tasks for select using (true);
+create policy "public insert" on advisor_tasks for insert with check (true);
+create policy "public update" on advisor_tasks for update using (true) with check (true);
+create policy "public delete" on advisor_tasks for delete using (true);
+create policy "public read" on advisor_meetings for select using (true);
+create policy "public insert" on advisor_meetings for insert with check (true);
+create policy "public update" on advisor_meetings for update using (true) with check (true);
+create policy "public delete" on advisor_meetings for delete using (true);

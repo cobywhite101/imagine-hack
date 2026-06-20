@@ -17,7 +17,8 @@ offline on the data in `src/data/mock.js`.
 ## Going live with Supabase (later)
 
 1. Create a project at supabase.com.
-2. Open the SQL editor and run `supabase/schema.sql`.
+2. Open the SQL editor and run `supabase/schema.sql`, then `supabase/aag_seed.sql`,
+   then `supabase/advisor_home.sql`.
 3. `cp .env.example .env.local` and fill in:
    ```
    VITE_SUPABASE_URL=...

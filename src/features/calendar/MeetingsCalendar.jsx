@@ -35,6 +35,10 @@ const uid = () => `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 // Build a combined ISO local string the calendar understands; "" time => all-day.
 const toISO = (date, time) => (time ? `${date}T${time}` : date);
+const pad = (n) => String(n).padStart(2, "0");
+const toDateInputValue = (dt) =>
+  dt ? `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}` : todayISO();
+const toTimeInputValue = (dt) => (dt ? `${pad(dt.getHours())}:${pad(dt.getMinutes())}` : "");
 
 const emptyDraft = (date) => ({
   id: null,
@@ -44,11 +48,13 @@ const emptyDraft = (date) => ({
   endTime: "",
 });
 
-export function MeetingsCalendar() {
+export function MeetingsCalendar({ events: controlledEvents, onSaveEvent, onDeleteEvent }) {
   const calendarRef = useRef(null);
-  const [events, setEvents] = useState(seedEvents);
+  const [localEvents, setLocalEvents] = useState(seedEvents);
   const [draft, setDraft] = useState(null); // null = modal closed
   const [viewMode, setViewMode] = useState("calendar"); // "calendar" | "list"
+  const [calendarError, setCalendarError] = useState(null);
+  const events = controlledEvents ?? localEvents;
 
   const scheduledCount = events.length;
 
@@ -68,14 +74,12 @@ export function MeetingsCalendar() {
     const e = info.event;
     const start = e.start;
     const end = e.end;
-    const pad = (n) => String(n).padStart(2, "0");
-    const timeStr = (dt) => (dt ? `${pad(dt.getHours())}:${pad(dt.getMinutes())}` : "");
     setDraft({
       id: e.id,
       title: e.title,
-      date: start ? start.toISOString().slice(0, 10) : todayISO(),
-      startTime: e.allDay ? "" : timeStr(start),
-      endTime: e.allDay ? "" : timeStr(end),
+      date: toDateInputValue(start),
+      startTime: e.allDay ? "" : toTimeInputValue(start),
+      endTime: e.allDay ? "" : toTimeInputValue(end),
     });
   }, []);
 
@@ -92,7 +96,7 @@ export function MeetingsCalendar() {
 
   const closeModal = () => setDraft(null);
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draft || !draft.title.trim()) return;
     const allDay = !draft.startTime;
     const next = {
@@ -102,16 +106,34 @@ export function MeetingsCalendar() {
       end: draft.endTime ? toISO(draft.date, draft.endTime) : undefined,
       allDay,
     };
-    setEvents((prev) =>
-      draft.id ? prev.map((e) => (e.id === draft.id ? next : e)) : [...prev, next],
-    );
-    closeModal();
+    try {
+      setCalendarError(null);
+      if (onSaveEvent) {
+        await onSaveEvent(next);
+      } else {
+        setLocalEvents((prev) =>
+          draft.id ? prev.map((e) => (e.id === draft.id ? next : e)) : [...prev, next],
+        );
+      }
+      closeModal();
+    } catch (error) {
+      setCalendarError(error);
+    }
   };
 
-  const deleteDraft = () => {
+  const deleteDraft = async () => {
     if (!draft?.id) return;
-    setEvents((prev) => prev.filter((e) => e.id !== draft.id));
-    closeModal();
+    try {
+      setCalendarError(null);
+      if (onDeleteEvent) {
+        await onDeleteEvent(draft.id);
+      } else {
+        setLocalEvents((prev) => prev.filter((e) => e.id !== draft.id));
+      }
+      closeModal();
+    } catch (error) {
+      setCalendarError(error);
+    }
   };
 
   const headerToolbar = useMemo(
@@ -138,6 +160,11 @@ export function MeetingsCalendar() {
           </button>
         </div>
       </div>
+      {calendarError ? (
+        <p className="mb-3 text-[12px] font-medium text-[#d4351c]">
+          Could not sync the calendar change.
+        </p>
+      ) : null}
 
       {viewMode === "calendar" ? (
         <FullCalendar

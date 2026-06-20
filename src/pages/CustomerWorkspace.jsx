@@ -102,48 +102,6 @@ function getThinkingIntentForPrompt(text, hasArticleCandidate) {
 }
 const MEMORY_UPDATE_VERB_PATTERN = /\b(update|change|correct|fix|amend|edit|revise)\b/i;
 const MEMORY_TARGET_PATTERN = /\b(memory|remembered|client record|customer record|saved record|profile)\b/i;
-const MEMORY_UPDATE_FIELDS = [
-  {
-    id: "birthday",
-    label: "Birthday",
-    aliases: ["birthday", "birth date", "birthdate", "date of birth", "dob"],
-  },
-  {
-    id: "email",
-    label: "Email",
-    aliases: ["email", "email address"],
-  },
-  {
-    id: "phone",
-    label: "Phone",
-    aliases: ["phone", "phone number", "mobile", "mobile number"],
-  },
-  {
-    id: "address",
-    label: "Address",
-    aliases: ["address", "home address", "mailing address"],
-  },
-  {
-    id: "net_worth",
-    label: "Net worth",
-    aliases: ["net worth", "estimated net worth"],
-  },
-  {
-    id: "income",
-    label: "Income",
-    aliases: ["income", "income bracket", "annual income"],
-  },
-  {
-    id: "preference",
-    label: "Preference",
-    aliases: ["preference", "preferred channel", "communication preference"],
-  },
-  {
-    id: "occupation",
-    label: "Occupation",
-    aliases: ["occupation", "job", "role"],
-  },
-];
 
 function formatFileSize(size) {
   if (!size) return "0 KB";
@@ -180,7 +138,7 @@ function cleanText(text) {
 function cleanCorrectionValue(value) {
   return cleanText(value)
     .replace(/^(?:from|to|as|is|was|be)\s+/i, "")
-    .replace(/\s+(?:in|on)\s+(?:the\s+)?(?:memory|record|profile)$/i, "")
+    .replace(/\s+(?:in|on)\s+(?:the\s+)?(?:memory|record|profile|saved sources?)$/i, "")
     .replace(/\s+(?:please|thanks|thank you)$/i, "")
     .replace(/^[`"']+|[`"'.!?]+$/g, "")
     .trim();
@@ -190,12 +148,21 @@ function isValidCorrectionValue(value) {
   return value.length > 0 && value.length <= 120;
 }
 
-function findMemoryUpdateField(text) {
-  const normalizedText = cleanText(text);
+function cleanCorrectionSubject(value) {
+  return cleanText(value)
+    .replace(MEMORY_UPDATE_VERB_PATTERN, "")
+    .replace(MEMORY_TARGET_PATTERN, "")
+    .replace(/\b(?:the|a|an|this|that|client|customer|please|can you|could you|it)\b/gi, " ")
+    .replace(/\b(?:from|to|as|is|was|be|says|shows|listed|stored|recorded)\b\s*$/i, "")
+    .replace(/[.?!:;,]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return MEMORY_UPDATE_FIELDS.find((field) =>
-    field.aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(normalizedText))
-  ) ?? null;
+function formatCorrectionSubject(subject) {
+  const cleaned = cleanCorrectionSubject(subject);
+  if (!cleaned) return "Memory";
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}`;
 }
 
 function normalizeMemoryComparable(text) {
@@ -210,47 +177,47 @@ function parseMemoryUpdateRequest(text) {
   const raw = cleanText(text);
   if (!raw) return null;
 
-  const field = findMemoryUpdateField(raw);
   const asksForUpdate =
     MEMORY_UPDATE_VERB_PATTERN.test(raw) ||
     /\bactually\b/i.test(raw) ||
     /\b(?:not|instead of)\b/i.test(raw);
 
-  if (!asksForUpdate || (!field && !MEMORY_TARGET_PATTERN.test(raw))) return null;
+  if (!asksForUpdate) return null;
 
-  const fieldPattern = field ? `(?:${field.aliases.map(escapeRegExp).join("|")})` : "(?:memory|record|profile)";
   const patterns = [
     {
-      regex: new RegExp(
-        `${fieldPattern}[\\s\\S]{0,80}?\\b(?:is|was|says|shows|listed as|stored as|recorded as)\\s+([\\s\\S]+?)\\s+\\b(?:but\\s+)?(?:it'?s|it is|that'?s|that is|should be|is)?\\s*actually\\s+([\\s\\S]+?)(?:[.!?]|$)`,
-        "i"
-      ),
-      oldIndex: 1,
+      regex:
+        /([\s\S]{1,140}?)\b(?:is|was|says|shows|listed as|stored as|recorded as|=)\s+([\s\S]+?)\s+\b(?:but\s+)?(?:it'?s|it is|that'?s|that is|should be|is)?\s*actually\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: 1,
+      oldIndex: 2,
+      nextIndex: 3,
+    },
+    {
+      regex:
+        /\b(?:update|change|correct|fix|amend|edit|revise)\b([\s\S]{0,140}?)\bfrom\s+([\s\S]+?)\s+\bto\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: 1,
+      oldIndex: 2,
+      nextIndex: 3,
+    },
+    {
+      regex:
+        /([\s\S]{1,140}?)\b(?:should be|is|=)\s+([\s\S]+?)\s+\b(?:not|instead of)\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: 1,
+      oldIndex: 3,
       nextIndex: 2,
     },
     {
-      regex: new RegExp(
-        `\\b(?:update|change|correct|fix|amend|edit|revise)\\b[\\s\\S]{0,100}?${fieldPattern}[\\s\\S]{0,100}?\\bfrom\\s+([\\s\\S]+?)\\s+\\bto\\s+([\\s\\S]+?)(?:[.!?]|$)`,
-        "i"
-      ),
-      oldIndex: 1,
+      regex:
+        /([\s\S]{0,140}?)\bactually\s+([\s\S]+?)\s+\b(?:not|instead of)\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: 1,
+      oldIndex: 3,
       nextIndex: 2,
     },
     {
-      regex: new RegExp(
-        `${fieldPattern}[\\s\\S]{0,80}?\\b(?:is|should be|=)\\s+([\\s\\S]+?)\\s+\\b(?:not|instead of)\\s+([\\s\\S]+?)(?:[.!?]|$)`,
-        "i"
-      ),
-      oldIndex: 2,
-      nextIndex: 1,
-    },
-    {
-      regex: new RegExp(
-        `${fieldPattern}[\\s\\S]{0,80}?\\bactually\\s+([\\s\\S]+?)\\s+\\b(?:not|instead of)\\s+([\\s\\S]+?)(?:[.!?]|$)`,
-        "i"
-      ),
-      oldIndex: 2,
-      nextIndex: 1,
+      regex: /\bfrom\s+([\s\S]+?)\s+\bto\s+([\s\S]+?)(?:[.!?]|$)/i,
+      subjectIndex: null,
+      oldIndex: 1,
+      nextIndex: 2,
     },
   ];
 
@@ -258,6 +225,7 @@ function parseMemoryUpdateRequest(text) {
     const match = raw.match(pattern.regex);
     if (!match) continue;
 
+    const subject = pattern.subjectIndex ? cleanCorrectionSubject(match[pattern.subjectIndex]) : "";
     const oldValue = cleanCorrectionValue(match[pattern.oldIndex]);
     const nextValue = cleanCorrectionValue(match[pattern.nextIndex]);
     if (
@@ -266,9 +234,8 @@ function parseMemoryUpdateRequest(text) {
       normalizeMemoryComparable(oldValue) !== normalizeMemoryComparable(nextValue)
     ) {
       return {
-        fieldId: field?.id ?? "memory",
-        fieldLabel: field?.label ?? "Memory",
-        fieldAliases: field?.aliases ?? [],
+        subject,
+        fieldLabel: formatCorrectionSubject(subject),
         oldValue,
         nextValue,
       };
@@ -317,7 +284,7 @@ function replaceCorrectionValue(text, oldValue, nextValue) {
   return { text: source, changed: false };
 }
 
-function scoreMemoryForCorrection(memory, correction) {
+function scoreSourceForCorrection(memory, correction) {
   const haystack = [
     memory.title,
     memory.summary,
@@ -329,13 +296,17 @@ function scoreMemoryForCorrection(memory, correction) {
   const normalizedOldValue = normalizeMemoryComparable(correction.oldValue);
   if (!normalizedOldValue || !normalizedHaystack.includes(normalizedOldValue)) return 0;
 
-  const hasFieldAlias = correction.fieldAliases.some((alias) =>
-    normalizedHaystack.includes(normalizeMemoryComparable(alias))
+  const subjectTerms = normalizeMemoryComparable(correction.subject)
+    .split(" ")
+    .filter((term) => term.length > 2);
+  const subjectScore = subjectTerms.reduce(
+    (total, term) => total + (normalizedHaystack.includes(term) ? 2 : 0),
+    0
   );
 
   return [
     20,
-    hasFieldAlias ? 10 : 0,
+    Math.min(subjectScore, 10),
     memory.kind === "profile" ? 3 : 0,
     memory.kind === "article" ? 2 : 0,
     memory.kind === "chat" ? -3 : 0,
@@ -356,6 +327,22 @@ function amendMemoryWithCorrection(memory, correction) {
 
   if (!changedFields.length) return null;
   return { memory: nextMemory, changedFields };
+}
+
+function amendArticleWithCorrection(article, correction) {
+  const nextArticle = { ...article };
+  const changedFields = [];
+
+  for (const key of ["title", "subtitle", "body", "sourceName"]) {
+    const result = replaceCorrectionValue(nextArticle[key], correction.oldValue, correction.nextValue);
+    if (result.changed) {
+      nextArticle[key] = result.text;
+      changedFields.push(key);
+    }
+  }
+
+  if (!changedFields.length) return null;
+  return { article: nextArticle, changedFields };
 }
 
 function buildMemoryUpdatedMessage({ correction, memory }) {
@@ -1063,18 +1050,67 @@ export function CustomerWorkspace() {
     return { memories: nextMemories, articles: nextArticles };
   }
 
-  async function updateCustomerMemoryFromChat(correction, availableMemories = []) {
-    const rankedMemories = availableMemories
-      .map((memory) => ({ memory, score: scoreMemoryForCorrection(memory, correction) }))
+  function getArticleIdFromMemory(memory) {
+    return (
+      String(memory?.sourceMeta ?? "").match(/\barticle:([^|\s]+)/i)?.[1] ??
+      String(memory?.id ?? "").match(/^article-memory-(.+)$/)?.[1] ??
+      null
+    );
+  }
+
+  function getCorrectionSources(availableMemories = [], availableArticles = []) {
+    const articleIds = new Set(availableArticles.map((article) => String(article.id)));
+    const memorySources = availableMemories
+      .filter((memory) => !(memory.kind === "article" && articleIds.has(String(getArticleIdFromMemory(memory)))))
+      .map((memory) => ({
+        sourceType: "memory",
+        ...memory,
+        memory,
+      }));
+    const articleSources = availableArticles.map((article) => ({
+      sourceType: "article",
+      id: article.id,
+      customerId: article.customerId,
+      kind: "article",
+      title: article.title,
+      summary: article.subtitle,
+      body: article.body,
+      sourceName: article.sourceName,
+      sourceMeta: article.type,
+      createdAt: article.updatedAt ?? article.createdAt,
+      article,
+    }));
+
+    return [...memorySources, ...articleSources];
+  }
+
+  async function updateCustomerKnowledgeFromChat(correction, availableMemories = [], availableArticles = []) {
+    const rankedSources = getCorrectionSources(availableMemories, availableArticles)
+      .map((source) => ({ source, score: scoreSourceForCorrection(source, correction) }))
       .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score || new Date(b.memory.createdAt) - new Date(a.memory.createdAt));
-    const target = rankedMemories[0]?.memory;
+      .sort((a, b) => b.score - a.score || new Date(b.source.createdAt) - new Date(a.source.createdAt));
+    const target = rankedSources[0]?.source;
     if (!target) return { status: "not-found", correction };
 
-    const amended = amendMemoryWithCorrection(target, correction);
-    if (!amended) return { status: "not-found", correction };
+    if (target.sourceType === "article") {
+      const amendedArticle = amendArticleWithCorrection(target.article, correction);
+      if (!amendedArticle) return { status: "not-found", correction };
 
-    const savedMemory = await api.updateCustomerMemory(customer.id, amended.memory);
+      const savedArticle = await saveCustomerArticle(amendedArticle.article, { notify: false });
+      return {
+        status: "updated",
+        correction,
+        memory: {
+          title: savedArticle.title,
+        },
+        changedFields: amendedArticle.changedFields,
+      };
+    }
+
+    const amendedMemory = amendMemoryWithCorrection(target.memory, correction);
+    if (!amendedMemory) return { status: "not-found", correction };
+
+    const savedMemory = await api.updateCustomerMemory(customer.id, amendedMemory.memory);
     setMemories((prev) => {
       if (!prev.some((memory) => memory.id === savedMemory.id)) return [savedMemory, ...prev];
       return prev.map((memory) => (memory.id === savedMemory.id ? savedMemory : memory));
@@ -1084,7 +1120,7 @@ export function CustomerWorkspace() {
       status: "updated",
       correction,
       memory: savedMemory,
-      changedFields: amended.changedFields,
+      changedFields: amendedMemory.changedFields,
     };
   }
 
@@ -1317,14 +1353,18 @@ export function CustomerWorkspace() {
       if (memoryUpdateRequest) {
         attemptedMemoryUpdate = true;
         const latestKnowledge = await refreshCustomerKnowledge();
-        const updateResult = await updateCustomerMemoryFromChat(memoryUpdateRequest, latestKnowledge.memories);
+        const updateResult = await updateCustomerKnowledgeFromChat(
+          memoryUpdateRequest,
+          latestKnowledge.memories,
+          latestKnowledge.articles
+        );
         await waitForThinkingSequence(thinkingStartedAt, intent);
 
         if (updateResult.status === "updated") {
           addAssistantNotice(buildMemoryUpdatedMessage(updateResult));
         } else {
           addAssistantNotice(
-            `I could not find "${memoryUpdateRequest.oldValue}" in ${customer.name}'s saved memory, so I did not change anything.`
+            `I could not find "${memoryUpdateRequest.oldValue}" in ${customer.name}'s saved memories or articles, so I did not change anything.`
           );
         }
         return;
