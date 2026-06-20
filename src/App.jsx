@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import { Home } from "@/pages/Home";
 import { CustomerHub } from "@/pages/CustomerHub";
 import { CustomerWorkspace } from "@/pages/CustomerWorkspace";
@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 
 const primaryNav = [
-  { to: "/", label: "Home", icon: House, end: true },
+  { to: "/chat", label: "Chat", icon: House, end: true },
   { to: "/customers", label: "Customer Hub", icon: Users },
   { to: "/agents", label: "Agent Hub", icon: Bot },
   { to: "/workflows", label: "Workflows", icon: Workflow },
@@ -39,7 +39,7 @@ const sections = [
     label: "Client Memory",
     items: [
       { to: "/customers", label: "Client records", icon: Database },
-      { to: "/", label: "Advisor companion", icon: MessageCircle, end: true },
+      { to: "/chat", label: "Advisor companion", icon: MessageCircle, end: true },
     ],
   },
   {
@@ -180,7 +180,8 @@ export default function App() {
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<Home />} />
           <Route path="/customers" element={<CustomerHub />} />
           <Route path="/customers/:customerId" element={<CustomerWorkspace />} />
           <Route path="/agents" element={<AgentHub />} />
