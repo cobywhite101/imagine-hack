@@ -87,6 +87,7 @@ function customerRow(client) {
     sqlString(client.full_name),
     sqlString(client.date_of_birth),
     sqlString(client.gender),
+    sqlString(client.ethnicity),
     sqlString(client.marital_status),
     sqlString(client.occupation),
     sqlInt(client.number_of_dependents),
@@ -141,6 +142,7 @@ const clientsSql = `-- Generated from aag_clients.json.
 -- Rebuild with: npm run sync:aag
 
 alter table customers add column if not exists family_members jsonb not null default '[]'::jsonb;
+alter table customers add column if not exists ethnicity text;
 
 delete from customers where id like 'CL-%';
 
@@ -160,6 +162,7 @@ insert into customers (
   contact_name,
   date_of_birth,
   gender,
+  ethnicity,
   marital_status,
   occupation,
   dependents,
@@ -207,6 +210,7 @@ on conflict (id) do update set
   contact_name = excluded.contact_name,
   date_of_birth = excluded.date_of_birth,
   gender = excluded.gender,
+  ethnicity = excluded.ethnicity,
   marital_status = excluded.marital_status,
   occupation = excluded.occupation,
   dependents = excluded.dependents,

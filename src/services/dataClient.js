@@ -63,7 +63,7 @@ const CUSTOMER_ACCENTS = ["#3bd4cb", "#317cff", "#e64980", "#4991e5", "#9b69ff",
 const FALLBACK_CUSTOMER_ACCENT = "#868e96";
 const HOME_TASK_STORAGE_KEY = "client-os-home-tasks-v1";
 const HOME_MEETING_STORAGE_KEY = "client-os-home-meetings-v1";
-const HOME_TASK_STATUSES = ["To Do", "Meeting", "Follow-up", "Done"];
+const HOME_TASK_STATUSES = ["To Do", "Meeting", "in progress", "Done"];
 const HOME_TASK_STATUS_ORDER = new Map(HOME_TASK_STATUSES.map((status, index) => [status, index]));
 const CUSTOMER_RECORD_COLUMN_MAP = {
   email: "email",
@@ -229,7 +229,8 @@ function writeStoredArray(key, value) {
 }
 
 function normalizeHomeTaskStatus(status) {
-  if (status === "In progress") return "Meeting";
+  if (status === "Follow-up") return "in progress";
+  if (status === "In progress") return "in progress";
   return HOME_TASK_STATUSES.includes(status) ? status : "To Do";
 }
 
@@ -237,7 +238,7 @@ function getHomeTaskIcon(task) {
   const status = normalizeHomeTaskStatus(task?.status);
   if (status === "Done") return "check";
   if (status === "Meeting") return "meeting";
-  if (status === "Follow-up") return "mail";
+  if (status === "in progress") return "mail";
   if (/brief|prep|note|draft/i.test(task?.title ?? "")) return "notepad";
   return "plus";
 }
@@ -480,7 +481,7 @@ function buildCustomerHomeTasks(customers) {
     candidates.map((customer, index) => {
       const category = getCustomerTaskCategory(customer);
       const dueDate = customer.nextRenewal && customer.nextRenewal < "2030-01-01" ? customer.nextRenewal : today;
-      const status = category === "Renewal" ? "To Do" : "Follow-up";
+      const status = category === "Renewal" ? "To Do" : "in progress";
       const task = customer.task || customer.nextAction || `Follow up with ${customer.name}`;
       return normalizeHomeTask({
         id: `customer-task-${customer.id}`,
@@ -538,7 +539,7 @@ function buildHomeStats(tasks, meetings) {
   const today = toLocalDateString();
   const todoToday = tasks.filter((task) => task.status === "To Do" && (!task.dueDate || task.dueDate <= today)).length;
   const meetingsToday = meetings.filter((meeting) => isSameLocalDate(meeting.start, today)).length;
-  const followUps = tasks.filter((task) => task.status === "Follow-up").length;
+  const followUps = tasks.filter((task) => task.status === "in progress").length;
   const completed = tasks.filter((task) => task.status === "Done").length;
 
   return [
@@ -588,7 +589,7 @@ function getHomeBriefContext(tasks, meetings, customers = []) {
   const todayMeetings = meetings
     .filter((meeting) => isSameLocalDate(meeting.start, today))
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
-  const followUps = tasks.filter((task) => task.status === "Follow-up");
+  const followUps = tasks.filter((task) => task.status === "in progress");
   const dueTasks = tasks.filter(
     (task) => !["Done", "Meeting"].includes(task.status) && (!task.dueDate || task.dueDate <= today)
   );
@@ -751,17 +752,6 @@ async function createHomeDashboard({ tasks, meetings, customers = [] }) {
   };
 }
 
-// Demo fallback: infer ethnicity from Malaysian patrilineal naming markers when
-// the record has no stored value (Malay: bin/binti; Indian: a/l, a/p, s/o, d/o).
-// Used only when `ethnicity` is missing so the profile is never blank pre-migration.
-function deriveEthnicityFromName(name) {
-  const value = String(name ?? "").toLowerCase();
-  if (!value) return "";
-  if (/\b(bin|binti|bt)\b/.test(value)) return "Malay";
-  if (/\b(a\/l|a\/p|s\/o|d\/o)\b/.test(value)) return "Indian";
-  return "Chinese";
-}
-
 function normalizeCustomerRecord(customer) {
   const mockCustomer = localCustomers.find((item) => String(item.id) === String(customer.id));
   const name = customer.name ?? customer.company ?? "Unnamed customer";
@@ -795,8 +785,7 @@ function normalizeCustomerRecord(customer) {
     dateOfBirth: customer.dateOfBirth ?? customer.date_of_birth ?? mockCustomer?.dateOfBirth ?? "",
     maritalStatus: customer.maritalStatus ?? customer.marital_status ?? mockCustomer?.maritalStatus ?? "",
     gender: customer.gender ?? mockCustomer?.gender ?? "",
-    ethnicity:
-      customer.ethnicity ?? mockCustomer?.ethnicity ?? deriveEthnicityFromName(name),
+    ethnicity: customer.ethnicity ?? mockCustomer?.ethnicity ?? "",
     dependents: customer.dependents ?? customer.number_of_dependents ?? mockCustomer?.dependents,
     annualIncomeBracket:
       customer.annualIncomeBracket ?? customer.annual_income_bracket ?? mockCustomer?.annualIncomeBracket ?? "",

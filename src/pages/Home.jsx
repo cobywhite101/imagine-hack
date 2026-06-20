@@ -139,28 +139,24 @@ export function Home() {
           </section>
         </div>
 
-        <div className="w-full px-4 pb-6 pt-4">
-          <TodoList
-            cards={todoCards}
-            loading={initialLoading}
-            onOpenTask={setEditingTask}
-            onNewTask={(status) => setEditingTask(createTodoDraft(status))}
-            onMoveTask={moveTodoTask}
-          />
-        </div>
+        <TodoList
+          cards={todoCards}
+          loading={initialLoading}
+          onOpenTask={setEditingTask}
+          onNewTask={(status) => setEditingTask(createTodoDraft(status))}
+          onMoveTask={moveTodoTask}
+        />
 
-        <div className="w-full px-4 pb-6 pt-4">
-          {initialLoading ? (
-            <HomeCalendarSkeleton />
-          ) : (
-            <MeetingsCalendar
-              events={meetings}
-              onSaveEvent={saveMeeting}
-              onDeleteEvent={deleteMeeting}
-              selectedEventId={selectedMeetingId}
-            />
-          )}
-        </div>
+        {initialLoading ? (
+          <HomeCalendarSkeleton />
+        ) : (
+          <MeetingsCalendar
+            events={meetings}
+            onSaveEvent={saveMeeting}
+            onDeleteEvent={deleteMeeting}
+            selectedEventId={selectedMeetingId}
+          />
+        )}
       </div>
       {editingTask && (
         <TodoTaskModal
@@ -278,7 +274,7 @@ const boardGroups = [
     addShadow: "shadow-[0_0_0_1px_rgba(0,124,215,0.094)]",
   },
   {
-    status: "Follow-up",
+    status: "in progress",
     tone: "purple",
     background: "bg-[rgba(126,34,206,0.047)]",
     headerBg: "bg-[rgba(126,34,206,0.15)]",
@@ -290,12 +286,12 @@ const boardGroups = [
   {
     status: "Done",
     tone: "green",
-    background: "bg-[rgba(3,87,31,0.035)]",
-    headerBg: "bg-[rgba(0,96,38,0.157)]",
-    text: "text-[#2a533c]",
-    accent: "bg-[#46a171]",
-    addColor: "text-[#46a171]",
-    addShadow: "shadow-[0_0_0_1px_rgba(0,100,45,0.09)]",
+    background: "bg-[rgba(3,87,31,0.02)]",
+    headerBg: "bg-[rgba(0,96,38,0.075)]",
+    text: "text-[#6d7270]",
+    accent: "bg-[#6e8c76]",
+    addColor: "text-[#6e8c76]",
+    addShadow: "shadow-[0_0_0_1px_rgba(0,100,45,0.05)]",
   },
 ];
 
@@ -322,8 +318,8 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
             {boardGroups.map((group) => {
               const groupCards = cards.filter((card) => card.status === group.status);
               return (
-                <BoardHeader
-                  key={group.status}
+                  <BoardHeader
+                  key={`header-${group.status}`}
                   group={group}
                   count={groupCards.length}
                   loading={loading}
@@ -338,7 +334,7 @@ function TodoList({ cards, loading, onOpenTask, onNewTask, onMoveTask }) {
             const groupCards = cards.filter((card) => card.status === group.status);
             return (
               <BoardGroup
-                key={group.status}
+                key={`group-${group.status}`}
                 group={group}
                 cards={groupCards}
                 loading={loading}
@@ -681,7 +677,7 @@ function TodoTaskModal({ task, onClose, onSave, onDelete }) {
                 >
                   <option>To Do</option>
                   <option>Meeting</option>
-                  <option>Follow-up</option>
+                  <option>in progress</option>
                   <option>Done</option>
                 </select>
               </label>
@@ -753,7 +749,7 @@ function getTaskIcon(task) {
   if (task.status === "Done") return "check";
   if (task.id === "publish-release-notes") return "notepad";
   if (task.status === "Meeting") return "meeting";
-  if (task.status === "Follow-up") return "mail";
+  if (task.status === "in progress") return "mail";
   return "plus";
 }
 
