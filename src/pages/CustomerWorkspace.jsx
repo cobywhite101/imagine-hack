@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/dataClient";
 import { useApi } from "@/hooks/useApi";
@@ -417,6 +418,17 @@ export function CustomerWorkspace() {
     }
   }
 
+  const activityItems = memories.slice(0, 6).map((memory) => {
+    const ActivityIcon = memory.kind === "file" ? FileText : memory.kind === "meeting" ? CalendarDays : Brain;
+    const typeLabel = memory.kind === "file" ? "Document" : memory.kind === "meeting" ? "Meeting" : "Note";
+
+    return {
+      ...memory,
+      ActivityIcon,
+      typeLabel,
+    };
+  });
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
@@ -456,7 +468,7 @@ export function CustomerWorkspace() {
                 <div>
                   <h2 className="font-semibold text-foreground">Ask about this customer</h2>
                   <p className="mt-1 text-muted-foreground">
-                    Use saved account details, client memory, and uploaded meeting minutes to prepare recaps, next steps, and follow-up drafts.
+                    Use saved interactions, documents, and account details to prepare recaps, next steps, and follow-up drafts.
                   </p>
                 </div>
               </div>
@@ -532,7 +544,7 @@ export function CustomerWorkspace() {
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-[#fbfbfc]">
-          <div className="px-6 py-7">
+          <div className="px-6 pb-4 pt-7">
             <div className="flex items-start gap-4">
               <span
                 className="flex size-16 shrink-0 items-center justify-center rounded-2xl text-xl font-semibold text-white"
@@ -542,7 +554,7 @@ export function CustomerWorkspace() {
               </span>
               <div className="min-w-0 pt-1">
                 <h2 className="truncate text-2xl font-semibold tracking-[-0.02em]">{customer.name}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Customer workspace</p>
+                <p className="mt-1 truncate text-sm text-muted-foreground">{customer.contact || customer.email}</p>
                 <span className={cn("mt-3 inline-flex rounded-md px-2 py-0.5 text-xs font-medium", STATUS_STYLE[customer.status])}>
                   {customer.status}
                 </span>
@@ -550,135 +562,157 @@ export function CustomerWorkspace() {
             </div>
           </div>
 
-          <DetailSection title="Details">
-            <DetailRow icon={Mail} label="Email" value={customer.email || "No email"} />
-            <DetailRow icon={UserRound} label="Owner" value="Ferdinand" />
-            <DetailRow icon={CalendarDays} label="Next step" value={customer.task} />
-          </DetailSection>
+          <Tabs defaultValue="activity" className="gap-0 px-6 pb-6">
+            <TabsList variant="ghost" className="border-b bg-transparent p-0">
+              <TabsTrigger
+                value="activity"
+                className="h-10 rounded-none border-b-2 border-transparent px-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 data-active:border-primary data-active:bg-transparent"
+              >
+                Activity log
+              </TabsTrigger>
+            </TabsList>
 
-          <DetailSection title="Client Memory">
-            <div className="rounded-lg border bg-white p-3">
-              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                <Brain className="size-4 text-primary" />
-                Summarize into chatbot memory
+            <TabsContent value="activity" className="pt-5">
+              <div className="grid grid-cols-2 gap-2">
+                <CustomerFact icon={Mail} label="Email" value={customer.email || "No email"} />
+                <CustomerFact icon={UserRound} label="Owner" value="Ferdinand" />
+                <CustomerFact icon={CalendarDays} label="Last touch" value={customer.lastTouch || "Not recorded"} />
+                <CustomerFact icon={FileText} label="Next step" value={customer.task || customer.nextAction || "Confirm next action"} />
               </div>
-              <textarea
-                value={noteText}
-                onChange={(event) => setNoteText(event.target.value)}
-                rows={4}
-                placeholder="Paste notes or dictate client context..."
-                className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
-              />
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  variant={listening ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={listening ? stopVoiceCapture : startVoiceCapture}
-                >
-                  <Mic className="size-4" /> {listening ? "Stop" : "Dictate"}
-                </Button>
-                <Button size="sm" onClick={saveNoteMemory} disabled={!noteText.trim() || savingMemory}>
-                  <Sparkles className="size-4" /> Summarize
-                </Button>
-              </div>
-              {voiceError && <p className="mt-2 text-xs text-destructive-foreground">{voiceError}</p>}
-            </div>
 
-            <div className="mt-4 space-y-3">
-              {memories.slice(0, 6).map((memory) => (
-                <div key={memory.id} className="border-l-2 border-primary/25 pl-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{memory.title}</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {memory.sourceName} | {memory.sourceMeta || "Saved"} | {formatMemoryDate(memory.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
+              <div className="mt-5 rounded-lg border bg-white p-3">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <Brain className="size-4 text-primary" />
+                  Add client note
                 </div>
-              ))}
-            </div>
-          </DetailSection>
-
-          <DetailSection title="Meeting Minutes">
-            <div
-              onDragOver={(event) => {
-                event.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(event) => {
-                event.preventDefault();
-                setDragging(false);
-                addFiles(event.dataTransfer.files);
-              }}
-              className={cn(
-                "flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed bg-white px-4 py-5 text-center transition-colors",
-                dragging ? "border-primary bg-primary/5" : "border-border"
-              )}
-            >
-              <UploadCloud className="size-6 text-muted-foreground" />
-              <p className="mt-2 text-sm font-medium">Drop meeting minutes here</p>
-              <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, TXT, or notes from customer calls</p>
-              <Button className="mt-4" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-                <Paperclip className="size-4" /> Choose files
-              </Button>
-              <input
-                ref={inputRef}
-                type="file"
-                multiple
-                className="hidden"
-                accept=".pdf,.doc,.docx,.txt,.md"
-                onChange={(event) => addFiles(event.target.files)}
-              />
-            </div>
-
-            {files.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {files.map((file) => (
-                  <div key={file.id} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2">
-                    <FileText className="size-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{file.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFiles((prev) => prev.filter((item) => item.id !== file.id))}
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                      aria-label={`Remove ${file.name}`}
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                ))}
+                <textarea
+                  value={noteText}
+                  onChange={(event) => setNoteText(event.target.value)}
+                  rows={4}
+                  placeholder="Paste a call note, family update, preference, or commitment..."
+                  className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/30"
+                />
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    variant={listening ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={listening ? stopVoiceCapture : startVoiceCapture}
+                  >
+                    <Mic className="size-4" /> {listening ? "Stop" : "Dictate"}
+                  </Button>
+                  <Button size="sm" onClick={saveNoteMemory} disabled={!noteText.trim() || savingMemory}>
+                    <FileText className="size-4" /> Save note
+                  </Button>
+                </div>
+                {voiceError && <p className="mt-2 text-xs text-destructive-foreground">{voiceError}</p>}
               </div>
-            )}
-          </DetailSection>
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold">Recent interactions</h3>
+                  <span className="text-xs text-muted-foreground">{activityItems.length} saved</span>
+                </div>
+                <div className="space-y-3">
+                  {activityItems.map(({ ActivityIcon, typeLabel, ...memory }) => (
+                    <div key={memory.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
+                      <span className="flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                        <ActivityIcon className="size-4" />
+                      </span>
+                      <div className="border-b pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{memory.title}</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {typeLabel} | {memory.sourceName} | {formatMemoryDate(memory.createdAt)}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                            {memory.sourceMeta || "Saved"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{memory.summary}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {!activityItems.length && (
+                    <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
+                      No client interactions saved yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <div
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragging(false);
+                    addFiles(event.dataTransfer.files);
+                  }}
+                  className={cn(
+                    "flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed bg-white px-4 py-5 text-center transition-colors",
+                    dragging ? "border-primary bg-primary/5" : "border-border"
+                  )}
+                >
+                  <UploadCloud className="size-5 text-muted-foreground" />
+                  <p className="mt-2 text-sm font-medium">Add transcript or document</p>
+                  <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, TXT, or notes from a client call</p>
+                  <Button className="mt-4" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+                    <Paperclip className="size-4" /> Choose files
+                  </Button>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.md"
+                    onChange={(event) => addFiles(event.target.files)}
+                  />
+                </div>
+
+                {files.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {files.map((file) => (
+                      <div key={file.id} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2">
+                        <FileText className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{file.name}</p>
+                          <p className="text-[11px] text-muted-foreground">{formatFileSize(file.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFiles((prev) => prev.filter((item) => item.id !== file.id))}
+                          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </aside>
       </div>
     </div>
   );
 }
 
-function DetailSection({ title, children }) {
+function CustomerFact({ icon: Icon, label, value }) {
   return (
-    <section className="border-t px-6 py-5">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function DetailRow({ icon: Icon, label, value }) {
-  return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] items-start gap-3 py-2 text-sm">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="size-4 shrink-0" />
+    <div className="min-w-0 rounded-lg border bg-white p-3">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icon className="size-3.5 shrink-0" />
         <span>{label}</span>
       </div>
-      <p className="min-w-0 leading-relaxed text-foreground">{value}</p>
+      <p className="mt-1 truncate text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }
