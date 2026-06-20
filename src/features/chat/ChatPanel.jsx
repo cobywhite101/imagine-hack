@@ -7,7 +7,7 @@ import {
   CircleHelp,
   Clock3,
   Copy,
-  House,
+  MessageCircle,
   MoreVertical,
   Plus,
   RotateCcw,
@@ -78,7 +78,7 @@ function IconButton({ label, children, className = "" }) {
 function TopBar({ mode }) {
   if (mode === "chat") {
     return (
-      <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e8e8ea] bg-white px-4 text-[#101112]">
+      <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
         <div className="flex items-center gap-3">
           <h1 className="text-[14px] font-semibold leading-5 tracking-[-0.14px]">
             Untitled chat
@@ -95,10 +95,10 @@ function TopBar({ mode }) {
   }
 
   return (
-    <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e8e8ea] bg-white px-6 text-[#101112]">
+    <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
       <div className="flex items-center gap-2">
-        <House className="size-4" strokeWidth={1.9} />
-        <h1 className="text-[18px] font-semibold leading-6 tracking-[-0.36px]">Chat</h1>
+        <MessageCircle className="size-4" strokeWidth={1.9} />
+        <h1 className="text-[14px] font-semibold leading-5 tracking-[-0.01em]">Chat</h1>
       </div>
       <div className="flex items-center gap-2 text-black/55">
         <CircleHelp className="size-4" strokeWidth={1.8} />

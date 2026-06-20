@@ -109,7 +109,7 @@ function WorkflowsSkeleton() {
   return (
     <div className="flex h-full min-h-0 bg-background">
       <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
-        <div className="flex items-center justify-between border-b px-4 py-3">
+        <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4">
           <div className="space-y-1.5">
             <SkeletonBlock width={84} height={16} />
             <SkeletonBlock width={118} height={12} />
@@ -131,7 +131,7 @@ function WorkflowsSkeleton() {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b bg-card px-4 py-2.5">
+        <header className="flex h-[49px] shrink-0 items-center justify-between gap-3 border-b border-[#e6e7ea] bg-white px-4">
           <SkeletonBlock height={28} width={260} />
           <div className="flex items-center gap-2.5">
             <SkeletonBlock height={24} width={62} />

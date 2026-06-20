@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Clock3,
+  House,
   MailCheck,
   Tag,
 } from "lucide-react";
@@ -83,12 +84,12 @@ export function Home() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white text-[#101112]">
-      <header className="flex items-center justify-between border-b border-[#e8e8ea] bg-white px-6 py-3.5">
-        <div>
-          <h1 className="text-sm font-semibold">Home</h1>
-          <p className="text-[11px] text-muted-foreground">
-            Morning brief, meetings, and follow-ups synced from Supabase
-          </p>
+      <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
+        <div className="flex min-w-0 items-center gap-2">
+          <House className="size-4 shrink-0" strokeWidth={1.9} />
+          <h1 className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
+            Home
+          </h1>
         </div>
         <div className="flex h-7 items-center gap-1.5 rounded-lg bg-[#f7f7f8] px-2 text-[12px] font-medium text-black/55">
           <Clock3 className="size-3.5" strokeWidth={1.8} />

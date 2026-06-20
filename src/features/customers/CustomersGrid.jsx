@@ -54,7 +54,7 @@ const EMPTY_CLIENT = { name: "", email: "", task: "", status: "Monitoring" };
 
 // Column model. `type` drives the inline editor; `sortValue` is the comparable.
 const COLS = [
-  { key: "task", label: "Task (AI Recommendations)", icon: User, width: 360, type: "text", sortValue: (c) => c.task },
+  { key: "task", label: "Task", icon: User, width: 360, type: "text", sortValue: (c) => c.task },
   { key: "status", label: "Status", icon: CircleDot, width: 160, type: "select", options: STATUSES, sortValue: (c) => c.status },
   { key: "occupation", label: "Occupation", icon: BriefcaseBusiness, width: 190, type: "text", sortValue: (c) => c.occupation },
   { key: "annualIncomeBracket", label: "Income", icon: Landmark, width: 140, type: "text", sortValue: (c) => c.annualIncomeBracket },
@@ -95,6 +95,9 @@ const COLS = [
   },
   { key: "kycStatus", label: "KYC", icon: FileCheck2, width: 120, type: "text", sortValue: (c) => c.kycStatus },
 ];
+
+const NAME_COL_WIDTH = 260;
+const GRID_MIN_WIDTH = NAME_COL_WIDTH + COLS.reduce((total, col) => total + col.width, 0);
 
 const NAME_COL = { key: "name", sortValue: (c) => c.name };
 
@@ -375,24 +378,33 @@ export function CustomersGrid() {
       {/* Grid */}
       <div
         className="min-h-0 flex-1 overflow-auto rounded-lg border bg-white"
-            style={{ borderColor: BORDER, color: INK, fontSize: 14 }}
-          >
-        <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+        style={{ borderColor: BORDER, color: INK, fontSize: 14 }}
+      >
+        <table
+          className="border-separate border-spacing-0"
+          style={{ tableLayout: "fixed", width: GRID_MIN_WIDTH, minWidth: GRID_MIN_WIDTH }}
+        >
+          <colgroup>
+            <col style={{ width: NAME_COL_WIDTH }} />
+            {COLS.map((col) => (
+              <col key={col.key} style={{ width: col.width }} />
+            ))}
+          </colgroup>
           <thead className="sticky top-0 z-30">
             <tr>
               {/* Customer header — sticky left */}
               <th
-                style={{ width: 260, minWidth: 260, borderColor: BORDER }}
-                className="sticky left-0 z-40 h-10 border-b border-r bg-white px-3 text-left align-middle"
+                style={{ width: NAME_COL_WIDTH, minWidth: NAME_COL_WIDTH, borderColor: BORDER }}
+                className="sticky left-0 z-40 h-10 overflow-hidden border-b border-r bg-white px-3 text-left align-middle"
               >
-                <div className="flex items-center gap-2" style={{ color: INK }}>
+                <div className="flex min-w-0 items-center gap-2" style={{ color: INK }}>
                   <Checkbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} />
                   <button
                     type="button"
                     onClick={() => toggleSort("name")}
-                    className="flex items-center gap-1 font-medium hover:text-black"
+                    className="flex min-w-0 items-center gap-1 font-medium hover:text-black"
                   >
-                    Name
+                    <span className="truncate">Name</span>
                     <SortIcon active={sort.key === "name"} dir={sort.dir} />
                   </button>
                   <button
@@ -414,12 +426,12 @@ export function CustomersGrid() {
                   <th
                     key={c.key}
                     style={{ width: c.width, minWidth: c.width, borderColor: BORDER }}
-                    className={`h-10 border-b bg-white px-3 align-middle font-medium ${isLast ? "" : "border-r"}`}
+                    className={`h-10 overflow-hidden border-b bg-white px-3 align-middle font-medium ${isLast ? "" : "border-r"}`}
                   >
                     <button
                       type="button"
                       onClick={() => toggleSort(c.key)}
-                      className={`group/h flex w-full items-center gap-1.5 ${c.numeric ? "justify-end" : ""}`}
+                      className={`group/h flex w-full min-w-0 items-center gap-1.5 ${c.numeric ? "justify-end" : ""}`}
                       style={{ color: active ? INK : "rgba(0,0,0,0.63)" }}
                     >
                       <Icon className="size-3.5 shrink-0" strokeWidth={2} />
@@ -453,15 +465,16 @@ export function CustomersGrid() {
             {rows.map((c) => {
               const isSel = selected.has(c.id);
               const rowBg = isSel ? "bg-[rgba(38,109,240,0.06)]" : "bg-white group-hover/r:bg-[rgba(38,109,240,0.04)]";
+              const stickyRowBg = isSel ? "bg-[#f2f6fe]" : "bg-white group-hover/r:bg-[#f6f9fe]";
               return (
                 <tr key={c.id} className="group/r cursor-default">
                   {/* Customer — sticky */}
                   <td
-                    style={{ width: 260, minWidth: 260, borderColor: BORDER }}
-                    className={`sticky left-0 z-20 h-9 border-b border-r px-3 ${rowBg}`}
+                    style={{ width: NAME_COL_WIDTH, minWidth: NAME_COL_WIDTH, borderColor: BORDER }}
+                    className={`sticky left-0 z-20 h-9 overflow-hidden border-b border-r px-3 ${stickyRowBg}`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span className={isSel ? "" : "opacity-0 transition-opacity group-hover/r:opacity-100"}>
+                    <div className="flex min-w-0 max-w-full items-center gap-2.5 overflow-hidden">
+                      <span className={`shrink-0 ${isSel ? "" : "opacity-0 transition-opacity group-hover/r:opacity-100"}`}>
                         <Checkbox checked={isSel} onChange={() => toggleRow(c.id)} />
                       </span>
                       <span
@@ -487,7 +500,7 @@ export function CustomersGrid() {
                       <td
                         key={col.key}
                         style={{ width: col.width, minWidth: col.width, borderColor: BORDER }}
-                        className={`h-9 border-b px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg} ${isLast ? "" : "border-r"}`}
+                        className={`h-9 overflow-hidden border-b px-2 align-middle ${col.numeric ? "text-right" : ""} ${rowBg} ${isLast ? "" : "border-r"}`}
                       >
                         {col.type === "select" ? (
                           isEditing ? (
@@ -508,7 +521,7 @@ export function CustomersGrid() {
                             <button
                               type="button"
                               onClick={() => setEditing({ id: c.id, key: col.key })}
-                              className={`block text-left ${EDIT_CLASSES}`}
+                              className={`block max-w-full overflow-hidden text-left ${EDIT_CLASSES}`}
                             >
                               <StatusPill status={c.status} />
                             </button>
@@ -541,8 +554,8 @@ export function CustomersGrid() {
             {!loading && (
               <tr style={{ color: "rgba(0,0,0,0.55)" }}>
                 <td
-                  style={{ width: 260, minWidth: 260, borderColor: BORDER }}
-                  className="sticky left-0 z-20 h-9 border-r bg-white px-3 text-right"
+                  style={{ width: NAME_COL_WIDTH, minWidth: NAME_COL_WIDTH, borderColor: BORDER }}
+                  className="sticky left-0 z-20 h-9 overflow-hidden border-r bg-white px-3 text-right"
                 >
                   <span className="font-medium" style={{ color: INK }}>
                     {rows.length}
@@ -574,10 +587,10 @@ function CustomerGridSkeletonRow({ index }) {
   return (
     <tr>
       <td
-        style={{ width: 260, minWidth: 260, borderColor: BORDER }}
-        className="sticky left-0 z-20 h-9 border-b border-r bg-white px-3"
+        style={{ width: NAME_COL_WIDTH, minWidth: NAME_COL_WIDTH, borderColor: BORDER }}
+        className="sticky left-0 z-20 h-9 overflow-hidden border-b border-r bg-white px-3"
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 max-w-full items-center gap-2.5 overflow-hidden">
           <SkeletonBlock width={16} height={16} />
           <SkeletonBlock width={20} height={20} />
           <SkeletonBlock width={widths[index % widths.length]} height={16} />

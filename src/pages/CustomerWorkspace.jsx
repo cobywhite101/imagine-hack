@@ -1242,10 +1242,10 @@ function parseEmailDraft(text) {
   let bodyText = bodyLines.join("\n").trim();
 
   let postText = "";
-  const sourcesIndex = bodyText.search(/\n\s*(?:Sources|Source):\s*/i);
-  if (sourcesIndex !== -1) {
-    postText = bodyText.substring(sourcesIndex).trim();
-    bodyText = bodyText.substring(0, sourcesIndex).trim();
+  const postTextIndex = bodyText.search(/\n\s*(?:Next step|Sources|Source):\s*/i);
+  if (postTextIndex !== -1) {
+    postText = bodyText.substring(postTextIndex).trim();
+    bodyText = bodyText.substring(0, postTextIndex).trim();
   }
 
   return {
@@ -1267,6 +1267,8 @@ function formatBodyToHtml(rawText) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+
+      escaped = escaped.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
 
       escaped = escaped.replace(/\[([^\]]+)\]/g, (match) => {
         return `<span class="text-[#0d0d0d] bg-[#266df0]/10 border border-[#266df0]/20 cursor-text rounded-md px-1 py-0.5 font-medium select-all">${match}</span>`;
@@ -1478,60 +1480,57 @@ function CustomerWorkspaceSkeleton() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex min-h-full flex-col items-center justify-end">
-              <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-8 px-6 py-8">
-                <div className="max-w-[520px] rounded-2xl border bg-white p-5 shadow-sm">
-                  <div className="mb-4 flex items-center gap-3">
-                    <SkeletonBlock width={36} height={36} />
-                    <div className="space-y-1.5">
-                      <SkeletonBlock width={162} height={16} />
-                      <SkeletonBlock width={118} height={12} />
-                    </div>
+              <div className="flex w-[700px] max-w-full flex-col items-stretch justify-start gap-10 px-6 py-8">
+                <div className="max-w-full">
+                  <SkeletonBlock height={18} width="92%" />
+                  <SkeletonBlock height={18} width="86%" />
+                  <SkeletonBlock height={18} width="58%" />
+                  <div className="mt-1 flex h-7 items-center gap-1">
+                    <SkeletonBlock width={28} height={28} />
                   </div>
-                  <SkeletonBlock height={16} width="94%" />
-                  <SkeletonBlock height={16} width="78%" />
-                  <div className="mt-4 flex gap-2">
-                    <SkeletonBlock width={108} height={28} />
-                    <SkeletonBlock width={132} height={28} />
-                  </div>
-                </div>
-                <div className="ml-auto w-[440px] max-w-[80%] rounded-2xl bg-[#f5f7fb] p-4">
-                  <SkeletonBlock height={16} width="84%" />
-                  <SkeletonBlock height={16} width="62%" />
                 </div>
               </div>
             </div>
           </div>
           <div className="flex shrink-0 justify-center bg-white">
-            <div className="mb-4 w-[720px] max-w-[calc(100%-48px)] rounded-2xl border bg-white p-4 shadow-sm">
-              <SkeletonBlock height={18} width="64%" />
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <SkeletonBlock height={34} className="flex-1" containerClassName="flex-1" />
-                <SkeletonBlock width={84} height={34} />
+            <div className="flex h-[140px] w-[700px] max-w-full flex-col items-stretch justify-start px-4 pb-[24px]">
+              <div className="flex h-[116px] w-full flex-col rounded-[14px] bg-white px-5 py-4 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+                <SkeletonBlock height={16} width="46%" />
+                <div className="mt-auto flex h-11 items-end justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <SkeletonBlock width={112} height={28} />
+                    <SkeletonBlock width={28} height={28} />
+                    <SkeletonBlock width={82} height={28} />
+                    <SkeletonBlock width={66} height={28} />
+                  </div>
+                  <SkeletonBlock width={28} height={28} />
+                </div>
               </div>
             </div>
           </div>
         </section>
 
         <aside className="min-h-0 overflow-y-auto bg-white">
-          <div className="border-b px-6 py-5">
-            <div className="flex items-center gap-3">
-              <SkeletonBlock width={44} height={44} />
-              <div className="min-w-0 flex-1 space-y-2">
-                <SkeletonBlock width={174} height={20} />
-                <SkeletonBlock width={132} height={14} />
-              </div>
+          <div className="px-6 pt-4">
+            <SkeletonBlock width={48} height={48} />
+
+            <div className="mt-3 space-y-2">
+              <SkeletonBlock width={224} height={24} />
+              <SkeletonBlock width={164} height={14} />
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="rounded-lg border bg-white p-3">
-                  <SkeletonBlock width={74} height={12} />
-                  <div className="mt-2">
-                    <SkeletonBlock width="86%" height={16} />
-                  </div>
-                </div>
-              ))}
+
+            <div className="mt-2.5 flex items-center gap-2">
+              <SkeletonBlock circle width={18} height={18} />
+              <SkeletonBlock width={128} height={14} />
+              <SkeletonBlock width={86} height={20} />
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <SkeletonBlock width={178} height={32} />
+              <SkeletonBlock width={32} height={32} />
             </div>
           </div>
+
           <div className="px-6 pb-8 pt-4">
             <div className="mb-5 flex w-fit gap-1 rounded-lg bg-[#f1f1f3] p-1">
               <SkeletonBlock width={84} height={32} />
@@ -1547,26 +1546,42 @@ function CustomerWorkspaceSkeleton() {
 
 function WorkflowDetailsSkeleton() {
   return (
-    <div className="space-y-4 pt-4">
+    <div className="pt-1 text-[#2a2a2e]">
       {Array.from({ length: 3 }).map((_, sectionIndex) => (
-        <section key={sectionIndex} className="rounded-xl border bg-white p-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="space-y-1.5">
-              <SkeletonBlock width={sectionIndex === 0 ? 142 : 118} height={16} />
-              <SkeletonBlock width={190} height={12} />
+        <section key={sectionIndex} className="py-4">
+          <div className="flex items-center justify-between gap-3">
+            <SkeletonBlock width={sectionIndex === 0 ? 48 : sectionIndex === 1 ? 42 : 154} height={18} />
+            <div className="flex items-center gap-1.5">
+              <SkeletonBlock width={24} height={24} />
+              <SkeletonBlock width={24} height={24} />
             </div>
-            <SkeletonBlock width={34} height={28} />
           </div>
-          <div className="space-y-3">
-            {Array.from({ length: sectionIndex === 0 ? 4 : 3 }).map((_, rowIndex) => (
-              <div key={rowIndex} className="grid grid-cols-[110px_1fr] gap-3">
-                <SkeletonBlock height={14} width={82} />
-                <SkeletonBlock height={16} width={rowIndex % 2 ? "72%" : "94%"} />
-              </div>
-            ))}
+          <div className="mt-3 space-y-2">
+            <SkeletonBlock height={17} width={sectionIndex === 0 ? "82%" : "94%"} />
+            <SkeletonBlock height={17} width={sectionIndex === 2 ? "68%" : "56%"} />
           </div>
         </section>
       ))}
+      <section className="py-4">
+        <div className="flex items-center justify-between gap-3">
+          <SkeletonBlock width={128} height={18} />
+          <div className="flex items-center gap-1.5">
+            <SkeletonBlock width={24} height={24} />
+            <SkeletonBlock width={24} height={24} />
+          </div>
+        </div>
+        <div className="mt-3 space-y-3">
+          {Array.from({ length: 3 }).map((_, rowIndex) => (
+            <div key={rowIndex} className="flex items-center justify-between gap-3 py-1">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <SkeletonBlock width={20} height={20} />
+                <SkeletonBlock width={rowIndex === 1 ? 128 : 104} height={17} />
+              </div>
+              <SkeletonBlock width={38} height={22} />
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -1664,10 +1679,6 @@ export function CustomerWorkspace() {
   useEffect(() => {
     return () => clearTimeout(configSaveTimer.current);
   }, []);
-
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, sending]);
 
   if (loading && !customer) {
     return <CustomerWorkspaceSkeleton />;
@@ -2356,17 +2367,17 @@ export function CustomerWorkspace() {
           <Tabs defaultValue="details" className="gap-0 px-6 pb-8 pt-4">
             <TabsList
               variant="ghost"
-              className="flex w-fit items-center gap-1 rounded-lg bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"
+              className="flex w-fit items-center gap-1 rounded-[6px] bg-[#f1f1f3] p-1 [&_[data-slot=tab-indicator]]:hidden"
             >
               <TabsTrigger
                 value="details"
-                className="h-8 rounded-md px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className="h-8 rounded-[4px] px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Details
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="h-8 rounded-md px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
+                className="h-8 rounded-[4px] px-4 text-[14px] font-medium text-[#6b6b70] transition-all outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 data-[selected]:bg-[#317cff] data-[selected]:text-white aria-selected:bg-[#317cff] aria-selected:text-white"
               >
                 Activity
               </TabsTrigger>

@@ -6,10 +6,12 @@ import { cn } from "@/lib/utils";
 export function WorkflowList({ workflows, activeId, onSelect, onCreate }) {
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div>
-          <h2 className="text-sm font-semibold">Workflows</h2>
-          <p className="text-[11px] text-muted-foreground">Automations you build</p>
+      <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
+        <div className="flex min-w-0 items-center gap-2">
+          <Workflow className="size-4 shrink-0" strokeWidth={1.9} />
+          <h2 className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em]">
+            Workflows
+          </h2>
         </div>
         <Button size="icon-sm" variant="outline" aria-label="New workflow" onClick={onCreate}>
           <Plus className="size-4" />

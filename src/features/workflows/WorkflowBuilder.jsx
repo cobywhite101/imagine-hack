@@ -26,7 +26,7 @@ function Connector({ onInsert }) {
 function Toolbar({ workflow, onUpdateWorkflow }) {
   const draft = workflow.status === "draft";
   return (
-    <header className="flex items-center justify-between gap-3 border-b bg-card px-4 py-2.5">
+    <header className="flex h-[49px] shrink-0 items-center justify-between gap-3 border-b border-[#e6e7ea] bg-white px-4 text-[#101112]">
       <input
         value={workflow.name}
         onChange={(e) => onUpdateWorkflow({ name: e.target.value })}

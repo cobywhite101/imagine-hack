@@ -223,7 +223,7 @@ function Sidebar() {
     <aside className="flex h-screen w-[248px] shrink-0 flex-col border-r border-[#e6e7ea] bg-white text-[#101112]">
       <button
         type="button"
-        className="flex h-12 w-full items-center gap-2 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
+        className="flex h-[49px] w-full shrink-0 items-center gap-2 border-b border-[#e6e7ea] px-4 text-left transition-colors hover:bg-black/[0.025]"
       >
         <Avatar className="size-6 shrink-0 rounded-md">
           <AvatarFallback className="rounded-md bg-[#e9a62a] text-[13px] font-semibold text-white">
